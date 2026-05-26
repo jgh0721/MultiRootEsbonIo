@@ -1,0 +1,8 @@
+//
+// Created by jgh07 on 26. 5. 26..
+//
+
+#ifndef MULTIROOT_REST_CPP_MAIN_HPP
+#define MULTIROOT_REST_CPP_MAIN_HPP
+
+#endif //MULTIROOT_REST_CPP_MAIN_HPP

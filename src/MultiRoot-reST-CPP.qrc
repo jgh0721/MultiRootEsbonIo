@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/python">
+        <file>../tools/uv.exe</file>
+    </qresource>
+</RCC>
