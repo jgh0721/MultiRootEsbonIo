@@ -24,7 +24,7 @@
      </property>
      <layout class="QHBoxLayout" name="horizontalLayout">
       <item>
-       <widget class="QListWidget" name="listWidget">
+       <widget class="QListWidget" name="lstCate">
         <property name="maximumSize">
          <size>
           <width>150</width>
@@ -34,7 +34,7 @@
        </widget>
       </item>
       <item>
-       <widget class="QStackedWidget" name="stackedWidget">
+       <widget class="QStackedWidget" name="stkWidget">
         <widget class="QWidget" name="page"/>
         <widget class="QWidget" name="page_2"/>
        </widget>
@@ -65,16 +65,23 @@
        </spacer>
       </item>
       <item>
-       <widget class="QPushButton" name="pushButton">
+       <widget class="QPushButton" name="btnOK">
         <property name="text">
          <string>확인(&amp;O)</string>
         </property>
        </widget>
       </item>
       <item>
-       <widget class="QPushButton" name="pushButton_2">
+       <widget class="QPushButton" name="btnCancel">
         <property name="text">
          <string>취소(&amp;C)</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btnApply">
+        <property name="text">
+         <string>PushButton</string>
         </property>
        </widget>
       </item>

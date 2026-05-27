@@ -37,19 +37,24 @@ add_executable(${PROJECT_NAME}
         src/main.cpp
         src/MainWindow.cpp
         src/MainWindow.hpp
-        src/MultiRoot-reST-CPP.qrc
         src/uis/mainWindow.ui
+        src/MultiRoot-reST-CPP.qrc
+        src/core/solThemeManager.cpp
+        src/core/solThemeManager.hpp
+        src/uis/dlgSettings.cpp
+        src/uis/dlgSettings.hpp
         src/uis/dlgSettings.ui
         src/editor/ScintillaEdit.cpp
         src/editor/ScintillaEdit.hpp
-        src/uis/dlgSettings.cpp
-        src/uis/dlgSettings.hpp
         uniqueLibs/solDocument_Defs.hpp
+        uniqueLibs/solEncodingDetector.cpp
+        uniqueLibs/solEncodingDetector.hpp
 )
 
 # ── MSVC stdafx.h 미리 컴파일된 헤더 지정 ────────────────
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/stdafx.h)
 
+target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_SOURCE_DIR}")
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_SOURCE_DIR}/uniqueLibs")
 
