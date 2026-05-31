@@ -48,6 +48,16 @@ add_executable(${PROJECT_NAME}
         src/uis/dlgSettings.ui
         src/editor/ScintillaEdit.cpp
         src/editor/ScintillaEdit.hpp
+        src/editor/baseEdit.cpp
+        src/editor/baseEdit.hpp
+        src/editor/EditorTabWidget.cpp
+        src/editor/EditorTabWidget.hpp
+        src/editor/reSTEdit.cpp
+        src/editor/reSTEdit.hpp
+        src/editor/markdownEdit.cpp
+        src/editor/markdownEdit.hpp
+        src/editor/pythonEdit.cpp
+        src/editor/pythonEdit.hpp
         uniqueLibs/solDocument_Defs.hpp
         uniqueLibs/solEncodingDetector.cpp
         uniqueLibs/solEncodingDetector.hpp

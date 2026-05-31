@@ -62,9 +62,94 @@ namespace nsDetail
 ///////////////////////////////////////////////////////////////////////////////
 ///
 
+QScintillaEdit::QScintillaEdit( QWidget* EditorParent, QObject* Parent )
+    : QObject( Parent )
+    , m_editor( new ScintillaEditBase( EditorParent ) )
+    , m_braceMatchingEnabled( true )
+{
+    m_editor->setObjectName( QStringLiteral( "scintillaEditor" ) );
+    m_editor->send( SCI_SETCODEPAGE, SC_CP_UTF8 );
+    m_editor->send( SCI_SETUNDOCOLLECTION, 1 );
+    m_editor->send( SCI_SETMARGINTYPEN, 0, SC_MARGIN_NUMBER );
+    m_editor->send( SCI_SETMARGINWIDTHN, 0, 48 );
+    m_editor->send( SCI_SETMARGINWIDTHN, 1, 0 );
+    m_editor->send( SCI_SETINDENTATIONGUIDES, SC_IV_LOOKBOTH );
+    m_editor->send( SCI_SETCARETLINEVISIBLE, 1 );
+    m_editor->send( SCI_SETCARETLINEBACK, 0x202020 );
+
+    const QFont fixedFont = QFontDatabase::systemFont( QFontDatabase::FixedFont );
+    const QByteArray family = fixedFont.family().toUtf8();
+    m_editor->send( SCI_STYLESETFONT, STYLE_DEFAULT, reinterpret_cast< sptr_t >( family.constData() ) );
+    m_editor->send( SCI_STYLESETSIZE, STYLE_DEFAULT, fixedFont.pointSize() > 0 ? fixedFont.pointSize() : 10 );
+    m_editor->send( SCI_STYLECLEARALL );
+
+    connect( m_editor, &ScintillaEditBase::savePointChanged, this, &QScintillaEdit::modificationChanged );
+    connect( m_editor, &ScintillaEditBase::notifyChange, this, [this] {
+        emit textChanged();
+    } );
+    connect( m_editor, &ScintillaEditBase::linesAdded, this, [this]( Scintilla::Position ) {
+        emit linesChanged();
+    } );
+    connect( m_editor, &ScintillaEditBase::modified, this, [this]( Scintilla::ModificationFlags, Scintilla::Position,
+                                                                  Scintilla::Position, Scintilla::Position linesAdded,
+                                                                  const QByteArray&, Scintilla::Position,
+                                                                  Scintilla::FoldLevel, Scintilla::FoldLevel ) {
+        if( linesAdded != 0 )
+            emit linesChanged();
+    } );
+    connect( m_editor, &ScintillaEditBase::updateUi, this, [this]( Scintilla::Update ) {
+        updateBraceHighlight();
+        emitCursorAndSelectionState();
+    } );
+}
+
+QScintillaEdit::~QScintillaEdit() = default;
+
 QWidget* QScintillaEdit::Editor() const
 {
     return m_editor;
+}
+
+ScintillaEditBase* QScintillaEdit::ScintillaWidget() const
+{
+    return m_editor;
+}
+
+sptr_t QScintillaEdit::Send( unsigned int Message, uptr_t WParam, sptr_t LParam ) const
+{
+    return m_editor ? m_editor->send( Message, WParam, LParam ) : 0;
+}
+
+sptr_t QScintillaEdit::Sends( unsigned int Message, uptr_t WParam, const char* Text ) const
+{
+    return m_editor ? m_editor->sends( Message, WParam, Text ) : 0;
+}
+
+void QScintillaEdit::SetText( const QByteArray& Text )
+{
+    if( !m_editor )
+        return;
+
+    m_editor->send( SCI_SETTEXT, 0, reinterpret_cast< sptr_t >( Text.constData() ) );
+    m_editor->send( SCI_EMPTYUNDOBUFFER );
+    m_editor->send( SCI_SETSAVEPOINT );
+    updateBraceHighlight();
+    emitCursorAndSelectionState();
+}
+
+QByteArray QScintillaEdit::Text() const
+{
+    if( !m_editor )
+        return {};
+
+    const sptr_t length = m_editor->send( SCI_GETTEXTLENGTH );
+    if( length <= 0 )
+        return {};
+
+    QByteArray buffer( static_cast< int >( length ) + 1, Qt::Uninitialized );
+    m_editor->send( SCI_GETTEXT, static_cast< uptr_t >( buffer.size() ), reinterpret_cast< sptr_t >( buffer.data() ) );
+    buffer.resize( static_cast< int >( length ) );
+    return buffer;
 }
 
 int QScintillaEdit::GetLineCount() const

@@ -18,6 +18,26 @@ MainWindow::MainWindow( QWidget* parent )
     Ui.treLeftSideFolterTree->header()->hideSection(3);
     Ui.treLeftSideFolterTree->setIndentation( 15 );
 
+    Ui.tabEditor->InitializeEmpty();
+    connect( Ui.treLeftSideFolterTree, &QTreeView::doubleClicked, this, [this]( const QModelIndex& index ) {
+        const QFileInfo fileInfo = treLeftFolderTreeModel_->fileInfo( index );
+        if( !fileInfo.isFile() )
+            return;
+
+        Ui.tabEditor->OpenFile( fileInfo.absoluteFilePath() );
+    } );
+    connect( Ui.tabEditor, &EditorTabWidget::activeEditorChanged, this, [this]( BaseEdit* editor ) {
+        if( editor == nullptr )
+        {
+            statusBar()->clearMessage();
+            return;
+        }
+
+        statusBar()->showMessage( tr( "Active editor: %1" ).arg( QDir::toNativeSeparators( editor->FilePath() ) ) );
+    } );
+    connect( Ui.tabEditor, &EditorTabWidget::fileOpenFailed, this, [this]( const QString& filePath, const QString& reason ) {
+        QMessageBox::warning( this, tr( "Open File" ), tr( "Failed to open '%1'.\n%2" ).arg( QDir::toNativeSeparators( filePath ), reason ) );
+    } );
 
     // editorTabs_->setTabsClosable(true);
     // editorTabs_->setMovable(true);

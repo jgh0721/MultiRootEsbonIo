@@ -10,9 +10,16 @@ class QScintillaEdit : public QObject
     Q_OBJECT
 public:
     explicit QScintillaEdit( QWidget* EditorParent, QObject* Parent = nullptr );
-    virtual ~QScintillaEdit();
+    ~QScintillaEdit() override;
 
     QWidget*                            Editor() const;
+    ScintillaEditBase*                  ScintillaWidget() const;
+
+    sptr_t                              Send( unsigned int Message, uptr_t WParam = 0, sptr_t LParam = 0 ) const;
+    sptr_t                              Sends( unsigned int Message, uptr_t WParam = 0, const char* Text = nullptr ) const;
+
+    void                                SetText( const QByteArray& Text );
+    QByteArray                          Text() const;
 
     int                                 GetLineCount() const;
 
