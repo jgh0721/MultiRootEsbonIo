@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/python">
-        <file>../tools/uv.exe</file>
+        <file alias="uv.exe">../tools/uv.exe</file>
+        <file alias="pyproject.toml">../tools/pyproject.toml</file>
     </qresource>
 </RCC>

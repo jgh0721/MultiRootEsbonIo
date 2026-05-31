@@ -3,6 +3,10 @@
 #include "uniqueLibs/solDocument_Defs.hpp"
 #include "ui_dlgSettings.h"
 
+namespace mrst {
+class PythonEnvManager;
+}
+
 class QSettingsDialog : public QDialog
 {
     Q_OBJECT
@@ -25,6 +29,9 @@ private:
     QWidget*                            createShortcutsPage();
     QWidget*                            createEditorPage();
     QWidget*                            createEsbonioPage();
+    void                                loadEsbonioSettings();
+    void                                saveEsbonioSettings();
+    void                                refreshEsbonioStatus();
 
     Ui::dlgSettings                     Ui;
 
@@ -47,4 +54,16 @@ private:
     /// 편집기 페이지
 
     /// Python/Esbonio 페이지
+    mrst::PythonEnvManager*             m_pythonEnvManager = nullptr;
+    QCheckBox*                          m_useExternalUvCheck = nullptr;
+    QLineEdit*                          m_uvPathEdit = nullptr;
+    QPushButton*                        m_uvBrowseButton = nullptr;
+    QLabel*                             m_detectedUvLabel = nullptr;
+    QLabel*                             m_environmentRootLabel = nullptr;
+    QLabel*                             m_configuredDateLabel = nullptr;
+    QLabel*                             m_pythonExeLabel = nullptr;
+    QLabel*                             m_sphinxBuildExeLabel = nullptr;
+    QLabel*                             m_esbonioExeLabel = nullptr;
+    QPushButton*                        m_configurePythonButton = nullptr;
+    QTextEdit*                          m_pythonEnvLog = nullptr;
 };

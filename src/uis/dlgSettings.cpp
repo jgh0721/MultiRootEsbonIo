@@ -1,6 +1,24 @@
 #include "stdafx.h"
 #include "dlgSettings.hpp"
+#include "core/solPythonEnvMgr.hpp"
 #include "core/solThemeManager.hpp"
+
+namespace {
+
+QString nativePath( const QString& path )
+{
+    return QDir::toNativeSeparators( path );
+}
+
+QLabel* createValueLabel( QWidget* parent )
+{
+    auto* label = new QLabel( parent );
+    label->setTextInteractionFlags( Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard );
+    label->setWordWrap( true );
+    return label;
+}
+
+}  // namespace
 
 QSettingsDialog::QSettingsDialog( QWidget* Parent )
     : QDialog( Parent )
@@ -33,14 +51,27 @@ QList<ShortcutItem> QSettingsDialog::DefaultShortcuts()
 
 void QSettingsDialog::on_btnOK_clicked( bool Checked )
 {
+    Q_UNUSED( Checked )
+    saveEsbonioSettings();
+    accept();
 }
 
 void QSettingsDialog::on_btnCancel_clicked( bool Checked )
 {
+    Q_UNUSED( Checked )
+    reject();
 }
 
 void QSettingsDialog::on_btnApply_clicked( bool Checked )
 {
+    Q_UNUSED( Checked )
+    saveEsbonioSettings();
+    refreshEsbonioStatus();
+}
+
+QList<ShortcutItem> QSettingsDialog::LoadShortcutsFromSettings()
+{
+    return DefaultShortcuts();
 }
 
 void QSettingsDialog::onResetShortcuts()
@@ -56,11 +87,30 @@ void QSettingsDialog::onResetShortcuts()
 
 void QSettingsDialog::setupUi()
 {
+    Ui.stkWidget->setContentsMargins( 0, 0, 0, 0 );
+    while( Ui.stkWidget->count() > 0 )
+    {
+        QWidget* page = Ui.stkWidget->widget( 0 );
+        Ui.stkWidget->removeWidget( page );
+        page->deleteLater();
+    }
+
     Ui.lstCate->setFixedWidth( 140 );
+    Ui.lstCate->clear();
     Ui.lstCate->addItem( tr("공통") );
     Ui.lstCate->addItem( tr("단축키") );
     Ui.lstCate->addItem( tr("코드 편집기") );
     Ui.lstCate->addItem( tr("Python/Esbonio") );
+
+    Ui.stkWidget->addWidget( createGeneralPage() );
+    Ui.stkWidget->addWidget( createShortcutsPage() );
+    Ui.stkWidget->addWidget( createEditorPage() );
+    Ui.stkWidget->addWidget( createEsbonioPage() );
+
+    Ui.btnApply->setText( tr( "적용(&A)" ) );
+
+    connect( Ui.lstCate, &QListWidget::currentRowChanged, Ui.stkWidget, &QStackedWidget::setCurrentIndex );
+    Ui.lstCate->setCurrentRow( 0 );
 }
 
 QWidget* QSettingsDialog::createGeneralPage()
@@ -226,10 +276,168 @@ QWidget* QSettingsDialog::createShortcutsPage()
 
 QWidget* QSettingsDialog::createEditorPage()
 {
-    return {};
+    auto* page = new QWidget( this );
+    auto* layout = new QVBoxLayout( page );
+    auto* label = new QLabel( tr( "코드 편집기 설정은 추후 추가될 예정입니다." ), page );
+    label->setAlignment( Qt::AlignCenter );
+    layout->addWidget( label, 1 );
+    return page;
 }
 
 QWidget* QSettingsDialog::createEsbonioPage()
 {
-    return {};
+    if( m_pythonEnvManager == nullptr )
+        m_pythonEnvManager = new mrst::PythonEnvManager( this );
+
+    auto* page = new QWidget( this );
+    auto* layout = new QVBoxLayout( page );
+
+    auto* uvGroup = new QGroupBox( tr( "UV 환경 구성" ), page );
+    auto* uvLayout = new QVBoxLayout( uvGroup );
+    auto* formLayout = new QFormLayout;
+
+    m_useExternalUvCheck = new QCheckBox( tr( "외부 UV를 사용하여 환경 구성" ), uvGroup );
+    formLayout->addRow( QString(), m_useExternalUvCheck );
+
+    auto* uvPathWidget = new QWidget( uvGroup );
+    auto* uvPathLayout = new QHBoxLayout( uvPathWidget );
+    uvPathLayout->setContentsMargins( 0, 0, 0, 0 );
+    m_uvPathEdit = new QLineEdit( uvPathWidget );
+    m_uvPathEdit->setPlaceholderText( tr( "uv.exe 경로" ) );
+    m_uvBrowseButton = new QPushButton( tr( "찾아보기..." ), uvPathWidget );
+    uvPathLayout->addWidget( m_uvPathEdit, 1 );
+    uvPathLayout->addWidget( m_uvBrowseButton );
+    formLayout->addRow( tr( "UV 경로:" ), uvPathWidget );
+
+    m_detectedUvLabel = createValueLabel( uvGroup );
+    formLayout->addRow( tr( "인식된 UV:" ), m_detectedUvLabel );
+
+    m_environmentRootLabel = createValueLabel( uvGroup );
+    formLayout->addRow( tr( "환경 디렉터리:" ), m_environmentRootLabel );
+
+    m_configuredDateLabel = createValueLabel( uvGroup );
+    formLayout->addRow( tr( "구성일:" ), m_configuredDateLabel );
+
+    m_pythonExeLabel = createValueLabel( uvGroup );
+    formLayout->addRow( tr( "Python:" ), m_pythonExeLabel );
+
+    m_sphinxBuildExeLabel = createValueLabel( uvGroup );
+    formLayout->addRow( tr( "Sphinx:" ), m_sphinxBuildExeLabel );
+
+    m_esbonioExeLabel = createValueLabel( uvGroup );
+    formLayout->addRow( tr( "Esbonio:" ), m_esbonioExeLabel );
+
+    uvLayout->addLayout( formLayout );
+
+    auto* actionLayout = new QHBoxLayout;
+    m_configurePythonButton = new QPushButton( tr( "구성" ), uvGroup );
+    actionLayout->addStretch( 1 );
+    actionLayout->addWidget( m_configurePythonButton );
+    uvLayout->addLayout( actionLayout );
+
+    layout->addWidget( uvGroup );
+
+    auto* logGroup = new QGroupBox( tr( "구성 로그" ), page );
+    auto* logLayout = new QVBoxLayout( logGroup );
+    m_pythonEnvLog = new QTextEdit( logGroup );
+    m_pythonEnvLog->setReadOnly( true );
+    m_pythonEnvLog->setMinimumHeight( 160 );
+    logLayout->addWidget( m_pythonEnvLog );
+    layout->addWidget( logGroup, 1 );
+
+    loadEsbonioSettings();
+    refreshEsbonioStatus();
+
+    connect( m_useExternalUvCheck, &QCheckBox::toggled, this, [this]( const bool checked ) {
+        m_uvPathEdit->setEnabled( checked );
+        m_uvBrowseButton->setEnabled( checked );
+        m_pythonEnvManager->setUseExternalUv( checked );
+        saveEsbonioSettings();
+        refreshEsbonioStatus();
+    } );
+
+    connect( m_uvPathEdit, &QLineEdit::editingFinished, this, [this] {
+        saveEsbonioSettings();
+        refreshEsbonioStatus();
+    } );
+
+    connect( m_uvBrowseButton, &QPushButton::clicked, this, [this] {
+        const QString selected = QFileDialog::getOpenFileName( this, tr( "UV 실행 파일 선택" ), m_uvPathEdit->text(),
+                                                               tr( "UV 실행 파일 (uv.exe);;실행 파일 (*.exe);;모든 파일 (*.*)" ) );
+        if( selected.isEmpty() )
+            return;
+        m_uvPathEdit->setText( nativePath( selected ) );
+        saveEsbonioSettings();
+        refreshEsbonioStatus();
+    } );
+
+    connect( m_pythonEnvManager, &mrst::PythonEnvManager::bootstrapLog, this, [this]( const QString& text ) {
+        if( m_pythonEnvLog != nullptr && !text.isEmpty() )
+            m_pythonEnvLog->append( text );
+    } );
+
+    connect( m_configurePythonButton, &QPushButton::clicked, this, [this] {
+        saveEsbonioSettings();
+        if( m_pythonEnvLog != nullptr )
+            m_pythonEnvLog->clear();
+        m_configurePythonButton->setEnabled( false );
+        const bool ok = m_pythonEnvManager->configureEnvironment( this );
+        m_configurePythonButton->setEnabled( true );
+        refreshEsbonioStatus();
+        if( ok )
+            QMessageBox::information( this, tr( "Python/Esbonio 환경 구성" ), tr( "환경 구성이 완료되었습니다." ) );
+    } );
+
+    return page;
+}
+
+void QSettingsDialog::loadEsbonioSettings()
+{
+    if( m_pythonEnvManager == nullptr )
+        return;
+
+    const bool useExternal = m_pythonEnvManager->useExternalUv();
+    if( m_useExternalUvCheck != nullptr )
+        m_useExternalUvCheck->setChecked( useExternal );
+    if( m_uvPathEdit != nullptr )
+    {
+        m_uvPathEdit->setText( nativePath( m_pythonEnvManager->externalUvPath() ) );
+        m_uvPathEdit->setEnabled( useExternal );
+    }
+    if( m_uvBrowseButton != nullptr )
+        m_uvBrowseButton->setEnabled( useExternal );
+}
+
+void QSettingsDialog::saveEsbonioSettings()
+{
+    if( m_pythonEnvManager == nullptr )
+        return;
+
+    if( m_useExternalUvCheck != nullptr )
+        m_pythonEnvManager->setUseExternalUv( m_useExternalUvCheck->isChecked() );
+    if( m_uvPathEdit != nullptr )
+        m_pythonEnvManager->setExternalUvPath( m_uvPathEdit->text() );
+    m_pythonEnvManager->saveUvSettings();
+}
+
+void QSettingsDialog::refreshEsbonioStatus()
+{
+    if( m_pythonEnvManager == nullptr )
+        return;
+
+    const bool ready = m_pythonEnvManager->isReady();
+    if( m_detectedUvLabel != nullptr )
+        m_detectedUvLabel->setText( m_pythonEnvManager->uvDescription() );
+    if( m_environmentRootLabel != nullptr )
+        m_environmentRootLabel->setText( nativePath( m_pythonEnvManager->runtimeRoot() ) );
+    if( m_configuredDateLabel != nullptr )
+        m_configuredDateLabel->setText( ready ? m_pythonEnvManager->configuredDateText() : tr( "구성되지 않음" ) );
+    if( m_pythonExeLabel != nullptr )
+        m_pythonExeLabel->setText( nativePath( m_pythonEnvManager->pythonExe() ) );
+    if( m_sphinxBuildExeLabel != nullptr )
+        m_sphinxBuildExeLabel->setText( nativePath( m_pythonEnvManager->sphinxBuildExe() ) );
+    if( m_esbonioExeLabel != nullptr )
+        m_esbonioExeLabel->setText( nativePath( m_pythonEnvManager->esbonioExe() ) );
+    if( m_configurePythonButton != nullptr )
+        m_configurePythonButton->setText( ready ? tr( "재구성" ) : tr( "구성" ) );
 }

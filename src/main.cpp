@@ -14,7 +14,6 @@ int main( int argc, char* argv[] )
     QApplication::setOrganizationName( "myHouse" );
     QApplication::setApplicationVersion( "0.0.1" );
 
-
     do
     {
         // 저장된 테마 설정 복원 후 적용
@@ -25,8 +24,8 @@ int main( int argc, char* argv[] )
         }
         ThemeManager::instance().applyToApplication();
 
-        MainWindow window;
-        window.show();
+        MainWindow* window = new MainWindow;
+        window->show();
 
     } while( false );
 

@@ -14,7 +14,12 @@ public:
     explicit MainWindow( QWidget* parent = nullptr );
     ~MainWindow() override;
 
+public slots:
+    void                                onSettings();
+
 private:
+    void                                createMenus();
+
     QFileSystemModel*                   treLeftFolderTreeModel_ = nullptr;
 
     Ui::MainWindow                      Ui;

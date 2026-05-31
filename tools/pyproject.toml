@@ -1,0 +1,58 @@
+[project]
+name = "multiroot-rest-cpp"
+version = "0.1.0"
+description = "Multi-root Sphinx/reStructuredText editor using Esbonio, and Sphinx."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.7",
+    "Sphinx>=8,<=9",
+    "esbonio>=2,<3",
+    "charset-normalizer>=3.3",
+    "sphinx-rtd-theme",
+    "shibuya",
+    "sphinx-book-theme",
+    "pydata-sphinx-theme",
+    "piccolo-theme",
+    "sphinxawesome-theme",
+    "sphinx-bootstrap-theme",
+    "cloud-sptheme",
+    "groundwork-sphinx-theme",
+    "myst-parser>=5.1.0",
+    "sphinx-design>=0.7.0",
+    "furo>=2025.12.19",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+]
+build = [
+    "pyinstaller>=6.10",
+]
+
+[project.scripts]
+multiroot-rest = "multiroot_rest.app:main"
+multiroot-rest-scintilla-doctor = "multiroot_rest.cli:scintilla_doctor"
+multiroot-rest-qt-doctor = "multiroot_rest.cli:qt_doctor"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/multiroot_rest"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+markers = [
+    "slow: marks tests as slow/integration (deselect with '-m \"not slow\"')",
+]
+
+

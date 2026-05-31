@@ -39,6 +39,8 @@ add_executable(${PROJECT_NAME}
         src/MainWindow.hpp
         src/uis/mainWindow.ui
         src/MultiRoot-reST-CPP.qrc
+        src/core/solPythonEnvMgr.cpp
+        src/core/solPythonEnvMgr.hpp
         src/core/solThemeManager.cpp
         src/core/solThemeManager.hpp
         src/uis/dlgSettings.cpp
