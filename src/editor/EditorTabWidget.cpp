@@ -90,6 +90,16 @@ BaseEdit* EditorTabWidget::CurrentEditor() const
     return editorAt( currentIndex() );
 }
 
+void EditorTabWidget::SetRulerVisibleForAllEditors( bool Visible )
+{
+    for( int i = 0; i < count(); ++i )
+    {
+        BaseEdit* editor = editorAt( i );
+        if( editor )
+            editor->SetRulerVisible( Visible );
+    }
+}
+
 void EditorTabWidget::onCurrentChanged( int Index )
 {
     BaseEdit* editor = editorAt( Index );

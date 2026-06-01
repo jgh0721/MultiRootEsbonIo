@@ -27,6 +27,10 @@ public:
     bool                                IsOutlineAvailable() const;
     bool                                IsDiagnosticsAvailable() const;
 
+    void                                SetRulerVisible( bool Visible );
+    bool                                IsRulerVisible() const;
+    void                                RefreshRuler();
+
     void                                SetReadOnly( bool ReadOnly );
     bool                                IsReadOnly() const;
 
@@ -49,6 +53,7 @@ private:
     void                                setFilePath( const QString& FilePath );
 
     QScintillaEdit*                     m_scintilla = nullptr;
+    QWidget*                            m_rulerWidget = nullptr;
     QString                             m_filePath;
     QString                             m_normalizedFilePath;
     bool                                m_autoCompletionAvailable = false;

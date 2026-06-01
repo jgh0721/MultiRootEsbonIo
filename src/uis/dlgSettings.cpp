@@ -5,6 +5,8 @@
 
 namespace {
 
+constexpr auto kTextViewerShowRulerWidgetKey = "TextViewer/ShowRulerWidget";
+
 QString nativePath( const QString& path )
 {
     return QDir::toNativeSeparators( path );
@@ -52,7 +54,9 @@ QList<ShortcutItem> QSettingsDialog::DefaultShortcuts()
 void QSettingsDialog::on_btnOK_clicked( bool Checked )
 {
     Q_UNUSED( Checked )
+    saveTextViewerSettings();
     saveEsbonioSettings();
+    emit settingsApplied();
     accept();
 }
 
@@ -65,13 +69,20 @@ void QSettingsDialog::on_btnCancel_clicked( bool Checked )
 void QSettingsDialog::on_btnApply_clicked( bool Checked )
 {
     Q_UNUSED( Checked )
+    saveTextViewerSettings();
     saveEsbonioSettings();
     refreshEsbonioStatus();
+    emit settingsApplied();
 }
 
 QList<ShortcutItem> QSettingsDialog::LoadShortcutsFromSettings()
 {
     return DefaultShortcuts();
+}
+
+bool QSettingsDialog::IsTextViewerRulerWidgetVisible()
+{
+    return QSettings().value( QString::fromLatin1( kTextViewerShowRulerWidgetKey ), true ).toBool();
 }
 
 void QSettingsDialog::onResetShortcuts()
@@ -99,7 +110,7 @@ void QSettingsDialog::setupUi()
     Ui.lstCate->clear();
     Ui.lstCate->addItem( tr("공통") );
     Ui.lstCate->addItem( tr("단축키") );
-    Ui.lstCate->addItem( tr("코드 편집기") );
+    Ui.lstCate->addItem( tr("텍스트 뷰어") );
     Ui.lstCate->addItem( tr("Python/Esbonio") );
 
     Ui.stkWidget->addWidget( createGeneralPage() );
@@ -278,10 +289,32 @@ QWidget* QSettingsDialog::createEditorPage()
 {
     auto* page = new QWidget( this );
     auto* layout = new QVBoxLayout( page );
-    auto* label = new QLabel( tr( "코드 편집기 설정은 추후 추가될 예정입니다." ), page );
-    label->setAlignment( Qt::AlignCenter );
-    layout->addWidget( label, 1 );
+
+    auto* viewerGroup = new QGroupBox( tr( "텍스트 뷰어" ), page );
+    auto* viewerLayout = new QVBoxLayout( viewerGroup );
+    m_showRulerWidgetCheck = new QCheckBox( tr( "눈금자 위젯 표시" ), viewerGroup );
+    viewerLayout->addWidget( m_showRulerWidgetCheck );
+    viewerLayout->addStretch( 1 );
+
+    layout->addWidget( viewerGroup );
+    layout->addStretch( 1 );
+
+    loadTextViewerSettings();
     return page;
+}
+
+void QSettingsDialog::loadTextViewerSettings()
+{
+    if( m_showRulerWidgetCheck )
+        m_showRulerWidgetCheck->setChecked( IsTextViewerRulerWidgetVisible() );
+}
+
+void QSettingsDialog::saveTextViewerSettings()
+{
+    if( m_showRulerWidgetCheck == nullptr )
+        return;
+
+    QSettings().setValue( QString::fromLatin1( kTextViewerShowRulerWidgetKey ), m_showRulerWidgetCheck->isChecked() );
 }
 
 QWidget* QSettingsDialog::createEsbonioPage()

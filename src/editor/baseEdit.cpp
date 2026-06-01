@@ -1,6 +1,64 @@
 #include "stdafx.h"
 #include "baseEdit.hpp"
 
+namespace
+{
+    constexpr int kRulerHeight = 24;
+    constexpr int kRulerMajorStep = 10;
+    constexpr int kRulerMinorStep = 5;
+
+    class TextRulerWidget final : public QWidget
+    {
+    public:
+        explicit TextRulerWidget( BaseEdit* Owner )
+            : QWidget( Owner )
+            , m_owner( Owner )
+        {
+            setFixedHeight( kRulerHeight );
+            setSizePolicy( QSizePolicy::Expanding, QSizePolicy::Fixed );
+        }
+
+    protected:
+        void paintEvent( QPaintEvent* Event ) override
+        {
+            QWidget::paintEvent( Event );
+
+            QPainter painter( this );
+            painter.fillRect( rect(), palette().window() );
+            painter.setPen( palette().mid().color() );
+            painter.drawLine( rect().bottomLeft(), rect().bottomRight() );
+
+            const QScintillaEdit* scintilla = m_owner ? m_owner->Scintilla() : nullptr;
+            const int leftMarginWidth = scintilla ? scintilla->LeftMarginWidth() : 0;
+            const QWidget* editorWidget = scintilla ? scintilla->Editor() : nullptr;
+            const QFontMetrics metrics( editorWidget ? editorWidget->font() : font() );
+            const int charWidth = qMax( 1, metrics.horizontalAdvance( QLatin1Char( '0' ) ) );
+            const int xOffset = scintilla ? static_cast< int >( scintilla->Send( SCI_GETXOFFSET ) ) : 0;
+
+            painter.setPen( palette().text().color() );
+            for( int column = 0; ; ++column )
+            {
+                const int x = leftMarginWidth + column * charWidth - xOffset;
+                if( x >= width() )
+                    break;
+                if( x < leftMarginWidth - charWidth )
+                    continue;
+
+                const bool major = column % kRulerMajorStep == 0;
+                const bool minor = column % kRulerMinorStep == 0;
+                const int tickTop = major ? 4 : ( minor ? 10 : 14 );
+                painter.drawLine( x, tickTop, x, height() - 3 );
+
+                if( major )
+                    painter.drawText( x + 2, 2, 40, 12, Qt::AlignLeft | Qt::AlignVCenter, QString::number( column ) );
+            }
+        }
+
+    private:
+        BaseEdit* m_owner = nullptr;
+    };
+}
+
 BaseEdit::BaseEdit( QWidget* Parent )
     : QWidget( Parent )
     , m_scintilla( new QScintillaEdit( this, this ) )
@@ -8,6 +66,8 @@ BaseEdit::BaseEdit( QWidget* Parent )
     auto* layout = new QVBoxLayout( this );
     layout->setContentsMargins( 0, 0, 0, 0 );
     layout->setSpacing( 0 );
+    m_rulerWidget = new TextRulerWidget( this );
+    layout->addWidget( m_rulerWidget );
     layout->addWidget( m_scintilla->Editor() );
 
     connect( m_scintilla, &QScintillaEdit::modificationChanged, this, &BaseEdit::modificationChanged );
@@ -15,6 +75,10 @@ BaseEdit::BaseEdit( QWidget* Parent )
     connect( m_scintilla, &QScintillaEdit::linesChanged, this, &BaseEdit::linesChanged );
     connect( m_scintilla, &QScintillaEdit::textChanged, this, &BaseEdit::textChanged );
     connect( m_scintilla, &QScintillaEdit::selectionChanged, this, &BaseEdit::selectionChanged );
+    connect( m_scintilla, &QScintillaEdit::cursorPositionChanged, this, [this]( int, int ) { RefreshRuler(); } );
+    connect( m_scintilla, &QScintillaEdit::linesChanged, this, [this] { RefreshRuler(); } );
+
+    SetRulerVisible( QSettings().value( QStringLiteral( "TextViewer/ShowRulerWidget" ), true ).toBool() );
 }
 
 BaseEdit::~BaseEdit() = default;
@@ -135,6 +199,26 @@ bool BaseEdit::IsOutlineAvailable() const
 bool BaseEdit::IsDiagnosticsAvailable() const
 {
     return m_diagnosticsAvailable;
+}
+
+void BaseEdit::SetRulerVisible( bool Visible )
+{
+    if( m_rulerWidget == nullptr )
+        return;
+
+    m_rulerWidget->setVisible( Visible );
+    RefreshRuler();
+}
+
+bool BaseEdit::IsRulerVisible() const
+{
+    return m_rulerWidget != nullptr && m_rulerWidget->isVisible();
+}
+
+void BaseEdit::RefreshRuler()
+{
+    if( m_rulerWidget )
+        m_rulerWidget->update();
 }
 
 void BaseEdit::SetReadOnly( bool ReadOnly )

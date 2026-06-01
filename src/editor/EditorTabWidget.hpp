@@ -12,6 +12,7 @@ public:
     void                                InitializeEmpty();
     BaseEdit*                           OpenFile( const QString& FilePath );
     BaseEdit*                           CurrentEditor() const;
+    void                                SetRulerVisibleForAllEditors( bool Visible );
 
 signals:
     void                                activeEditorChanged( BaseEdit* editor );

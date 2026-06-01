@@ -15,6 +15,10 @@ public:
 
     static QList<ShortcutItem>          DefaultShortcuts();
     static QList<ShortcutItem>          LoadShortcutsFromSettings();
+    static bool                         IsTextViewerRulerWidgetVisible();
+
+signals:
+    void                                settingsApplied();
 
 private slots:
     void                                on_btnOK_clicked( bool Checked = false );
@@ -29,6 +33,8 @@ private:
     QWidget*                            createShortcutsPage();
     QWidget*                            createEditorPage();
     QWidget*                            createEsbonioPage();
+    void                                loadTextViewerSettings();
+    void                                saveTextViewerSettings();
     void                                loadEsbonioSettings();
     void                                saveEsbonioSettings();
     void                                refreshEsbonioStatus();
@@ -52,6 +58,7 @@ private:
     QTableWidget*                       m_shortcutTable = nullptr;
 
     /// 편집기 페이지
+    QCheckBox*                          m_showRulerWidgetCheck = nullptr;
 
     /// Python/Esbonio 페이지
     mrst::PythonEnvManager*             m_pythonEnvManager = nullptr;

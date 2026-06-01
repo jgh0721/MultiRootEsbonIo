@@ -38,6 +38,7 @@ MainWindow::MainWindow( QWidget* parent )
     connect( Ui.tabEditor, &EditorTabWidget::fileOpenFailed, this, [this]( const QString& filePath, const QString& reason ) {
         QMessageBox::warning( this, tr( "Open File" ), tr( "Failed to open '%1'.\n%2" ).arg( QDir::toNativeSeparators( filePath ), reason ) );
     } );
+    Ui.tabEditor->SetRulerVisibleForAllEditors( QSettingsDialog::IsTextViewerRulerWidgetVisible() );
 
     // editorTabs_->setTabsClosable(true);
     // editorTabs_->setMovable(true);
@@ -52,6 +53,9 @@ MainWindow::~MainWindow() = default;
 void MainWindow::onSettings()
 {
     QSettingsDialog dlg(this);
+    connect( &dlg, &QSettingsDialog::settingsApplied, this, [this] {
+        Ui.tabEditor->SetRulerVisibleForAllEditors( QSettingsDialog::IsTextViewerRulerWidgetVisible() );
+    } );
     // connect(&dlg, &QSettingsDialog::settingsApplied, this, [this] {
     //     // 단축키 즉시 적용
     //     const auto shortcuts = QSettingsDialog::loadShortcutsFromSettings();
@@ -59,7 +63,8 @@ void MainWindow::onSettings()
     //     // 열려있는 뷰어에 변경된 설정 적용
     //     applySettingsToAllViews();
     // });
-    dlg.exec();
+    if( dlg.exec() == QDialog::Accepted )
+        Ui.tabEditor->SetRulerVisibleForAllEditors( QSettingsDialog::IsTextViewerRulerWidgetVisible() );
 }
 
 void MainWindow::createMenus()
