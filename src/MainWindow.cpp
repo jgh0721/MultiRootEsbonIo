@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "MainWindow.hpp"
 
 #include "uis/dlgSettings.hpp"
@@ -69,6 +69,8 @@ void MainWindow::onSettings()
 
 void MainWindow::createMenus()
 {
+    auto* fileMenu = menuBar()->addMenu( tr( "파일(&F)" ) );
+
     auto* settingsMenu = menuBar()->addMenu(tr("설정(&S)"));
     auto* settingsAction = settingsMenu->addAction(tr("설정(&I)..."), this, &MainWindow::onSettings);
     settingsAction->setObjectName(QStringLiteral("app.settings"));

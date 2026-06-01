@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "uniqueLibs/solDocument_Defs.hpp"
 #include "ui_dlgSettings.h"
@@ -16,6 +16,7 @@ public:
     static QList<ShortcutItem>          DefaultShortcuts();
     static QList<ShortcutItem>          LoadShortcutsFromSettings();
     static bool                         IsTextViewerRulerWidgetVisible();
+    static void                         ApplyShortcutsToActions( const QList<ShortcutItem>& shortcuts, QWidget* topLevel );
 
 signals:
     void                                settingsApplied();
@@ -33,11 +34,20 @@ private:
     QWidget*                            createShortcutsPage();
     QWidget*                            createEditorPage();
     QWidget*                            createEsbonioPage();
+    void                                loadShortcuts();
+    void                                saveShortcuts();
     void                                loadTextViewerSettings();
     void                                saveTextViewerSettings();
     void                                loadEsbonioSettings();
     void                                saveEsbonioSettings();
     void                                refreshEsbonioStatus();
+    void                                populateThemeColorTable();
+    void                                populateThemeLexerCombo();
+    void                                applyThemeScopeFilter();
+    void                                applyThemePreview();
+    QHash<QString, QColor>              collectThemeColors() const;
+    void                                updateThemeColorButton( QPushButton* button, const QColor& color ) const;
+    void                                updateThemeColorItem( QTableWidgetItem* item, const QColor& color ) const;
 
     Ui::dlgSettings                     Ui;
 

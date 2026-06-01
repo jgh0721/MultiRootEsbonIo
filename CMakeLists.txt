@@ -10,7 +10,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOUIC_SEARCH_PATHS "${CMAKE_SOURCE_DIR}/src/uis")
 
-set(MRST_QT_ROOT "D:/Qt/6.11.0/msvc2022_64" CACHE PATH "Qt 6.11 MSVC 2022 root")
+#set(MRST_QT_ROOT "D:/Qt/6.11.1/msvc2022_64" CACHE PATH "Qt 6.11 MSVC 2022 root")
 set(MRST_SCINTILLA_ROOT "${CMAKE_SOURCE_DIR}/third_party/scintilla/scintilla" CACHE PATH "missdeer/scintilla source root")
 set(MRST_LEXILLA_ROOT "${CMAKE_SOURCE_DIR}/third_party/scintilla/lexilla" CACHE PATH "ScintillaOrg/lexilla source root")
 
@@ -18,7 +18,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 # ── Qt 경로 설정 ──────────────────────────────────────────
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    list(PREPEND CMAKE_PREFIX_PATH "${MRST_QT_ROOT}")
+#    list(PREPEND CMAKE_PREFIX_PATH "${MRST_QT_ROOT}")
 endif()
 
 # ── Qt 패키지 ─────────────────────────────────────────────
@@ -58,6 +58,10 @@ add_executable(${PROJECT_NAME}
         src/editor/markdownEdit.hpp
         src/editor/pythonEdit.cpp
         src/editor/pythonEdit.hpp
+        src/editor/FindReplaceWidget.cpp
+        src/editor/FindReplaceWidget.hpp
+        src/utils/FileLoadHelper.cpp
+        src/utils/FileLoadHelper.hpp
         uniqueLibs/solDocument_Defs.hpp
         uniqueLibs/solEncodingDetector.cpp
         uniqueLibs/solEncodingDetector.hpp

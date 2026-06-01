@@ -1,0 +1,39 @@
+{
+  "version": 8,
+  
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+
+  "configurePresets": [
+    {
+      "name": "base-msvc-x64",
+      "hidden": true,
+      "toolset": {
+        "value": "v143,host=x64",
+        "strategy": "external"
+      },
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      }
+    },
+    {
+      "name": "Debug",
+      "displayName": "Debug",
+      "inherits": "base-msvc-x64",
+      "binaryDir": "${sourceDir}/_build/${presetName}",
+      "generator": "Visual Studio 17 2022"
+    },
+    {
+      "name": "Release",
+      "displayName": "Release",
+      "inherits": "base-msvc-x64",
+      "binaryDir": "${sourceDir}/_build/${presetName}",
+      "generator": "Visual Studio 17 2022"
+    }
+  ]
+}
+  

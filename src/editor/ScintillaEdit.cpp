@@ -1,5 +1,7 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "ScintillaEdit.hpp"
+
+#include "core/solThemeManager.hpp"
 
 #include <Scintilla.h>
 #include <ILexer.h>
@@ -152,6 +154,12 @@ QByteArray QScintillaEdit::Text() const
     return buffer;
 }
 
+void QScintillaEdit::Copy()
+{
+    if( m_editor )
+        (void)m_editor->send( SCI_COPY );
+}
+
 int QScintillaEdit::GetLineCount() const
 {
     return m_editor ? static_cast< int >( m_editor->send( SCI_GETLINECOUNT ) ) : 0;
@@ -228,6 +236,168 @@ void QScintillaEdit::SetSelectionByPos( int startPos, int endPos )
     emitCursorAndSelectionState();
 }
 
+int QScintillaEdit::SelectionStartPos() const
+{
+    if( !m_editor ) return 0;
+    return static_cast< int >( m_editor->send( SCI_GETSELECTIONSTART ) );
+}
+
+int QScintillaEdit::SelectionEndPos() const
+{
+    if( !m_editor ) return 0;
+    return static_cast< int >( m_editor->send( SCI_GETSELECTIONEND ) );
+}
+
+void QScintillaEdit::SetCursorPosition( int line, int index )
+{
+    if( !m_editor )
+        return;
+
+    const sptr_t maxLine = qMax<sptr_t>( 0, static_cast< sptr_t >( GetLineCount() - 1 ) );
+    const sptr_t safeLine = qMax<sptr_t>( 0, qMin<sptr_t>( static_cast< sptr_t >( line ), maxLine ) );
+    const sptr_t safeIndex = qMax<sptr_t>( 0, static_cast< sptr_t >( index ) );
+    const sptr_t position = nsDetail::positionFromLineIndex( m_editor, static_cast< int >( safeLine ), static_cast< int >( safeIndex ) );
+    m_editor->send( SCI_SETEMPTYSELECTION, position );
+    m_editor->send( SCI_SCROLLCARET );
+    updateBraceHighlight();
+    emitCursorAndSelectionState();
+}
+
+bool QScintillaEdit::FindFirst( const QString& text, bool regex, bool caseSensitive, bool wholeWords, bool wrap, bool forward )
+{
+    if( !m_editor || text.isEmpty() )
+        return false;
+
+    int flags = 0;
+    if( caseSensitive )
+        flags |= SCFIND_MATCHCASE;
+    if( wholeWords )
+        flags |= SCFIND_WHOLEWORD;
+    if( regex )
+        flags |= SCFIND_CXX11REGEX;
+
+    int lineFrom = 0;
+    int indexFrom = 0;
+    int lineTo = 0;
+    int indexTo = 0;
+    if( GetSelectionRange( lineFrom, indexFrom, lineTo, indexTo ) )
+        SetSelectionRange( forward ? lineTo : lineFrom,
+                      forward ? indexTo : indexFrom,
+                      forward ? lineTo : lineFrom,
+                      forward ? indexTo : indexFrom );
+    else
+        m_editor->send( SCI_SETEMPTYSELECTION, m_editor->send( SCI_GETCURRENTPOS ) );
+
+    const QByteArray needle = text.toUtf8();
+    m_editor->send( SCI_SETSEARCHFLAGS, flags );
+    m_editor->send( SCI_SEARCHANCHOR );
+
+    const int message = forward ? SCI_SEARCHNEXT : SCI_SEARCHPREV;
+    if( m_editor->sends( message, flags, needle.constData() ) != -1 )
+    {
+        m_editor->send( SCI_SCROLLCARET );
+        return true;
+    }
+
+    if( !wrap )
+        return false;
+
+    const sptr_t wrapPosition = forward ? 0 : m_editor->send( SCI_GETLENGTH );
+    m_editor->send( SCI_SETEMPTYSELECTION, wrapPosition );
+    m_editor->send( SCI_SEARCHANCHOR );
+    if( m_editor->sends( message, flags, needle.constData() ) == -1 )
+        return false;
+
+    m_editor->send( SCI_SCROLLCARET );
+    return true;
+}
+
+void QScintillaEdit::Replace( const QString& replacement )
+{
+    if( !m_editor )
+        return;
+
+    const QByteArray utf8 = replacement.toUtf8();
+    m_editor->sends( SCI_REPLACESEL, 0, utf8.constData() );
+}
+
+int QScintillaEdit::CountMatches( const QString& text, bool regex, bool caseSensitive, bool wholeWords )
+{
+    if( !m_editor || text.isEmpty() )
+        return 0;
+
+    return CountMatchesInRange( text, regex, caseSensitive, wholeWords,
+                                0, static_cast< int >( m_editor->send( SCI_GETLENGTH ) ) );
+}
+
+int QScintillaEdit::CountMatchesInRange( const QString& text, bool regex, bool caseSensitive, bool wholeWords, int startPos, int endPos )
+{
+    if( !m_editor || text.isEmpty() || startPos >= endPos )
+        return 0;
+
+    int flags = 0;
+    if( caseSensitive ) flags |= SCFIND_MATCHCASE;
+    if( wholeWords )    flags |= SCFIND_WHOLEWORD;
+    if( regex )         flags |= SCFIND_CXX11REGEX;
+
+    const QByteArray needle = text.toUtf8();
+    int count = 0;
+    int searchStart = startPos;
+
+    while( searchStart < endPos )
+    {
+        m_editor->send( SCI_SETTARGETSTART, searchStart );
+        m_editor->send( SCI_SETTARGETEND, endPos );
+        m_editor->send( SCI_SETSEARCHFLAGS, flags );
+        const sptr_t pos = m_editor->sends( SCI_SEARCHINTARGET,
+                                           static_cast< sptr_t >( needle.size() ),
+                                           needle.constData() );
+        if( pos < 0 )
+            break;
+        ++count;
+        const int matchEnd = static_cast< int >( m_editor->send( SCI_GETTARGETEND ) );
+        searchStart = qMax( matchEnd, searchStart + 1 );
+    }
+    return count;
+}
+void QScintillaEdit::SetSearchTargetRange( int startPos, int endPos )
+{
+    if( !m_editor ) return;
+    m_editor->send( SCI_SETTARGETSTART, startPos );
+    m_editor->send( SCI_SETTARGETEND, endPos );
+}
+
+int QScintillaEdit::SearchInTarget( const QString& text, int flags )
+{
+    if( !m_editor ) 
+        return -1;
+    m_editor->send( SCI_SETSEARCHFLAGS, flags );
+    const QByteArray utf8 = text.toUtf8();
+    return static_cast< int >( m_editor->sends( SCI_SEARCHINTARGET, utf8.size(), utf8.constData() ) );
+}
+
+int QScintillaEdit::TargetEnd() const
+{
+    if( !m_editor ) 
+        return -1;
+    return static_cast< int >( m_editor->send( SCI_GETTARGETEND ) );
+}
+
+void QScintillaEdit::ReplaceInTarget( const QString& text )
+{
+    if( !m_editor ) 
+        return;
+    const QByteArray utf8 = text.toUtf8();
+    m_editor->sends( SCI_REPLACETARGET, utf8.size(), utf8.constData() );
+}
+
+int QScintillaEdit::DocumentLength() const
+{
+    if( !m_editor ) 
+        return 0;
+    return static_cast< int >( m_editor->send( SCI_GETLENGTH ) );
+}
+
 int QScintillaEdit::RowHeight( int Line ) const
 {
     return m_editor ? static_cast< int >( m_editor->send( SCI_TEXTHEIGHT, Line ) ) : 0;
@@ -261,6 +431,151 @@ void QScintillaEdit::SetLingEnding( Scintilla::EndOfLine Type, bool ConvertExist
 int QScintillaEdit::ChangeHistoryFlags() const
 {
     return m_editor ? static_cast< int >( m_editor->send( SCI_GETCHANGEHISTORY ) ) : 0;
+}
+
+void QScintillaEdit::SetIndicatorStyle( int indicatorId, int style, const QColor& color )
+{
+    if( !m_editor )
+        return;
+    m_editor->send( SCI_INDICSETSTYLE, indicatorId, style );
+    const int sciColor = color.red() | ( color.green() << 8 ) | ( color.blue() << 16 );
+    m_editor->send( SCI_INDICSETFORE, indicatorId, sciColor );
+    m_editor->send( SCI_INDICSETALPHA, indicatorId, color.alpha() );
+    m_editor->send( SCI_INDICSETOUTLINEALPHA, indicatorId, qMax( color.alpha(), 160 ) );
+}
+
+void QScintillaEdit::ApplyIndicator( int indicatorId, int startPos, int length )
+{
+    if( !m_editor || length <= 0 )
+        return;
+    m_editor->send( SCI_SETINDICATORCURRENT, indicatorId );
+    m_editor->send( SCI_INDICATORFILLRANGE, startPos, length );
+}
+
+void QScintillaEdit::ClearIndicator( int indicatorId, int startPos, int length )
+{
+    if( !m_editor || length <= 0 )
+        return;
+    m_editor->send( SCI_SETINDICATORCURRENT, indicatorId );
+    m_editor->send( SCI_INDICATORCLEARRANGE, startPos, length );
+}
+
+void QScintillaEdit::ClearAllIndicator( int indicatorId )
+{
+    if( !m_editor )
+        return;
+    const int docLen = static_cast< int >( m_editor->send( SCI_GETLENGTH ) );
+    ClearIndicator( indicatorId, 0, docLen );
+}
+
+void QScintillaEdit::ApplyThemeColors( bool dark )
+{
+    if( !m_editor )
+        return;
+
+    Q_UNUSED( dark );
+    auto colourToSci = []( const QColor& color ) -> sptr_t {
+        return static_cast< sptr_t >( color.red() | ( color.green() << 8 ) | ( color.blue() << 16 ) );
+        };
+
+    auto& theme = ThemeManager::instance();
+    const QColor bg = theme.color( QStringLiteral( "text.background" ) );
+    const QColor fg = theme.color( QStringLiteral( "text.foreground" ) );
+    const QColor marginBg = theme.color( QStringLiteral( "text.marginBackground" ) );
+    const QColor marginFg = theme.color( QStringLiteral( "text.marginForeground" ) );
+    const QColor selection = theme.color( QStringLiteral( "text.selection" ) );
+    const QColor selectionForeground = theme.color( QStringLiteral( "text.selectionForeground" ) );
+    const QColor caretLine = theme.color( QStringLiteral( "text.currentLine" ) );
+    const QColor caret = theme.color( QStringLiteral( "text.caret" ) );
+    const QColor foldMarker = theme.color( QStringLiteral( "text.foldMarker" ) );
+    const QColor indentGuide = theme.color( QStringLiteral( "text.indentGuide" ) );
+
+    m_editor->send( SCI_STYLESETFORE, STYLE_DEFAULT, colourToSci( fg ) );
+    m_editor->send( SCI_STYLESETBACK, STYLE_DEFAULT, colourToSci( bg ) );
+    m_editor->send( SCI_STYLECLEARALL );
+    m_editor->send( SCI_STYLESETFORE, STYLE_INDENTGUIDE, colourToSci( indentGuide ) );
+    m_editor->send( SCI_STYLESETBACK, STYLE_INDENTGUIDE, colourToSci( bg ) );
+
+    m_editor->send( SCI_STYLESETFORE, STYLE_LINENUMBER, colourToSci( marginFg ) );
+    m_editor->send( SCI_STYLESETBACK, STYLE_LINENUMBER, colourToSci( marginBg ) );
+
+    m_editor->send( SCI_SETCARETFORE, colourToSci( caret ) );
+    m_editor->send( SCI_SETCARETLINEVISIBLEALWAYS, 1 );
+    m_editor->send( SCI_SETCARETLINEBACK, colourToSci( caretLine ) );
+
+    m_editor->send( SCI_SETSELBACK, 1, colourToSci( selection ) );
+    m_editor->send( SCI_SETSELECTIONLAYER, SC_LAYER_UNDER_TEXT );
+    m_editor->send( SCI_SETSELALPHA, selection.alpha() > 0 ? selection.alpha() : 112 );
+    m_editor->send( SCI_SETSELFORE, 0, colourToSci( selectionForeground ) );
+
+    m_editor->send( SCI_SETFOLDMARGINCOLOUR, 1, colourToSci( bg ) );
+    m_editor->send( SCI_SETFOLDMARGINHICOLOUR, 1, colourToSci( bg ) );
+    for( int marker = SC_MARKNUM_FOLDEREND; marker <= SC_MARKNUM_FOLDEROPEN; ++marker )
+    {
+        m_editor->send( SCI_MARKERSETFORE, marker, colourToSci( bg ) );
+        m_editor->send( SCI_MARKERSETBACK, marker, colourToSci( foldMarker ) );
+    }
+
+    // 현재 언어의 구문 강조 색상 적용
+    m_darkTheme = ThemeManager::instance().currentTheme() == ThemeManager::Dark;
+    configureBraceHighlightIndicators();
+    applySyntaxStyles( m_darkTheme );
+    m_editor->update();
+}
+
+void QScintillaEdit::ScrollRangeToView( int startPos, int endPos )
+{
+    if( !m_editor )
+        return;
+
+    const sptr_t start = qMax<sptr_t>( 0, static_cast< sptr_t >( startPos ) );
+    const sptr_t end = qMax( start, static_cast< sptr_t >( endPos ) );
+    m_editor->send( SCI_SCROLLRANGE, start, end );
+}
+
+void QScintillaEdit::configureBraceHighlightIndicators()
+{
+    if( !m_editor )
+        return;
+
+    auto colourToSci = []( const QColor& color ) -> sptr_t {
+        return static_cast< sptr_t >( color.red() | ( color.green() << 8 ) | ( color.blue() << 16 ) );
+        };
+
+    Q_UNUSED( m_darkTheme );
+    const QColor matchColor = ThemeManager::instance().color( QStringLiteral( "text.braceMatch" ) );
+    const QColor badColor = ThemeManager::instance().color( QStringLiteral( "text.braceMismatch" ) );
+
+    // 괄호 매칭은 글자를 덮지 않도록 채움 없는 outline indicator로 표시한다.
+    m_editor->send( SCI_INDICSETSTYLE, nsDetail::kBraceHighlightIndicatorId, INDIC_STRAIGHTBOX );
+    m_editor->send( SCI_INDICSETFORE, nsDetail::kBraceHighlightIndicatorId, colourToSci( matchColor ) );
+    m_editor->send( SCI_INDICSETALPHA, nsDetail::kBraceHighlightIndicatorId, 0 );
+    m_editor->send( SCI_INDICSETOUTLINEALPHA, nsDetail::kBraceHighlightIndicatorId, qMax( matchColor.alpha(), 220 ) );
+
+    m_editor->send( SCI_INDICSETSTYLE, nsDetail::kBraceBadLightIndicatorId, INDIC_SQUIGGLE );
+    m_editor->send( SCI_INDICSETFORE, nsDetail::kBraceBadLightIndicatorId, colourToSci( badColor ) );
+    m_editor->send( SCI_INDICSETALPHA, nsDetail::kBraceBadLightIndicatorId, badColor.alpha() );
+    m_editor->send( SCI_INDICSETOUTLINEALPHA, nsDetail::kBraceBadLightIndicatorId, badColor.alpha() );
+
+    m_editor->send( SCI_BRACEHIGHLIGHTINDICATOR, 1, nsDetail::kBraceHighlightIndicatorId );
+    m_editor->send( SCI_BRACEBADLIGHTINDICATOR, 1, nsDetail::kBraceBadLightIndicatorId );
+}
+
+void QScintillaEdit::updateLineNumberMargin( int minimumDigits )
+{
+    if( !m_editor )
+        return;
+
+    if( minimumDigits <= 0 )
+    {
+        m_editor->send( SCI_SETMARGINWIDTHN, 0, 0 );
+        return;
+    }
+
+    const int digits = qMax( minimumDigits, QString::number( qMax( 1, GetLineCount() ) ).size() );
+    const QFontMetrics metrics( m_editorMarginFont.resolve( m_editor->font() ) );
+    const int width = metrics.horizontalAdvance( QString( digits, QLatin1Char( '9' ) ) ) + 12;
+    m_editor->send( SCI_SETMARGINWIDTHN, 0, width );
 }
 
 void QScintillaEdit::emitCursorAndSelectionState()
@@ -318,4 +633,8 @@ void QScintillaEdit::updateBraceHighlight()
 
     m_editor->send( SCI_BRACEBADLIGHT, nsDetail::kInvalidPosition );
     m_editor->send( SCI_BRACEHIGHLIGHT, bracePos, matchPos );
+}
+
+void QScintillaEdit::applySyntaxStyles( bool dark )
+{
 }

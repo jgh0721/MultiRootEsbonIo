@@ -1,0 +1,45 @@
+{
+  "version": 8,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "Debug",
+      "inherits": "Debug",
+      "override": true,
+      "environment": {
+        "V143_MSVC_ROOT": "C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC/14.44.35207"
+      },
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "D:/Qt/6.11.1/msvc2022_64"
+      }
+    },
+    {
+      "name": "Release",
+      "inherits": "Release",
+      "override": true,
+      "environment": {
+        "V143_MSVC_ROOT": "C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC/14.44.35207"
+      },
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "D:/Qt/6.11.1/msvc2022_64"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "Debug",
+      "configurePreset": "Debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "Release",
+      "configurePreset": "Release",
+      "configuration": "Release"
+    }
+  ]
+}
+  
