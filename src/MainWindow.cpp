@@ -7,6 +7,7 @@
 #include "core/solShadowBackupStore.hpp"
 #include "editor/QBaseEditor.hpp"
 #include "uis/dlgSettings.hpp"
+#include "utils/DwmTitleBar.hpp"
 
 #include <QActionGroup>
 #include <QMenuBar>
@@ -803,10 +804,10 @@ void MainWindow::applyThemeToView( QBaseView* view ) const
     if( !view )
         return;
 
-    //const auto theme = ThemeManager::instance().currentTheme() == ThemeManager::Dark
-    //    ? QBaseView::Dark
-    //    : QBaseView::Light;
-    //view->setTheme( theme );
+    const auto theme = ThemeManager::instance().currentTheme() == ThemeManager::Dark
+        ? QBaseView::Theme::Dark
+        : QBaseView::Theme::Light;
+    view->setTheme( theme );
 
     //if( auto* markdownView = qobject_cast< QMarkdownView* >( view ) )
     //    markdownView->refreshPreview();
@@ -814,21 +815,21 @@ void MainWindow::applyThemeToView( QBaseView* view ) const
 
 void MainWindow::applyCurrentTheme()
 {
-    //auto& themeManager = ThemeManager::instance();
-    //DwmTitleBar::applyTheme( this,
-    //                        themeManager.currentTheme() == ThemeManager::Dark,
-    //                        themeManager.toolBarColor() );
+    auto& themeManager = ThemeManager::instance();
+    DwmTitleBar::applyTheme( this,
+                            themeManager.currentTheme() == ThemeManager::Dark,
+                            themeManager.toolBarColor() );
 
-    //for( int i = 0; i < m_tabWidget->count(); ++i )
-    //{
-    //    if( auto* view = qobject_cast< QBaseView* >( m_tabWidget->widget( i ) ) )
-    //    {
-    //        applyThemeToView( view );
-    //        updateTabDecoration( view );
-    //    }
-    //}
+    for( int i = 0; i < m_tabWidget->count(); ++i )
+    {
+        if( auto* view = qobject_cast< QBaseView* >( m_tabWidget->widget( i ) ) )
+        {
+            applyThemeToView( view );
+            updateTabDecoration( view );
+        }
+    }
 
-    //updateViewerToolBar();
+    updateViewerToolBar();
     //ToolbarIcons::refreshToolBar( m_mainToolBar );
     //ToolbarIcons::refreshToolBar( m_viewerToolBar );
     //ToolbarIcons::refreshToolBar( m_viewerAuxToolBar );
@@ -872,15 +873,15 @@ void MainWindow::applyPersistedViewSettings( QBaseView* view )
     //        imageView->setPenColor( drawColor );
     //    imageView->setPenWidth( qBound( 1, s.value( "image/drawWidth", 2 ).toInt(), 20 ) );
     //}
-    //else if( auto* textView = qobject_cast< QTextView* >( view ) )
-    //{
-    //    // 텍스트 뷰어는 자체적으로 loadPersistedEditorPreferences()를 호출하므로
-    //    // 여기서는 글꼴과 행간 등 추가 설정만 적용
-    //    const QString fontFamily = s.value( "textView/fontFamily", "Consolas" ).toString();
-    //    const int fontSize = qBound( 6, s.value( "textView/fontSize", 10 ).toInt(), 72 );
-    //    textView->setEditorFont( QFont( fontFamily, fontSize ) );
-    //    textView->setLineSpacingScale( qBound( 1.0, s.value( "textView/lineSpacing", 1.1 ).toDouble(), 3.0 ) );
-    //}
+    /* else */ if( auto* textView = qobject_cast< QTextView* >( view ) )
+    {
+        // 텍스트 뷰어는 자체적으로 loadPersistedEditorPreferences()를 호출하므로
+        // 여기서는 글꼴과 행간 등 추가 설정만 적용
+        const QString fontFamily = s.value( "textView/fontFamily", "Consolas" ).toString();
+        const int fontSize = qBound( 6, s.value( "textView/fontSize", 10 ).toInt(), 72 );
+        textView->setEditorFont( QFont( fontFamily, fontSize ) );
+        textView->setLineSpacingScale( qBound( 1.0, s.value( "textView/lineSpacing", 1.1 ).toDouble(), 3.0 ) );
+    }
 }
 
 void MainWindow::applySettingsToAllViews()
@@ -945,19 +946,19 @@ int MainWindow::addViewTab( QBaseView* view )
     m_tabWidget->setCurrentIndex( idx );
     updateTabDecoration( view );
 
-    //connect( view, &QBaseView::titleChanged, this, [this, view]( const QString& title ) {
-    //    const int i = m_tabWidget ? m_tabWidget->indexOf( view ) : -1;
-    //    if( i >= 0 )
-    //        updateTabDecoration( view );
-    //    if( currentView() == view )
-    //        updateTitle();
-    //} );
+    connect( view, &QBaseView::sigTitleChanged, this, [this, view]( const QString& title ) {
+        const int i = m_tabWidget ? m_tabWidget->indexOf( view ) : -1;
+        if( i >= 0 )
+            updateTabDecoration( view );
+        if( currentView() == view )
+            updateTitle();
+    } );
 
-    //connect( view, &QBaseView::modifiedChanged, this, [this, view]( bool ) {
-    //    updateTabDecoration( view );
-    //    if( currentView() == view )
-    //        updateTitle();
-    //} );
+    connect( view, &QBaseView::sigModifiedChanged, this, [this, view]( bool ) {
+        updateTabDecoration( view );
+        if( currentView() == view )
+            updateTitle();
+    } );
 
     connectViewStatusSignals( view );
 
@@ -1037,14 +1038,14 @@ void MainWindow::connectViewStatusSignals( QBaseView* view )
         return;
     view->setProperty( "mv_statusSignalsConnected", true );
 
-    //connect( view, &QBaseView::loadingStateChanged, this,
-    //        [this, view]( bool active, const QString& message, int value, int maximum ) {
-    //            setViewLoadingState( view, active, message, value, maximum );
-    //        } );
-    //connect( view, &QObject::destroyed, this, [this, view] {
-    //    m_activeViewLoads.remove( view );
-    //    refreshLoadingIndicator();
-    //} );
+    connect( view, &QBaseView::sigLoadingStateChanged, this,
+            [this, view]( bool active, const QString& message, int value, int maximum ) {
+                setViewLoadingState( view, active, message, value, maximum );
+            } );
+    connect( view, &QObject::destroyed, this, [this, view] {
+        m_activeViewLoads.remove( view );
+        refreshLoadingIndicator();
+    } );
 
     //connect( view, &QBaseView::copyAvailabilityChanged, this, [this, view]( bool ) {
     //    if( currentView() == view )
@@ -1063,21 +1064,21 @@ void MainWindow::connectViewStatusSignals( QBaseView* view )
     //    } );
     //}
 
-    //if( auto* textView = qobject_cast< QTextView* >( view ) )
-    //{
-    //    connect( textView, &QTextView::statusChanged, this, [this, textView] {
-    //        if( currentView() == textView )
-    //            updateStatusBar();
-    //    } );
-    //    connect( textView, &QTextView::encodingChanged, this, [this, textView] {
-    //        if( currentView() == textView )
-    //            updateStatusBar();
-    //    } );
-    //    connect( textView, &QTextView::languageChanged, this, [this, textView] {
-    //        if( currentView() == textView )
-    //            updateStatusBar();
-    //    } );
-    //}
+    if( auto* textView = qobject_cast< QTextView* >( view ) )
+    {
+        connect( textView, &QTextView::statusChanged, this, [this, textView] {
+            if( currentView() == textView )
+                updateStatusBar();
+        } );
+        connect( textView, &QTextView::encodingChanged, this, [this, textView] {
+            if( currentView() == textView )
+                updateStatusBar();
+        } );
+        connect( textView, &QTextView::languageChanged, this, [this, textView] {
+            if( currentView() == textView )
+                updateStatusBar();
+        } );
+    }
 }
 
 bool MainWindow::canPasteClipboardImage() const
@@ -1111,6 +1112,7 @@ bool MainWindow::canPasteClipboardImageInCurrentContext() const
         return true;
 
     QBaseView* view = currentView();
+    return qobject_cast< QTextView* >( view );
     //return qobject_cast< QImageView* >( view )
     //    || qobject_cast< QPDFView* >( view )
     //    || qobject_cast< QTextView* >( view )
@@ -1121,6 +1123,7 @@ bool MainWindow::canPasteClipboardImageInCurrentContext() const
 bool MainWindow::shouldConfirmClipboardImageOpen() const
 {
     QBaseView* view = currentView();
+    return qobject_cast< QTextView* >( view );
     //return qobject_cast< QPDFView* >( view )
     //    || qobject_cast< QTextView* >( view )
     //    || qobject_cast< QMarkdownView* >( view );
@@ -1263,14 +1266,14 @@ void MainWindow::onFileNew()
     if( !promptNewFileTarget( this, &target ) )
         return;
 
-    //if( target == NewFileTarget::Text )
-    //{
-    //    auto* view = new QTextView( this );
-    //    applyPersistedViewSettings( view );
-    //    applyThemeToView( view );
-    //    addViewTab( view );
-    //    return;
-    //}
+    if( target == NewFileTarget::Text )
+    {
+        auto* view = new QTextView( this );
+        applyPersistedViewSettings( view );
+        applyThemeToView( view );
+        addViewTab( view );
+        return;
+    }
 
     //auto* view = new QImageView( this );
     //applyPersistedViewSettings( view );
@@ -1318,8 +1321,8 @@ bool MainWindow::saveView( QBaseView* view, bool saveAs )
         return false;
 
     bool started = false;
-    //if( auto* textView = qobject_cast< QTextView* >( view ) )
-    //    started = saveAs ? textView->saveFileAs() : textView->saveFile( {} );
+    if( auto* textView = qobject_cast< QTextView* >( view ) )
+        started = saveAs ? textView->saveFileAs() : textView->saveFile( {} );
     //else if( auto* markdownView = qobject_cast< QMarkdownView* >( view ) )
     //    started = saveAs ? markdownView->saveFileAs() : markdownView->saveFile( {} );
     //else if( auto* imageView = qobject_cast< QImageView* >( view ) )
@@ -1335,10 +1338,10 @@ bool MainWindow::saveView( QBaseView* view, bool saveAs )
 
 void MainWindow::onCopy()
 {
-    //if( auto* v = currentView() )
-    //    v->copySelection();
+    if( auto* v = currentView() )
+        v->copySelectionToClipboard();
 
-    //updateCopyActionState();
+    updateCopyActionState();
 }
 
 void MainWindow::updateSaveActionState()
@@ -1422,86 +1425,86 @@ void MainWindow::onCloseTab( int index )
 {
     if( index < 0 || !m_tabWidget || index >= m_tabWidget->count() ) return;
 
-    //QWidget* widget = m_tabWidget->widget( index );
-    //if( auto* view = qobject_cast< QBaseView* >( widget ) )
-    //{
-    //    if( m_activeViewLoads.contains( view ) )
-    //    {
-    //        cancelLoadingView( view, false );
-    //        return;
-    //    }
-    //    if( view->isModified() && canCloseWithTextHotExit( view ) )
-    //    {
-    //        if( auto* textView = qobject_cast< QTextView* >( view ) )
-    //            textView->flushHotExitBackup();
-    //    }
-    //    else if( view->isModified() )
-    //    {
-    //        auto btn = QMessageBox::question( this, tr( "저장 확인" ),
-    //            tr( "변경사항이 있습니다. 저장하시겠습니까?" ),
-    //            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel );
-    //        if( btn == QMessageBox::Cancel ) return;
-    //        if( btn == QMessageBox::Yes )
-    //        {
-    //            if( !saveView( view, true ) )
-    //                return;
-    //            if( view->isLoading() )
-    //            {
-    //                statusBar()->showMessage( tr( "저장이 진행 중입니다. 저장 완료 후 다시 탭을 닫아 주세요." ), 3000 );
-    //                refreshCurrentViewUi();
-    //                return;
-    //            }
-    //        }
-    //    }
-    //    teardownView( view );
-    //}
-    //else
-    //{
-    //    const QSignalBlocker blocker( m_tabWidget );
-    //    m_tabWidget->removeTab( index );
-    //    widget->deleteLater();
-    //}
+    QWidget* widget = m_tabWidget->widget( index );
+    if( auto* view = qobject_cast< QBaseView* >( widget ) )
+    {
+        if( m_activeViewLoads.contains( view ) )
+        {
+            cancelLoadingView( view, false );
+            return;
+        }
+        if( view->isModified() && canCloseWithTextHotExit( view ) )
+        {
+            if( auto* textView = qobject_cast< QTextView* >( view ) )
+                textView->flushHotExitBackup();
+        }
+        else if( view->isModified() )
+        {
+            auto btn = QMessageBox::question( this, tr( "저장 확인" ),
+                tr( "변경사항이 있습니다. 저장하시겠습니까?" ),
+                QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel );
+            if( btn == QMessageBox::Cancel ) return;
+            if( btn == QMessageBox::Yes )
+            {
+                if( !saveView( view, true ) )
+                    return;
+                if( view->isLoading() )
+                {
+                    statusBar()->showMessage( tr( "저장이 진행 중입니다. 저장 완료 후 다시 탭을 닫아 주세요." ), 3000 );
+                    refreshCurrentViewUi();
+                    return;
+                }
+            }
+        }
+        teardownView( view );
+    }
+    else
+    {
+        const QSignalBlocker blocker( m_tabWidget );
+        m_tabWidget->removeTab( index );
+        widget->deleteLater();
+    }
 
     refreshCurrentViewUi();
 }
 
 void MainWindow::closeEvent( QCloseEvent* event )
 {
-    //if( m_tabWidget )
-    //{
-    //    for( int i = 0; i < m_tabWidget->count(); ++i )
-    //    {
-    //        QWidget* widget = m_tabWidget->widget( i );
-    //        if( auto* view = qobject_cast< QBaseView* >( widget ) )
-    //        {
-    //            if( view->isModified() && canCloseWithTextHotExit( view ) )
-    //            {
-    //                if( auto* textView = qobject_cast< QTextView* >( view ) )
-    //                    textView->flushHotExitBackup();
-    //            }
-    //            else if( view->isModified() )
-    //            {
-    //                m_tabWidget->setCurrentIndex( i );
-    //                auto btn = QMessageBox::question( this, tr( "저장 확인" ),
-    //                    tr( "변경사항이 있습니다. 저장하시겠습니까?\n%1" ).arg( QFileInfo( view->currentFilePath() ).fileName() ),
-    //                    QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel );
-    //                if( btn == QMessageBox::Cancel )
-    //                {
-    //                    event->ignore();
-    //                    return;
-    //                }
-    //                if( btn == QMessageBox::Yes )
-    //                {
-    //                    if( !saveView( view, true ) )
-    //                    {
-    //                        event->ignore();
-    //                        return;
-    //                    }
-    //                }
-    //            }
-    //        }
-    //    }
-    //}
+    if( m_tabWidget )
+    {
+        for( int i = 0; i < m_tabWidget->count(); ++i )
+        {
+            QWidget* widget = m_tabWidget->widget( i );
+            if( auto* view = qobject_cast< QBaseView* >( widget ) )
+            {
+                if( view->isModified() && canCloseWithTextHotExit( view ) )
+                {
+                    if( auto* textView = qobject_cast< QTextView* >( view ) )
+                        textView->flushHotExitBackup();
+                }
+                else if( view->isModified() )
+                {
+                    m_tabWidget->setCurrentIndex( i );
+                    auto btn = QMessageBox::question( this, tr( "저장 확인" ),
+                        tr( "변경사항이 있습니다. 저장하시겠습니까?\n%1" ).arg( QFileInfo( view->currentFilePath() ).fileName() ),
+                        QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel );
+                    if( btn == QMessageBox::Cancel )
+                    {
+                        event->ignore();
+                        return;
+                    }
+                    if( btn == QMessageBox::Yes )
+                    {
+                        if( !saveView( view, true ) )
+                        {
+                            event->ignore();
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     shutdownUi();
     QMainWindow::closeEvent( event );
@@ -1606,42 +1609,42 @@ void MainWindow::updateStatusBar()
     //            .arg( viewModeText );
     //    }
     //}
-    //else if( auto* tv = qobject_cast< QTextView* >( v ) )
-    //{
-    //    const QString language = tv->currentLanguage().isEmpty() ? tr( "None" ) : tv->currentLanguage();
-    //    const int selectionLength = tv->selectedCharacterCount();
-    //    const QString modeText = tv->isReadOnly() ? tr( "읽기 전용" ) : tr( "편집 가능" );
-    //    const QString loadModeText = tv->contentLoadModeText();
-    //    const QString whitespaceText = tv->isWhitespaceVisible()
-    //        ? tr( "제어문자 표시" )
-    //        : tr( "제어문자 숨김" );
-    //    const QString textStats = selectionLength > 0
-    //        ? tr( "문자 %1 | 선택 %2" ).arg( tv->characterCount() ).arg( selectionLength )
-    //        : tr( "문자 %1" ).arg( tv->characterCount() );
-    //    const QString eolText = [&] {
-    //        switch( tv->detectedLineEnding() )
-    //        {
-    //            case QTextView::LF: return QStringLiteral( "LF" );
-    //            case QTextView::CR: return QStringLiteral( "CR" );
-    //            default: return QStringLiteral( "CRLF" );
-    //        }
-    //        }( );
-    //    const QString indentText = tv->useTabs()
-    //        ? tr( "탭 %1" ).arg( tv->tabWidth() )
-    //        : tr( "공백 %1" ).arg( tv->tabWidth() );
-    //    info = tr( "줄 %1/%2 | 열 %3 | %4 | %5 | %6 | %7 | %8 | %9 | %10 | %11" )
-    //        .arg( tv->currentLine() )
-    //        .arg( tv->lineCount() )
-    //        .arg( tv->currentColumn() )
-    //        .arg( modeText )
-    //        .arg( loadModeText )
-    //        .arg( textStats )
-    //        .arg( indentText )
-    //        .arg( whitespaceText )
-    //        .arg( eolText )
-    //        .arg( tv->currentEncodingDisplayName() )
-    //        .arg( language );
-    //}
+    /*else*/ if( auto* tv = qobject_cast< QTextView* >( v ) )
+    {
+        const QString language = tv->currentLanguage().isEmpty() ? tr( "None" ) : tv->currentLanguage();
+        const int selectionLength = tv->selectedCharacterCount();
+        const QString modeText = tv->isReadOnly() ? tr( "읽기 전용" ) : tr( "편집 가능" );
+        const QString loadModeText = tv->contentLoadModeText();
+        const QString whitespaceText = tv->isWhitespaceVisible()
+            ? tr( "제어문자 표시" )
+            : tr( "제어문자 숨김" );
+        const QString textStats = selectionLength > 0
+            ? tr( "문자 %1 | 선택 %2" ).arg( tv->characterCount() ).arg( selectionLength )
+            : tr( "문자 %1" ).arg( tv->characterCount() );
+        const QString eolText = [&] {
+            switch( tv->detectedLineEnding() )
+            {
+                case QTextView::LF: return QStringLiteral( "LF" );
+                case QTextView::CR: return QStringLiteral( "CR" );
+                default: return QStringLiteral( "CRLF" );
+            }
+            }( );
+        const QString indentText = tv->useTabs()
+            ? tr( "탭 %1" ).arg( tv->tabWidth() )
+            : tr( "공백 %1" ).arg( tv->tabWidth() );
+        info = tr( "줄 %1/%2 | 열 %3 | %4 | %5 | %6 | %7 | %8 | %9 | %10 | %11" )
+            .arg( tv->currentLine() )
+            .arg( tv->lineCount() )
+            .arg( tv->currentColumn() )
+            .arg( modeText )
+            .arg( loadModeText )
+            .arg( textStats )
+            .arg( indentText )
+            .arg( whitespaceText )
+            .arg( eolText )
+            .arg( tv->currentEncodingDisplayName() )
+            .arg( language );
+    }
     //else if( qobject_cast< QMarkdownView* >( v ) )
     //{
     //    info = tr( "Markdown" );
@@ -1651,8 +1654,8 @@ void MainWindow::updateStatusBar()
 
 void MainWindow::updateCopyActionState()
 {
-    //if( m_copyAction )
-    //    m_copyAction->setEnabled( currentView() && currentView()->canCopy() );
+    if( m_copyAction )
+        m_copyAction->setEnabled( currentView() && currentView()->canCopyToClipboard() );
 }
 
 QBaseView* MainWindow::preferredLoadingView() const

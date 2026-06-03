@@ -66,6 +66,8 @@ add_executable(${PROJECT_NAME}
         src/editor/TextLexerRegistry.hpp
         src/editor/TextSaveDialog.cpp
         src/editor/TextSaveDialog.hpp
+        src/utils/DwmTitleBar.cpp
+        src/utils/DwmTitleBar.hpp
         src/utils/FileLoadHelper.cpp
         src/utils/FileLoadHelper.hpp
         uniqueLibs/solDocument_Defs.hpp
@@ -79,6 +81,8 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE src/stdafx.h)
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_SOURCE_DIR}")
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_SOURCE_DIR}/uniqueLibs")
+
+target_link_libraries(${PROJECT_NAME} PRIVATE dwmapi user32 windowsapp d3d11 dxgi runtimeobject)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Core
