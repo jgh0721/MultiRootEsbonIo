@@ -68,7 +68,24 @@ private:
     QTableWidget*                       m_shortcutTable = nullptr;
 
     /// 편집기 페이지
-    QCheckBox*                          m_showRulerWidgetCheck = nullptr;
+    QFontComboBox*                      m_textFontCombo = nullptr;
+    QSpinBox*                           m_textFontSizeSpin = nullptr;
+    QComboBox*                          m_textFontRenderCombo = nullptr;
+    QDoubleSpinBox*                     m_textLineSpacingSpin = nullptr;
+    QFontComboBox*                      m_textRulerFontCombo = nullptr;
+    QSpinBox*                           m_textRulerFontSizeSpin = nullptr;
+    QSpinBox*                           m_textTabWidthSpin = nullptr;
+    QCheckBox*                          m_textUseTabsCheck = nullptr;
+    QCheckBox*                          m_textIndentGuidesCheck = nullptr;
+    QComboBox*                          m_textIndentGuideStyleCombo = nullptr;
+    QCheckBox*                          m_textWhitespaceCheck = nullptr;
+    QComboBox*                          m_textChangeHistoryCombo = nullptr;
+    QCheckBox*                          m_textCodeFoldingCheck = nullptr;
+    QCheckBox*                          m_textBraceHighlightCheck = nullptr;
+    QComboBox*                          m_textSaveEncodingCombo = nullptr;
+    QComboBox*                          m_textSaveBomCombo = nullptr;
+    QCheckBox*                          m_textHotExitCheck = nullptr;
+    QSpinBox*                           m_textLargeFileMBSpin = nullptr;
 
     /// Python/Esbonio 페이지
     mrst::PythonEnvManager*             m_pythonEnvManager = nullptr;

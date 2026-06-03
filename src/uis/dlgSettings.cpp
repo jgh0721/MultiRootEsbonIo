@@ -4,9 +4,12 @@
 #include "core/solAppSettings.hpp"
 #include "core/solPythonEnvMgr.hpp"
 #include "core/solThemeManager.hpp"
+#include "core/solShadowBackupStore.hpp"
+#include "uniqueLibs/solEncodingDetector.hpp"
 
 #include <ILexer.h>
 #include <Lexilla.h>
+
 
 namespace
 {
@@ -202,10 +205,7 @@ QList< ShortcutItem > QSettingsDialog::DefaultShortcuts()
 void QSettingsDialog::on_btnOK_clicked( bool Checked )
 {
     Q_UNUSED( Checked )
-    saveShortcuts();
-    saveTextViewerSettings();
-    saveEsbonioSettings();
-    emit settingsApplied();
+    on_btnApply_clicked();
     accept();
 }
 
@@ -472,19 +472,108 @@ QWidget* QSettingsDialog::createShortcutsPage()
 
 QWidget* QSettingsDialog::createEditorPage()
 {
-    auto* page   = new QWidget( this );
-    auto* layout = new QVBoxLayout( page );
+    auto* page = new QWidget( this );
+    auto* layout = new QFormLayout( page );
 
-    auto* viewerGroup      = new QGroupBox( tr( "텍스트 뷰어" ), page );
-    auto* viewerLayout     = new QVBoxLayout( viewerGroup );
-    m_showRulerWidgetCheck = new QCheckBox( tr( "눈금자 위젯 표시" ), viewerGroup );
-    viewerLayout->addWidget( m_showRulerWidgetCheck );
-    viewerLayout->addStretch( 1 );
+    // 기본 글꼴
+    auto* fontRow = new QHBoxLayout;
+    m_textFontCombo = new QFontComboBox( page );
+    m_textFontSizeSpin = new QSpinBox( page );
+    m_textFontSizeSpin->setRange( 6, 72 );
+    m_textFontSizeSpin->setSuffix( tr( " pt" ) );
+    fontRow->addWidget( m_textFontCombo );
+    fontRow->addWidget( m_textFontSizeSpin );
+    layout->addRow( tr( "기본 글꼴:" ), fontRow );
 
-    layout->addWidget( viewerGroup );
-    layout->addStretch( 1 );
+    // 글꼴 렌더링
+    m_textFontRenderCombo = new QComboBox( page );
+    m_textFontRenderCombo->addItem( tr( "기본" ), 0 );
+    m_textFontRenderCombo->addItem( tr( "비안티앨리어싱" ), 1 );
+    m_textFontRenderCombo->addItem( tr( "그레이스케일" ), 2 );
+    m_textFontRenderCombo->addItem( tr( "LCD 최적화 (ClearType)" ), 3 );
+    layout->addRow( tr( "글꼴 렌더링:" ), m_textFontRenderCombo );
 
-    loadTextViewerSettings();
+    // 행간
+    m_textLineSpacingSpin = new QDoubleSpinBox( page );
+    m_textLineSpacingSpin->setRange( 1.0, 3.0 );
+    m_textLineSpacingSpin->setSingleStep( 0.1 );
+    m_textLineSpacingSpin->setDecimals( 1 );
+    m_textLineSpacingSpin->setSuffix( tr( " x" ) );
+    m_textLineSpacingSpin->setToolTip( tr( "글꼴의 기본 행 높이를 기준으로 한 배율입니다. 1.0은 글꼴 기본 행간입니다." ) );
+    layout->addRow( tr( "행간 배율:" ), m_textLineSpacingSpin );
+
+    // 눈금자 글꼴
+    auto* rulerFontRow = new QHBoxLayout;
+    m_textRulerFontCombo = new QFontComboBox( page );
+    m_textRulerFontSizeSpin = new QSpinBox( page );
+    m_textRulerFontSizeSpin->setRange( 6, 36 );
+    m_textRulerFontSizeSpin->setSuffix( tr( " pt" ) );
+    rulerFontRow->addWidget( m_textRulerFontCombo );
+    rulerFontRow->addWidget( m_textRulerFontSizeSpin );
+    layout->addRow( tr( "눈금자 글꼴:" ), rulerFontRow );
+
+    // 탭 간격
+    m_textTabWidthSpin = new QSpinBox( page );
+    m_textTabWidthSpin->setRange( 1, 16 );
+    layout->addRow( tr( "탭 간격:" ), m_textTabWidthSpin );
+
+    // 탭 사용
+    m_textUseTabsCheck = new QCheckBox( tr( "탭 문자 사용" ), page );
+    layout->addRow( tr( "들여쓰기:" ), m_textUseTabsCheck );
+
+    // Indent Guide
+    auto* indentGuideRow = new QHBoxLayout;
+    m_textIndentGuidesCheck = new QCheckBox( tr( "표시" ), page );
+    m_textIndentGuideStyleCombo = new QComboBox( page );
+    m_textIndentGuideStyleCombo->addItem( tr( "실제 들여쓰기" ), 1 );
+    m_textIndentGuideStyleCombo->addItem( tr( "다음 들여쓰기까지" ), 2 );
+    m_textIndentGuideStyleCombo->addItem( tr( "양방향 들여쓰기" ), 3 );
+    indentGuideRow->addWidget( m_textIndentGuidesCheck );
+    indentGuideRow->addWidget( m_textIndentGuideStyleCombo, 1 );
+    layout->addRow( tr( "Indent Guide:" ), indentGuideRow );
+
+    // 제어문자 표시
+    m_textWhitespaceCheck = new QCheckBox( tr( "표시" ), page );
+    layout->addRow( tr( "제어문자 표시:" ), m_textWhitespaceCheck );
+
+    // 수정 내역 표시
+    m_textChangeHistoryCombo = new QComboBox( page );
+    m_textChangeHistoryCombo->addItem( tr( "끄기" ), 0 );
+    m_textChangeHistoryCombo->addItem( tr( "마커" ), 1 );
+    m_textChangeHistoryCombo->addItem( tr( "인디케이터" ), 2 );
+    m_textChangeHistoryCombo->addItem( tr( "마커 + 인디케이터" ), 3 );
+    layout->addRow( tr( "수정 내역 표시:" ), m_textChangeHistoryCombo );
+
+    // 코드 폴딩
+    m_textCodeFoldingCheck = new QCheckBox( tr( "사용" ), page );
+    layout->addRow( tr( "코드 폴딩:" ), m_textCodeFoldingCheck );
+
+    // 괄호 강조
+    m_textBraceHighlightCheck = new QCheckBox( tr( "사용" ), page );
+    layout->addRow( tr( "괄호 강조:" ), m_textBraceHighlightCheck );
+
+    // 저장 대화상자 기본 인코딩
+    m_textSaveEncodingCombo = new QComboBox( page );
+    m_textSaveEncodingCombo->addItems( EncodingDetector::availableEncodings() );
+    layout->addRow( tr( "저장 기본 인코딩:" ), m_textSaveEncodingCombo );
+
+    m_textSaveBomCombo = new QComboBox( page );
+    m_textSaveBomCombo->addItem( tr( "자동" ), 0 );
+    m_textSaveBomCombo->addItem( tr( "BOM 포함" ), 1 );
+    m_textSaveBomCombo->addItem( tr( "BOM 없음" ), 2 );
+    layout->addRow( tr( "저장 기본 BOM:" ), m_textSaveBomCombo );
+
+    // 핫 엑시트
+    m_textHotExitCheck = new QCheckBox( tr( "사용" ), page );
+    m_textHotExitCheck->setToolTip( tr( "저장하지 않은 텍스트 변경사항을 백그라운드 백업으로 보존합니다.\n끄면 기존 핫 엑시트 백업이 즉시 삭제됩니다." ) );
+    layout->addRow( tr( "핫 엑시트:" ), m_textHotExitCheck );
+
+    // 대용량 파일 기준
+    m_textLargeFileMBSpin = new QSpinBox( page );
+    m_textLargeFileMBSpin->setRange( 1, 100 );
+    m_textLargeFileMBSpin->setSuffix( tr( " MB" ) );
+    layout->addRow( tr( "대용량 파일 기준:" ), m_textLargeFileMBSpin );
+
     return page;
 }
 
@@ -635,16 +724,64 @@ void QSettingsDialog::saveShortcuts()
 
 void QSettingsDialog::loadTextViewerSettings()
 {
-    if( m_showRulerWidgetCheck )
-        m_showRulerWidgetCheck->setChecked( IsTextViewerRulerWidgetVisible() );
+    AppSettings s;
+
+    // 텍스트
+    m_textFontCombo->setCurrentFont( QFont( s.value( "textView/fontFamily", "Consolas" ).toString() ) );
+    m_textFontSizeSpin->setValue( s.value( "textView/fontSize", 10 ).toInt() );
+    m_textFontRenderCombo->setCurrentIndex(
+        m_textFontRenderCombo->findData( s.value( "textView/fontRendering", 2 ).toInt() ) );
+    m_textLineSpacingSpin->setValue( qBound( 1.0, s.value( "textView/lineSpacing", 1.1 ).toDouble(), 3.0 ) );
+    m_textRulerFontCombo->setCurrentFont( QFont( s.value( "textView/rulerFontFamily", "Consolas" ).toString() ) );
+    m_textRulerFontSizeSpin->setValue( s.value( "textView/rulerFontSize", 8 ).toInt() );
+    m_textTabWidthSpin->setValue( s.value( "textView/tabWidth", 4 ).toInt() );
+    m_textUseTabsCheck->setChecked( s.value( "textView/useTabs", true ).toBool() );
+    m_textIndentGuidesCheck->setChecked( s.value( "textView/showIndentationGuides", true ).toBool() );
+    m_textIndentGuideStyleCombo->setCurrentIndex(
+        m_textIndentGuideStyleCombo->findData( s.value( "textView/indentGuideStyle", 1 ).toInt() ) );
+    m_textWhitespaceCheck->setChecked( s.value( "textView/showWhitespace", false ).toBool() );
+    m_textChangeHistoryCombo->setCurrentIndex(
+        m_textChangeHistoryCombo->findData( s.value( "textView/changeHistoryMode", 3 ).toInt() ) );
+    m_textCodeFoldingCheck->setChecked( s.value( "textView/showCodeFolding", true ).toBool() );
+    m_textBraceHighlightCheck->setChecked( s.value( "textView/braceHighlight", true ).toBool() );
+    m_textSaveEncodingCombo->setCurrentText( s.value( "textView/saveEncoding", QStringLiteral( "UTF-8" ) ).toString() );
+    m_textSaveBomCombo->setCurrentIndex(
+        m_textSaveBomCombo->findData( s.value( "textView/saveBomMode", 1 ).toInt() ) );
+    m_textHotExitCheck->setChecked( s.value( "textView/hotExitEnabled", true ).toBool() );
+    m_textLargeFileMBSpin->setValue( s.value( "textView/largeFileMB", 1 ).toInt() );
 }
 
 void QSettingsDialog::saveTextViewerSettings()
 {
-    if( m_showRulerWidgetCheck == nullptr )
-        return;
+    AppSettings s;
 
-    QSettings().setValue( QString::fromLatin1( kTextViewerShowRulerWidgetKey ), m_showRulerWidgetCheck->isChecked() );
+
+    // 텍스트
+    const bool wasHotExitEnabled = s.value( "textView/hotExitEnabled", true ).toBool();
+    const bool hotExitEnabled = m_textHotExitCheck->isChecked();
+    s.setValue( "textView/fontFamily", m_textFontCombo->currentFont().family() );
+    s.setValue( "textView/fontSize", m_textFontSizeSpin->value() );
+    s.setValue( "textView/fontRendering", m_textFontRenderCombo->currentData().toInt() );
+    s.setValue( "textView/lineSpacing", m_textLineSpacingSpin->value() );
+    s.setValue( "textView/rulerFontFamily", m_textRulerFontCombo->currentFont().family() );
+    s.setValue( "textView/rulerFontSize", m_textRulerFontSizeSpin->value() );
+    s.setValue( "textView/tabWidth", m_textTabWidthSpin->value() );
+    s.setValue( "textView/useTabs", m_textUseTabsCheck->isChecked() );
+    s.setValue( "textView/showIndentationGuides", m_textIndentGuidesCheck->isChecked() );
+    s.setValue( "textView/indentGuideStyle", m_textIndentGuideStyleCombo->currentData().toInt() );
+    s.setValue( "textView/showWhitespace", m_textWhitespaceCheck->isChecked() );
+    s.setValue( "textView/changeHistoryMode", m_textChangeHistoryCombo->currentData().toInt() );
+    s.setValue( "textView/showCodeFolding", m_textCodeFoldingCheck->isChecked() );
+    s.setValue( "textView/braceHighlight", m_textBraceHighlightCheck->isChecked() );
+    s.setValue( "textView/saveEncoding", m_textSaveEncodingCombo->currentText().trimmed().isEmpty()
+        ? QStringLiteral( "UTF-8" )
+        : m_textSaveEncodingCombo->currentText().trimmed() );
+    s.setValue( "textView/saveBomMode", m_textSaveBomCombo->currentData().toInt() );
+    s.setValue( "textView/hotExitEnabled", hotExitEnabled );
+    s.setValue( "textView/largeFileMB", m_textLargeFileMBSpin->value() );
+
+    if( wasHotExitEnabled && !hotExitEnabled )
+        TextShadowBackupStore::deleteAllBackups();
 }
 
 void QSettingsDialog::loadEsbonioSettings()

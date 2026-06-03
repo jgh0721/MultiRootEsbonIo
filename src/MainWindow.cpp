@@ -890,34 +890,34 @@ void MainWindow::applySettingsToAllViews()
 
     AppSettings s;
 
-    //for( int i = 0; i < m_tabWidget->count(); ++i )
-    //{
-    //    auto* view = qobject_cast< QBaseView* >( m_tabWidget->widget( i ) );
-    //    if( !view )
-    //        continue;
+    for( int i = 0; i < m_tabWidget->count(); ++i )
+    {
+        auto* view = qobject_cast< QBaseView* >( m_tabWidget->widget( i ) );
+        if( !view )
+            continue;
 
-    //    if( auto* textView = qobject_cast< QTextView* >( view ) )
-    //    {
-    //        const QString fontFamily = s.value( "textView/fontFamily", "Consolas" ).toString();
-    //        const int fontSize = qBound( 6, s.value( "textView/fontSize", 10 ).toInt(), 72 );
-    //        textView->setEditorFont( QFont( fontFamily, fontSize ) );
-    //        textView->setLineSpacingScale( qBound( 1.0, s.value( "textView/lineSpacing", 1.1 ).toDouble(), 3.0 ) );
-    //        textView->setTabWidth( qBound( 1, s.value( "textView/tabWidth", 4 ).toInt(), 16 ) );
-    //        textView->setUseTabs( s.value( "textView/useTabs", true ).toBool() );
-    //        textView->setIndentationGuidesVisible( s.value( "textView/showIndentationGuides", true ).toBool() );
-    //        textView->setIndentGuideStyle( static_cast< ScintillaEditorSettings::IndentGuideStyle >(
-    //            qBound( 1, s.value( "textView/indentGuideStyle", 1 ).toInt(), 3 ) ) );
-    //        textView->setWhitespaceVisible( s.value( "textView/showWhitespace", false ).toBool() );
-    //        textView->setCodeFoldingEnabled( s.value( "textView/showCodeFolding", true ).toBool() );
-    //        textView->setBraceHighlightEnabled( s.value( "textView/braceHighlight", true ).toBool() );
-    //        const int fontRendering = s.value( "textView/fontRendering", 2 ).toInt();
-    //        textView->setFontRenderingMode( static_cast< ScintillaEditorSettings::FontRenderingMode >(
-    //            qBound( 0, fontRendering, 3 ) ) );
-    //        const int changeHistory = s.value( "textView/changeHistoryMode", 3 ).toInt();
-    //        textView->setChangeHistoryMode( static_cast< ScintillaEditorSettings::ChangeHistoryMode >(
-    //            qBound( 0, changeHistory, 3 ) ) );
-    //        textView->setHotExitEnabled( s.value( "textView/hotExitEnabled", true ).toBool() );
-    //    }
+        if( auto* textView = qobject_cast< QTextView* >( view ) )
+        {
+            const QString fontFamily = s.value( "textView/fontFamily", "Consolas" ).toString();
+            const int fontSize = qBound( 6, s.value( "textView/fontSize", 10 ).toInt(), 72 );
+            textView->setEditorFont( QFont( fontFamily, fontSize ) );
+            textView->setLineSpacingScale( qBound( 1.0, s.value( "textView/lineSpacing", 1.1 ).toDouble(), 3.0 ) );
+            textView->setTabWidth( qBound( 1, s.value( "textView/tabWidth", 4 ).toInt(), 16 ) );
+            textView->setUseTabs( s.value( "textView/useTabs", true ).toBool() );
+            textView->setIndentationGuidesVisible( s.value( "textView/showIndentationGuides", true ).toBool() );
+            textView->setIndentGuideStyle( static_cast< ScintillaEditorSettings::IndentGuideStyle >(
+                qBound( 1, s.value( "textView/indentGuideStyle", 1 ).toInt(), 3 ) ) );
+            textView->setWhitespaceVisible( s.value( "textView/showWhitespace", false ).toBool() );
+            textView->setCodeFoldingEnabled( s.value( "textView/showCodeFolding", true ).toBool() );
+            textView->setBraceHighlightEnabled( s.value( "textView/braceHighlight", true ).toBool() );
+            const int fontRendering = s.value( "textView/fontRendering", 2 ).toInt();
+            textView->setFontRenderingMode( static_cast< ScintillaEditorSettings::FontRenderingMode >(
+                qBound( 0, fontRendering, 3 ) ) );
+            const int changeHistory = s.value( "textView/changeHistoryMode", 3 ).toInt();
+            textView->setChangeHistoryMode( static_cast< ScintillaEditorSettings::ChangeHistoryMode >(
+                qBound( 0, changeHistory, 3 ) ) );
+            textView->setHotExitEnabled( s.value( "textView/hotExitEnabled", true ).toBool() );
+        }
     //    else if( auto* imageView = qobject_cast< QImageView* >( view ) )
     //    {
     //        const QColor drawColor( s.value( "image/drawColor", ThemeManager::instance().color( QStringLiteral( "image.draw" ) ).name() ).toString() );
@@ -926,7 +926,7 @@ void MainWindow::applySettingsToAllViews()
     //        imageView->setPenWidth( qBound( 1, s.value( "image/drawWidth", 2 ).toInt(), 20 ) );
     //    }
     //    // PDF 뷰 모드는 이미 열린 문서에는 적용하지 않음 (사용자가 수동 변경 가능)
-    //}
+    }
 }
 
 QBaseView* MainWindow::currentView() const
