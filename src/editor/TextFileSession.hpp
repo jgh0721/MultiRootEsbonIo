@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "text/ScintillaDocument.h"
+#include "ScintillaDocument.hpp"
 
 #include <QByteArray>
 #include <QString>

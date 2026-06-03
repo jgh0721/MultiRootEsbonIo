@@ -1,7 +1,8 @@
-﻿#include "text/TextFileSession.h"
+﻿#include "stdafx.h"
+#include "TextFileSession.hpp"
 
-#include "utils/EncodingDetector.h"
-#include "utils/FileLoadHelper.h"
+#include "utils/FileLoadHelper.hpp"
+#include "uniqueLibs/solEncodingDetector.hpp"
 
 #include <QFile>
 

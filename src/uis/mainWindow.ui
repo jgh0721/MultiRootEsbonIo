@@ -16,11 +16,11 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="horizontalLayout_2">
     <item>
-     <widget class="QSplitter" name="splitter_4">
+     <widget class="QSplitter" name="splSideWithContent">
       <property name="orientation">
        <enum>Qt::Orientation::Horizontal</enum>
       </property>
-      <widget class="QSplitter" name="splitter">
+      <widget class="QSplitter" name="splFolderWithOutlineOnSide">
        <property name="orientation">
         <enum>Qt::Orientation::Vertical</enum>
        </property>
@@ -32,8 +32,30 @@
          <enum>QFrame::Shadow::Raised</enum>
         </property>
         <layout class="QVBoxLayout" name="verticalLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
          <item>
-          <widget class="QTreeView" name="treLeftSideFolterTree"/>
+          <widget class="QTreeView" name="treLeftSideFolterTree">
+           <property name="indentation">
+            <number>15</number>
+           </property>
+           <attribute name="headerCascadingSectionResizes">
+            <bool>true</bool>
+           </attribute>
+           <attribute name="headerShowSortIndicator" stdset="0">
+            <bool>true</bool>
+           </attribute>
+          </widget>
          </item>
         </layout>
        </widget>
@@ -45,6 +67,18 @@
          <enum>QFrame::Shadow::Raised</enum>
         </property>
         <layout class="QVBoxLayout" name="verticalLayout_2">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
          <item>
           <widget class="QTabWidget" name="tabLeftSideOutline">
            <property name="currentIndex">
@@ -87,7 +121,7 @@
         </layout>
        </widget>
       </widget>
-      <widget class="QSplitter" name="splitter_3">
+      <widget class="QSplitter" name="splEditWithStatisticsOnContent">
        <property name="orientation">
         <enum>Qt::Orientation::Vertical</enum>
        </property>
@@ -99,6 +133,18 @@
          <enum>QFrame::Shadow::Raised</enum>
         </property>
         <layout class="QVBoxLayout" name="verticalLayout_7">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
          <item>
           <widget class="QSplitter" name="splitter_2">
            <property name="orientation">
@@ -113,7 +159,7 @@
             </property>
             <layout class="QVBoxLayout" name="verticalLayout_5">
              <item>
-               <widget class="EditorTabWidget" name="tabEditor">
+              <widget class="QTabWidget" name="tabEditor">
                <widget class="QWidget" name="tab_3">
                 <attribute name="title">
                  <string>Tab 1</string>
@@ -159,8 +205,20 @@
          <enum>QFrame::Shadow::Raised</enum>
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
          <item>
-          <widget class="QTabWidget" name="tabWidget">
+          <widget class="QTabWidget" name="tabStatistics">
            <widget class="QWidget" name="tab">
             <attribute name="title">
              <string>Tab 1</string>
@@ -193,11 +251,6 @@
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
  <customwidgets>
-  <customwidget>
-   <class>EditorTabWidget</class>
-   <extends>QTabWidget</extends>
-   <header>editor/EditorTabWidget.hpp</header>
-  </customwidget>
   <customwidget>
    <class>QWebEngineView</class>
    <extends>QWidget</extends>

@@ -39,27 +39,33 @@ add_executable(${PROJECT_NAME}
         src/MainWindow.hpp
         src/uis/mainWindow.ui
         src/MultiRoot-reST-CPP.qrc
+        src/core/solBaseView.cpp
+        src/core/solBaseView.hpp
         src/core/solPythonEnvMgr.cpp
         src/core/solPythonEnvMgr.hpp
         src/core/solThemeManager.cpp
         src/core/solThemeManager.hpp
+        src/core/solShadowBackupStore.cpp
+        src/core/solShadowBackupStore.hpp
         src/uis/dlgSettings.cpp
         src/uis/dlgSettings.hpp
         src/uis/dlgSettings.ui
         src/editor/ScintillaEdit.cpp
         src/editor/ScintillaEdit.hpp
-        src/editor/baseEdit.cpp
-        src/editor/baseEdit.hpp
-        src/editor/EditorTabWidget.cpp
-        src/editor/EditorTabWidget.hpp
-        src/editor/reSTEdit.cpp
-        src/editor/reSTEdit.hpp
-        src/editor/markdownEdit.cpp
-        src/editor/markdownEdit.hpp
-        src/editor/pythonEdit.cpp
-        src/editor/pythonEdit.hpp
+        src/editor/ScintillaEditorSettings.cpp
+        src/editor/ScintillaEditorSettings.hpp
+        src/editor/ScintillaQtDirectBackend.cpp
+        src/editor/ScintillaQtDirectBackend.hpp
+        src/editor/QBaseEditor.cpp
+        src/editor/QBaseEditor.hpp
         src/editor/FindReplaceWidget.cpp
         src/editor/FindReplaceWidget.hpp
+        src/editor/TextFileSession.cpp
+        src/editor/TextFileSession.hpp
+        src/editor/TextLexerRegistry.cpp
+        src/editor/TextLexerRegistry.hpp
+        src/editor/TextSaveDialog.cpp
+        src/editor/TextSaveDialog.hpp
         src/utils/FileLoadHelper.cpp
         src/utils/FileLoadHelper.hpp
         uniqueLibs/solDocument_Defs.hpp

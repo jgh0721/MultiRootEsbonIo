@@ -1,6 +1,7 @@
-﻿#include "text/TextSaveDialog.h"
+﻿#include "stdafx.h"
+#include "TextSaveDialog.hpp"
 
-#include "utils/EncodingDetector.h"
+#include "uniqueLibs/solEncodingDetector.hpp"
 
 #include <QComboBox>
 #include <QFileInfo>
