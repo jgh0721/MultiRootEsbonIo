@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "core/solBaseView.hpp"
+#include "core/solSphinxScanner.hpp"
 
 #include "ui_mainWindow.h"
 
@@ -39,24 +40,27 @@ public:
     QBaseView* currentView() const;
 
 public slots:
-    void onFileNew();
-    void onFileOpen();
-    void onFileSave();
-    void onFileSaveAs();
-    void onCopy();
-    void onPaste();
-    void onResetClipboardImagePastePrompt();
-    void onSettings();
-    void onCloseTab( int index );
-    void onTabChanged( int index );
-    void onThemeToggle();
+    void                                onFileNew();
+    void                                onFileOpen();
+    void                                onWorkspaceOpen();
+    void                                onFileSave();
+    void                                onFileSaveAs();
+    void                                onCopy();
+    void                                onPaste();
+    void                                onResetClipboardImagePastePrompt();
+    void                                onSettings();
+    void                                onCloseTab( int index );
+    void                                onTabChanged( int index );
+    void                                onThemeToggle();
+
+    void                                appendLog( const QString& text );
 
 protected:
-    bool eventFilter( QObject* watched, QEvent* event ) override;
-    void closeEvent( QCloseEvent* event ) override;
-    void dragEnterEvent( QDragEnterEvent* event ) override;
-    void dragMoveEvent( QDragMoveEvent* event ) override;
-    void dropEvent( QDropEvent* event ) override;
+    bool                                eventFilter( QObject* watched, QEvent* event ) override;
+    void                                closeEvent( QCloseEvent* event ) override;
+    void                                dragEnterEvent( QDragEnterEvent* event ) override;
+    void                                dragMoveEvent( QDragMoveEvent* event ) override;
+    void                                dropEvent( QDropEvent* event ) override;
 
 private:
     struct ViewLoadingState
@@ -163,4 +167,15 @@ private:
     QStringList     m_recentFiles;
     static constexpr int MaxRecentFiles = 10;
     bool            m_shuttingDown = false;
+
+private:
+
+    ///////////////////////////////////////////////////////////////////////////
+    /// Esbonio / Sphinx
+    
+    void                                setWorkspace( const QString& Folder );
+    void                                refreshProjectList();
+
+    QString                             workspaceRoot_;
+    std::vector< mrst::SphinxProject>   projects_;
 };

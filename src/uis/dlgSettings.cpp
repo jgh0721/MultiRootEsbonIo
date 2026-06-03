@@ -148,7 +148,7 @@ QList< ShortcutItem > QSettingsDialog::DefaultShortcuts()
     {
         { tr( "공통" ), QStringLiteral( "file.new" ), tr( "새 파일" ), QKeySequence::New, QKeySequence::New },
         {
-            tr( "공통" ), QStringLiteral( "file.open" ), tr( "열기" ), QKeySequence( Qt::CTRL | Qt::Key_O ),
+            tr( "공통" ), QStringLiteral( "file.openWorkspace" ), tr( "열기" ), QKeySequence( Qt::CTRL | Qt::Key_O ),
             QKeySequence( Qt::CTRL | Qt::Key_O )
         },
         {

@@ -47,6 +47,8 @@ add_executable(${PROJECT_NAME}
         src/core/solThemeManager.hpp
         src/core/solShadowBackupStore.cpp
         src/core/solShadowBackupStore.hpp
+        src/core/solSphinxScanner.cpp
+        src/core/solSphinxScanner.hpp
         src/uis/dlgSettings.cpp
         src/uis/dlgSettings.hpp
         src/uis/dlgSettings.ui

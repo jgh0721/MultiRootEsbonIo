@@ -541,16 +541,16 @@ MainWindow::MainWindow( QWidget* parent )
         {
             if( snapshot.isUntitled )
             {
-                //auto* view = new QTextView( this );
-                //applyPersistedViewSettings( view );
-                //applyThemeToView( view );
-                //if( !view->openHotExitBackup( snapshot.untitledId ) )
-                //{
-                //    delete view;
-                //    continue;
-                //}
-                //addViewTab( view );
-                //continue;
+                auto* view = new QTextView( this );
+                applyPersistedViewSettings( view );
+                applyThemeToView( view );
+                if( !view->openHotExitBackup( snapshot.untitledId ) )
+                {
+                    delete view;
+                    continue;
+                }
+                addViewTab( view );
+                continue;
             }
 
             openFile( snapshot.originalFilePath );
@@ -578,8 +578,14 @@ void MainWindow::createMenus()
     newAction->setShortcut( QKeySequence::New );
     newAction->setShortcutContext( Qt::ApplicationShortcut );
 
-    auto* openAction = fileMenu->addAction( tr( "열기(&O)..." ), QKeySequence::Open, this, &MainWindow::onFileOpen );
+    auto* openAction = fileMenu->addAction( tr( "열기..." ), this, &MainWindow::onFileOpen );
     openAction->setObjectName( QStringLiteral( "file.open" ) );
+
+    auto* openWorkspace = fileMenu->addAction( tr( "워크스페이스 열기(&O)..." ), QKeySequence::Open, this, &MainWindow::onWorkspaceOpen );
+    openWorkspace->setObjectName( QStringLiteral( "file.openWorkspace" ) );
+    openWorkspace->setProperty( "mv.shortcutId", QStringLiteral( "file.openWorkspace" ) );
+    openWorkspace->setShortcut( QKeySequence::Open );
+    openWorkspace->setShortcutContext( Qt::ApplicationShortcut );
 
     m_saveAction = fileMenu->addAction( tr( "저장(&S)" ), this, &MainWindow::onFileSave );
     m_saveAction->setObjectName( QStringLiteral( "file.save" ) );
@@ -1292,17 +1298,25 @@ void MainWindow::onFileOpen()
 {
     const QStringList files = QFileDialog::getOpenFileNames( this,
         tr( "파일 열기" ), {},
-        tr( "모든 지원 파일 (*.pdf *.jpg *.jpeg *.png *.bmp *.gif *.tiff *.tif *.ico *.webp *.svg "
-            "*.txt *.log *.ini *.cfg *.xml *.json *.html *.htm *.css *.js *.ts "
+        tr( "모든 지원 파일 (*.jpg *.jpeg *.png *.bmp *.gif *.tiff *.tif *.ico *.webp *.svg "
+            "*.txt *.log *.ini *.cfg *.xml *.json *.html *.htm *.css *.js *.ts *.rst "
             "*.cpp *.c *.h *.hpp *.py *.java *.md *.markdown);;"
-            "PDF (*.pdf);;"
             "이미지 (*.jpg *.jpeg *.png *.bmp *.gif *.tiff *.tif *.ico *.webp *.svg);;"
             "텍스트 (*.txt *.log *.ini *.cfg *.xml *.json *.html *.css *.js *.cpp *.c *.h *.py);;"
-            "마크다운 (*.md *.markdown);;"
+            "마크다운 (*.rst *.md *.markdown);;"
             "모든 파일 (*)" )
     );
     for( const auto& f : files )
         openFile( f );
+}
+
+void MainWindow::onWorkspaceOpen()
+{
+    //if( !confirmSaveAll() )
+    //    return;
+    const QString folder = QFileDialog::getExistingDirectory( this, QStringLiteral( "워크스페이스 폴더 열기" ), workspaceRoot_ );
+    if( !folder.isEmpty() )
+        setWorkspace( folder );
 }
 
 void MainWindow::onFileSave()
@@ -1329,8 +1343,8 @@ bool MainWindow::saveView( QBaseView* view, bool saveAs )
     //    started = saveAs ? imageView->saveFileAs() : imageView->saveFile( {} );
     //else if( auto* pdfView = qobject_cast< QPDFView* >( view ) )
     //    started = saveAs ? pdfView->saveFileAs() : pdfView->saveFile( {} );
-    //else
-    //    started = view->saveFile();
+    else
+        started = view->saveFile();
 
     updateSaveActionState();
     return started;
@@ -1526,6 +1540,18 @@ void MainWindow::onThemeToggle()
     auto& mgr = ThemeManager::instance();
     mgr.setTheme( mgr.currentTheme() == ThemeManager::Light
                      ? ThemeManager::Dark : ThemeManager::Light );
+}
+
+void MainWindow::appendLog( const QString& text )
+{
+    if( Ui.logView == nullptr )
+        return;
+
+    const auto trimmed = text.trimmed();
+    if( trimmed.isEmpty() == true )
+        return;
+
+    Ui.logView->appendPlainText( trimmed );
 }
 
 void MainWindow::onSettings()
@@ -2155,256 +2181,53 @@ void MainWindow::shutdownUi()
     qDebug().noquote() << "[MainWindow] shutdownUi end" << this;
 }
 
-//QStringList imageFileExtensions()
-//{
-//    return { "jpg", "jpeg", "png", "bmp", "gif", "tiff", "tif", "ico", "webp", "svg" };
-//}
-//
-//QStringList markdownFileExtensions()
-//{
-//    return { "md", "markdown", "mdown" };
-//}
-//
-//MainWindow::MainWindow( QWidget* parent )
-//    : QMainWindow( parent )
-//{
-//    Ui.setupUi( this );
-//
-//    //Ui.tabEditor->InitializeEmpty();
-//    //connect( Ui.tabEditor, &EditorTabWidget::activeEditorChanged, this, [this]( QBaseEditor* editor ) {
-//    //    if( editor == nullptr )
-//    //    {
-//    //        statusBar()->clearMessage();
-//    //        return;
-//    //    }
-//
-//    //    statusBar()->showMessage( tr( "Active editor: %1" ).arg( QDir::toNativeSeparators( editor->FilePath() ) ) );
-//    //} );
-//    //connect( Ui.tabEditor, &EditorTabWidget::fileOpenFailed, this, [this]( const QString& filePath, const QString& reason ) {
-//    //    QMessageBox::warning( this, tr( "Open File" ), tr( "Failed to open '%1'.\n%2" ).arg( QDir::toNativeSeparators( filePath ), reason ) );
-//    //} );
-//    //Ui.tabEditor->SetRulerVisibleForAllEditors( QSettingsDialog::IsTextViewerRulerWidgetVisible() );
-//
-//    //// editorTabs_->setTabsClosable(true);
-//    //// editorTabs_->setMovable(true);
-//
-//
-//    createMenus();
-//}
-//
-//MainWindow::~MainWindow() = default;
-//
-//void MainWindow::OpenFile( const QString& FilePath )
-//{
-//    const QString normalizedPath = normalizeFilePath( FilePath );
-//    if( normalizedPath.isEmpty() ) 
-//        return;
-//
-//    for( int i = 0; i < Ui.tabEditor->count(); ++i )
-//    {
-//        auto* view = dynamic_cast< QBaseView* >( Ui.tabEditor->widget( i ) );
-//        if( view && normalizeFilePath( view->currentFilePath() ) == normalizedPath )
-//        {
-//            Ui.tabEditor->setCurrentIndex( i );
-//            return;
-//        }
-//    }
-//
-//    //if( shouldConfirmBinaryTextOpen( normalizedPath ) && !confirmOpenBinaryTextFile( normalizedPath ) )
-//    //    return;
-//
-//    //QBaseView* view = createViewForFile( normalizedPath );
-//    //if( !view )
-//    //{
-//    //    QMessageBox::warning( this, tr( "오류" ),
-//    //                         tr( "지원하지 않는 파일 형식입니다:\n%1" ).arg( normalizedPath ) );
-//    //    return;
-//    //}
-//
-//    //connect( view, &QBaseView::fileOpened, this, [this]( const QString& openedPath ) {
-//    //    const QString normalizedOpenedPath = normalizeFilePath( openedPath );
-//    //    if( !normalizedOpenedPath.isEmpty() )
-//    //        addRecentFile( normalizedOpenedPath );
-//    //} );
-//    //connect( view, &QBaseView::fileOpenFailed, this,
-//    //        [this, view]( const QString& failedPath, const QString& errorMessage ) {
-//    //            const QString effectivePath = failedPath.isEmpty()
-//    //                ? view->currentFilePath()
-//    //                : failedPath;
-//    //            const QString effectiveMessage = errorMessage.isEmpty()
-//    //                ? tr( "파일을 열 수 없습니다:\n%1" ).arg( effectivePath )
-//    //                : errorMessage;
-//
-//    //            statusBar()->showMessage( effectiveMessage, 4000 );
-//    //            QMessageBox::warning( this, tr( "오류" ), effectiveMessage );
-//
-//    //            teardownView( view );
-//    //            refreshCurrentViewUi();
-//    //        } );
-//
-//    //connectViewStatusSignals( view );
-//
-//    //// 파일 열기 전에 설정에서 기본값 적용 (뷰 모드, 글꼴 등)
-//    //applyPersistedViewSettings( view );
-//
-//    //const bool asyncOpen = view->opensFileAsynchronously();
-//    //if( asyncOpen )
-//    //{
-//    //    applyThemeToView( view );
-//    //    view->setWatermark( m_globalWatermark );
-//    //}
-//
-//    //if( !view->openFile( normalizedPath ) )
-//    //{
-//    //    if( asyncOpen )
-//    //    {
-//    //        ViewTeardownOptions teardownOptions;
-//    //        teardownOptions.deleteLater = false;
-//    //        teardownView( view, teardownOptions );
-//    //        delete view;
-//    //        refreshCurrentViewUi();
-//    //        return;
-//    //    }
-//
-//    //    QMessageBox::warning( this, tr( "오류" ),
-//    //                         tr( "파일을 열 수 없습니다:\n%1" ).arg( normalizedPath ) );
-//    //    delete view;
-//    //    return;
-//    //}
-//
-//    //if( asyncOpen )
-//    //{
-//    //    addViewTab( view );
-//    //}
-//    //else
-//    //{
-//    //    applyThemeToView( view );
-//    //    view->setWatermark( m_globalWatermark );
-//    //    addViewTab( view );
-//    //}
-//}
-//
-//void MainWindow::onFileNew()
-//{
-//}
-//
-//void MainWindow::onFileOpen()
-//{
-//    const QStringList files = QFileDialog::getOpenFileNames( this,
-//        tr( "파일 열기" ), {},
-//        tr( "모든 지원 파일 (*.jpg *.jpeg *.png *.bmp *.gif *.tiff *.tif *.ico *.webp *.svg "
-//            "*.rst *.py *.md *.markdown);;"
-//            "이미지 (*.jpg *.jpeg *.png *.bmp *.gif *.tiff *.tif *.ico *.webp *.svg);;"
-//            "텍스트 (*.rst *.py);;"
-//            "마크다운 (*.md *.markdown);;"
-//            "모든 파일 (*)" )
-//    );
-//    
-//    for( const auto& f : files )
-//        OpenFile( f );
-//}
-//
-//void MainWindow::onFileSave()
-//{
-//}
-//
-//void MainWindow::onFileSaveAs()
-//{
-//}
-//
-//void MainWindow::onSettings()
-//{
-//    //QSettingsDialog dlg(this);
-//    //connect( &dlg, &QSettingsDialog::settingsApplied, this, [this] {
-//    //    Ui.tabEditor->SetRulerVisibleForAllEditors( QSettingsDialog::IsTextViewerRulerWidgetVisible() );
-//    //} );
-//    // connect(&dlg, &QSettingsDialog::settingsApplied, this, [this] {
-//    //     // 단축키 즉시 적용
-//    //     const auto shortcuts = QSettingsDialog::loadShortcutsFromSettings();
-//    //     QSettingsDialog::applyShortcutsToActions(shortcuts, this);
-//    //     // 열려있는 뷰어에 변경된 설정 적용
-//    //     applySettingsToAllViews();
-//    // });
-//    //if( dlg.exec() == QDialog::Accepted )
-//    //    Ui.tabEditor->SetRulerVisibleForAllEditors( QSettingsDialog::IsTextViewerRulerWidgetVisible() );
-//}
-//
-//void MainWindow::createMenus()
-//{
-//    auto* fileMenu = menuBar()->addMenu( tr( "파일(&F)" ) );
-//
-//    m_newAction = fileMenu->addAction( tr( "새 파일(&N)" ), this, &MainWindow::onFileNew );
-//    m_newAction->setObjectName( QStringLiteral( "file.new" ) );
-//    m_newAction->setProperty( "mv.shortcutId", QStringLiteral( "file.new" ) );
-//    m_newAction->setShortcut( QKeySequence::New );
-//    m_newAction->setShortcutContext( Qt::ApplicationShortcut );
-//
-//    m_openAction = fileMenu->addAction( tr( "열기(&O)..." ), QKeySequence::Open, this, &MainWindow::onFileOpen );
-//    m_openAction->setObjectName( QStringLiteral( "file.open" ) );
-//
-//    m_saveAction = fileMenu->addAction( tr( "저장(&S)" ), this, &MainWindow::onFileSave );
-//    m_saveAction->setObjectName( QStringLiteral( "file.save" ) );
-//    m_saveAction->setProperty( "mv.shortcutId", QStringLiteral( "file.save" ) );
-//    m_saveAction->setShortcut( QKeySequence::Save );
-//    m_saveAction->setShortcutContext( Qt::ApplicationShortcut );
-//
-//    m_saveAsAction = fileMenu->addAction( tr( "다른 이름으로 저장(&A)..." ), this, &MainWindow::onFileSaveAs );
-//    m_saveAsAction->setObjectName( QStringLiteral( "file.saveAs" ) );
-//    m_saveAsAction->setProperty( "mv.shortcutId", QStringLiteral( "file.saveAs" ) );
-//    m_saveAsAction->setShortcut( QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_S ) );
-//    m_saveAsAction->setShortcutContext( Qt::ApplicationShortcut );
-//
-//    m_recentMenu = fileMenu->addMenu( tr( "최근 파일(&R)" ) );
-//
-//    fileMenu->addSeparator();
-//
-//    fileMenu->addAction( tr( "종료(&X)" ), QKeySequence::Quit,
-//                    QApplication::instance(), &QApplication::quit );
-//
-//    auto* editMenu = menuBar()->addMenu( tr( "편집(&E)" ) );
-//
-//    auto* settingsMenu = menuBar()->addMenu(tr("설정(&S)"));
-//    auto* settingsAction = settingsMenu->addAction(tr("설정(&I)..."), this, &MainWindow::onSettings);
-//    settingsAction->setObjectName(QStringLiteral("app.settings"));
-//    settingsAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_I));
-//    settingsAction->setShortcutContext(Qt::ApplicationShortcut);
-//
-//}
-//
-//int MainWindow::addViewTab( QBaseView* view )
-//{
-//    return 0;
-//}
-//
-//void MainWindow::applyThemeToView( QBaseView* View ) const
-//{
-//    if( !View )
-//        return;
-//
-//    const auto theme = ThemeManager::instance().currentTheme() == ThemeManager::Dark
-//        ? QBaseView::Theme::Dark
-//        : QBaseView::Theme::Light;
-//
-//    View->setTheme( theme );
-//}
-//
-//QString MainWindow::normalizeFilePath( const QString& FilePath )
-//{
-//    const QFileInfo info( FilePath );
-//    const QString canonical = info.canonicalFilePath();
-//    return QDir::cleanPath( canonical.isEmpty() ? info.absoluteFilePath() : canonical );
-//}
-//
-//QBaseView* MainWindow::createViewForFile( const QString& filePath )
-//{
-//    const QString ext = QFileInfo( filePath ).suffix().toLower();
-//    
-//    //if( imageFileExtensions().contains( ext ) )
-//    //    return new QImageView( this );
-//
-//    //if( markdownFileExtensions().contains( ext ) )
-//    //    return new QMarkdownView( this );
-//
-//    // return new QBaseEditor( this );
-//    return {};
-//}
+///////////////////////////////////////////////////////////////////////////
+/// Esbonio / Sphinx
+
+void MainWindow::setWorkspace( const QString& Folder )
+{
+    workspaceRoot_ = QFileInfo( Folder ).absoluteFilePath();
+    //SettingsStore::addRecent( &appState_.recentFolders, workspaceRoot_ );
+    //if( workspaceSearch_ != nullptr )
+    //{
+    //    workspaceSearch_->setWorkspaceRoot( workspaceRoot_ );
+    //}
+    //if( treLeftFolderTreeModel_ == nullptr )
+    //{
+    //    treLeftFolderTreeModel_ = new QFileSystemModel( treeView_ );
+    //    treLeftFolderTreeModel_->setReadOnly( false );
+    //    treeView_->setModel( treLeftFolderTreeModel_ );
+    //    connect( treeView_, &QTreeView::doubleClicked, this, [this]( const QModelIndex& index ) {
+    //        if( treLeftFolderTreeModel_ == nullptr )
+    //        {
+    //            return;
+    //        }
+    //        const QString path = treLeftFolderTreeModel_->filePath( index );
+    //        if( QFileInfo( path ).isFile() )
+    //        {
+    //            loadFile( path );
+    //        }
+    //    } );
+    //}
+    treLeftFolderTreeModel_->setRootPath( workspaceRoot_ );
+    Ui.treLeftSideFolterTree->setRootIndex( treLeftFolderTreeModel_->index( workspaceRoot_ ) );
+    for( int column = 1; column < treLeftFolderTreeModel_->columnCount(); ++column )
+        Ui.treLeftSideFolterTree->hideColumn( column );
+    refreshProjectList();
+}
+
+void MainWindow::refreshProjectList()
+{
+    if( workspaceRoot_.isEmpty() )
+        return;
+
+    mrst::ProjectScanner scanner( workspaceRoot_.toStdWString() );
+    projects_ = scanner.scan();
+    appendLog( QStringLiteral( "Sphinx 프로젝트 %1개 발견" ).arg( projects_.size() ) );
+    for( int idx = 0; idx < projects_.size(); ++idx )
+    {
+        const auto& project = projects_[ idx ];
+        appendLog( QStringLiteral( "[%1]  %2 — %3" ).arg( idx + 1 ).arg( QString::fromStdWString( project.projectId ) ).arg( QString::fromStdWString( project.rootPath.wstring() ) ) );
+    }
+    //updateStatusBar();
+}
