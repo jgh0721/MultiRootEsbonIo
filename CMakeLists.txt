@@ -41,6 +41,8 @@ add_executable(${PROJECT_NAME}
         src/MultiRoot-reST-CPP.qrc
         src/core/solBaseView.cpp
         src/core/solBaseView.hpp
+        src/core/solEsbonioLspClient.cpp
+        src/core/solEsbonioLspClient.hpp
         src/core/solPythonEnvMgr.cpp
         src/core/solPythonEnvMgr.hpp
         src/core/solThemeManager.cpp
@@ -49,6 +51,10 @@ add_executable(${PROJECT_NAME}
         src/core/solShadowBackupStore.hpp
         src/core/solSphinxScanner.cpp
         src/core/solSphinxScanner.hpp
+        src/core/solSphinxDiagnostics.cpp
+        src/core/solSphinxDiagnostics.hpp
+        src/core/solSphinxPreviewController.cpp
+        src/core/solSphinxPreviewController.hpp
         src/uis/dlgSettings.cpp
         src/uis/dlgSettings.hpp
         src/uis/dlgSettings.ui

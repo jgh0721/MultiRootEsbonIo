@@ -2,6 +2,7 @@
 
 #include "core/solBaseView.hpp"
 #include "core/solSphinxScanner.hpp"
+#include "core/solSphinxPreviewController.hpp"
 
 #include "ui_mainWindow.h"
 
@@ -144,29 +145,29 @@ private:
     Ui::MainWindow                      Ui;
     QFileSystemModel*                   treLeftFolderTreeModel_ = nullptr;
 
-    QWidget* m_centralContainer = nullptr;
-    QWidget* m_viewerToolBarHost = nullptr;
-    QVBoxLayout* m_viewerToolBarLayout = nullptr;
-    QTabWidget* m_tabWidget = nullptr;
-    QToolBar* m_mainToolBar = nullptr;
-    QPointer<QToolBar> m_viewerToolBar = nullptr;   // 뷰어별 도구모음
-    QPointer<QToolBar> m_viewerAuxToolBar = nullptr; // 뷰어별 2줄 보조 도구모음
-    QLabel* m_loadingLabel = nullptr;
-    QProgressBar* m_loadingProgressBar = nullptr;
-    QPushButton* m_loadingCancelButton = nullptr;
-    QLabel* m_statusLabel = nullptr;   // 상태 표시줄 정보
-    QMenu* m_recentMenu = nullptr;   // 최근 파일 메뉴
-    QAction* m_saveAction = nullptr;
-    QAction* m_saveAsAction = nullptr;
-    QAction* m_captureAction = nullptr;
-    QAction* m_copyAction = nullptr;
-    QAction* m_pasteAction = nullptr;
+    QWidget*                            m_centralContainer = nullptr;
+    QWidget*                            m_viewerToolBarHost = nullptr;
+    QVBoxLayout*                        m_viewerToolBarLayout = nullptr;
+    QTabWidget*                         m_tabWidget = nullptr;
+    QToolBar*                           m_mainToolBar = nullptr;
+    QPointer<QToolBar>                  m_viewerToolBar = nullptr;   // 뷰어별 도구모음
+    QPointer<QToolBar>                  m_viewerAuxToolBar = nullptr; // 뷰어별 2줄 보조 도구모음
+    QLabel*                             m_loadingLabel = nullptr;
+    QProgressBar*                       m_loadingProgressBar = nullptr;
+    QPushButton*                        m_loadingCancelButton = nullptr;
+    QLabel*                             m_statusLabel = nullptr;   // 상태 표시줄 정보
+    QMenu*                              m_recentMenu = nullptr;   // 최근 파일 메뉴
+    QAction*                            m_saveAction = nullptr;
+    QAction*                            m_saveAsAction = nullptr;
+    QAction*                            m_captureAction = nullptr;
+    QAction*                            m_copyAction = nullptr;
+    QAction*                            m_pasteAction = nullptr;
     QHash<QBaseView*, ViewLoadingState> m_activeViewLoads;
-    QTimer* m_loadingAnimationTimer = nullptr;
-    int             m_loadingAnimationFrame = 0;
-    QStringList     m_recentFiles;
-    static constexpr int MaxRecentFiles = 10;
-    bool            m_shuttingDown = false;
+    QTimer*                             m_loadingAnimationTimer = nullptr;
+    int                                 m_loadingAnimationFrame = 0;
+    QStringList                         m_recentFiles;
+    static constexpr int                MaxRecentFiles = 10;
+    bool                                m_shuttingDown = false;
 
 private:
 
@@ -178,4 +179,6 @@ private:
 
     QString                             workspaceRoot_;
     std::vector< mrst::SphinxProject>   projects_;
+    mrst::SphinxPreviewController*      previewController_ = nullptr;
+
 };
