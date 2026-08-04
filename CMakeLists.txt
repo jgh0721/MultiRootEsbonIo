@@ -23,7 +23,8 @@ endif()
 
 # ── Qt 패키지 ─────────────────────────────────────────────
 find_package(Qt6 REQUIRED COMPONENTS
-        Core Core5Compat Gui Widgets Svg PrintSupport UiTools WebEngineCore WebEngineWidgets
+        Core Core5Compat Gui Widgets Svg PrintSupport UiTools
+        WebChannel WebEngineCore WebEngineWidgets
 )
 
 # ── 외부 라이브러리 (FetchContent) ────────────────────────
@@ -55,11 +56,13 @@ add_executable(${PROJECT_NAME}
         src/core/solSphinxDiagnostics.hpp
         src/core/solSphinxPreviewController.cpp
         src/core/solSphinxPreviewController.hpp
+        src/core/solRestWorkspaceController.cpp
+        src/core/solRestWorkspaceController.hpp
+        src/core/solSphinxProjectRegistry.cpp
+        src/core/solSphinxProjectRegistry.hpp
         src/uis/dlgSettings.cpp
         src/uis/dlgSettings.hpp
         src/uis/dlgSettings.ui
-        src/editor/ScintillaEdit.cpp
-        src/editor/ScintillaEdit.hpp
         src/editor/ScintillaEditorSettings.cpp
         src/editor/ScintillaEditorSettings.hpp
         src/editor/ScintillaQtDirectBackend.cpp
@@ -68,6 +71,7 @@ add_executable(${PROJECT_NAME}
         src/editor/QBaseEditor.hpp
         src/editor/FindReplaceWidget.cpp
         src/editor/FindReplaceWidget.hpp
+        src/editor/ColumnRulerWidget.hpp
         src/editor/TextFileSession.cpp
         src/editor/TextFileSession.hpp
         src/editor/TextLexerRegistry.cpp
@@ -100,6 +104,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Svg
     Qt6::PrintSupport
     Qt6::UiTools
+    Qt6::WebChannel
     Qt6::WebEngineCore
     Qt6::WebEngineWidgets
     ScintillaEditBaseQt

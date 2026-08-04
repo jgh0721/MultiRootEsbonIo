@@ -1,8 +1,6 @@
 ﻿#pragma once
 
 #include "core/solBaseView.hpp"
-#include "core/solSphinxScanner.hpp"
-#include "core/solSphinxPreviewController.hpp"
 
 #include "ui_mainWindow.h"
 
@@ -26,8 +24,13 @@ class QEvent;
 class QImage;
 class QMimeData;
 class QPushButton;
+class QTextView;
 class QTimer;
 class QVBoxLayout;
+
+namespace mrst {
+class WorkspaceController;
+}
 
 class MainWindow final : public QMainWindow
 {
@@ -95,52 +98,52 @@ private:
 
     void createMenus();
     QString normalizeFilePath( const QString& filePath ) const;
-    void applyThemeToView( QBaseView* view ) const;
-    void applyCurrentTheme();
-    void updateTitle();
-    void updateTabDecoration( QBaseView* view );
-    void updateViewerToolBar();
-    void updateStatusBar();
-    void connectViewStatusSignals( QBaseView* view );
-    void updateSaveActionState();
-    void updateCopyActionState();
-    void updatePasteActionState();
-    bool saveView( QBaseView* view, bool saveAs );
-    void setViewLoadingState( QBaseView* view, bool active, const QString& message, int value, int maximum );
-    void refreshLoadingIndicator();
-    void advanceLoadingAnimation();
-    void onCancelLoading();
-    void addRecentFile( const QString& filePath );
-    void updateRecentFilesMenu();
-    void shutdownUi();
-    int addViewTab( QBaseView* view );
-    void disconnectViewSignals( QBaseView* view );
-    void removeViewTabWithoutSignals( QBaseView* view );
-    void teardownView( QBaseView* view );
-    void teardownView( QBaseView* view, const ViewTeardownOptions& options );
-    void refreshCurrentViewUi();
-    QBaseView* preferredLoadingView() const;
-    void cancelLoadingView( QBaseView* view, bool showStatusMessage = true );
-    QIcon tabIconForView( QBaseView* view ) const;
-    bool canPasteClipboardImage() const;
-    bool canPasteClipboardImageInCurrentContext() const;
-    bool shouldConfirmClipboardImageOpen() const;
-    bool confirmOpenClipboardImage() const;
-    bool openClipboardImage();
-    bool confirmOpenCapturedImage() const;
-    bool openCapturedImage( const QImage& image, const QString& title = {} );
-    QStringList droppedPathsFromMimeData( const QMimeData* mimeData ) const;
-    bool hasDroppedPaths( const QMimeData* mimeData ) const;
-    bool handleDropEvent( QDropEvent* event );
-    void openDroppedPaths( const QStringList& paths );
-    void openDroppedDirectory( const QString& dirPath );
-    QString firstImageFileInDirectory( const QString& dirPath ) const;
-    bool shouldConfirmBinaryTextOpen( const QString& filePath ) const;
-    bool confirmOpenBinaryTextFile( const QString& filePath ) const;
+    void                                applyThemeToView( QBaseView* view ) const;
+    void                                applyCurrentTheme();
+    void                                updateTitle();
+    void                                updateTabDecoration( QBaseView* view );
+    void                                updateViewerToolBar();
+    void                                updateStatusBar();
+    void                                connectViewStatusSignals( QBaseView* view );
+    void                                updateSaveActionState();
+    void                                updateCopyActionState();
+    void                                updatePasteActionState();
+    bool                                saveView( QBaseView* view, bool saveAs );
+    void                                setViewLoadingState( QBaseView* view, bool active, const QString& message, int value, int maximum );
+    void                                refreshLoadingIndicator();
+    void                                advanceLoadingAnimation();
+    void                                onCancelLoading();
+    void                                addRecentFile( const QString& filePath );
+    void                                updateRecentFilesMenu();
+    void                                shutdownUi();
+    int                                 addViewTab( QBaseView* view );
+    void                                disconnectViewSignals( QBaseView* view );
+    void                                removeViewTabWithoutSignals( QBaseView* view );
+    void                                teardownView( QBaseView* view );
+    void                                teardownView( QBaseView* view, const ViewTeardownOptions& options );
+    void                                refreshCurrentViewUi();
+    QBaseView*                          preferredLoadingView() const;
+    void                                cancelLoadingView( QBaseView* view, bool showStatusMessage = true );
+    QIcon                               tabIconForView( QBaseView* view ) const;
+    bool                                canPasteClipboardImage() const;
+    bool                                canPasteClipboardImageInCurrentContext() const;
+    bool                                shouldConfirmClipboardImageOpen() const;
+    bool                                confirmOpenClipboardImage() const;
+    bool                                openClipboardImage();
+    bool                                confirmOpenCapturedImage() const;
+    bool                                openCapturedImage( const QImage& image, const QString& title = {} );
+    QStringList                         droppedPathsFromMimeData( const QMimeData* mimeData ) const;
+    bool                                hasDroppedPaths( const QMimeData* mimeData ) const;
+    bool                                handleDropEvent( QDropEvent* event );
+    void                                openDroppedPaths( const QStringList& paths );
+    void                                openDroppedDirectory( const QString& dirPath );
+    QString                             firstImageFileInDirectory( const QString& dirPath ) const;
+    bool                                shouldConfirmBinaryTextOpen( const QString& filePath ) const;
+    bool                                confirmOpenBinaryTextFile( const QString& filePath ) const;
 
-    QBaseView* createViewForFile( const QString& filePath );
-    void applyPersistedViewSettings( QBaseView* view );
-    void applySettingsToAllViews();
+    QBaseView*                          createViewForFile( const QString& filePath );
+    void                                applyPersistedViewSettings( QBaseView* view );
+    void                                applySettingsToAllViews();
 
     Ui::MainWindow                      Ui;
     QFileSystemModel*                   treLeftFolderTreeModel_ = nullptr;
@@ -173,12 +176,15 @@ private:
 
     ///////////////////////////////////////////////////////////////////////////
     /// Esbonio / Sphinx
-    
+    ///
+    /// MainWindow 는 UI 셸만 담당하고, 프로젝트 스캔 / LSP / 프리뷰 / 진단은
+    /// 전부 WorkspaceController 가 소유한다. 여기서는 탭 수명주기 이벤트를
+    /// 컨트롤러로 전달하기만 한다.
+
     void                                setWorkspace( const QString& Folder );
     void                                refreshProjectList();
+    [[nodiscard]] QTextView*            textViewOf( QBaseView* view ) const;
 
-    QString                             workspaceRoot_;
-    std::vector< mrst::SphinxProject>   projects_;
-    mrst::SphinxPreviewController*      previewController_ = nullptr;
+    mrst::WorkspaceController*          controller_ = nullptr;
 
 };

@@ -64,12 +64,29 @@ int relativeDepth(const fs::path& path, const fs::path& base) {
 
 }  // namespace
 
+QString toQString(const fs::path& path) {
+    return QString::fromStdWString(path.wstring());
+}
+
+QString toCanonicalQString(const fs::path& path) {
+    return QString::fromStdWString(fs::weakly_canonical(path).wstring());
+}
+
+fs::path toPath(const QString& text) {
+    return fs::path(text.toStdWString());
+}
+
 bool SphinxProject::contains(const fs::path& filePath) const {
     return pathIsBelow(filePath, sourcePath) || pathIsBelow(filePath, rootPath);
 }
 
 ProjectScanner::ProjectScanner(fs::path workspaceRoot, ScannerSettings settings)
-    : workspaceRoot_(fs::weakly_canonical(std::move(workspaceRoot))), settings_(std::move(settings)) {}
+    : workspaceRoot_(fs::weakly_canonical(std::move(workspaceRoot))), settings_(std::move(settings)) {
+    excludedDirs_ = defaultExcludedDirs();
+    for (const std::string& extra : settings_.excludedDirs) {
+        excludedDirs_.insert(lower(extra));
+    }
+}
 
 std::vector<SphinxProject> ProjectScanner::scan() const {
     std::vector<SphinxProject> projects;
@@ -113,11 +130,7 @@ SphinxProject ProjectScanner::projectFromConf(const fs::path& confPath) const {
 }
 
 bool ProjectScanner::isExcludedDirectory(const fs::path& path) const {
-    std::set<std::string> excluded = defaultExcludedDirs();
-    for (const std::string& extra : settings_.excludedDirs) {
-        excluded.insert(lower(extra));
-    }
-    return excluded.contains(lower(path.filename().string()));
+    return excludedDirs_.contains(lower(path.filename().string()));
 }
 
 std::string readRootDoc(const fs::path& confPath) {

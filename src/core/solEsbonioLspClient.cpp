@@ -12,12 +12,9 @@
 namespace mrst {
 namespace {
 
-QString pathToQString(const std::filesystem::path& path) {
-    return QString::fromStdWString(std::filesystem::weakly_canonical(path).wstring());
-}
-
+// 경로 변환은 solSphinxScanner.hpp 의 mrst::toCanonicalQString() 을 쓴다.
 QString projectBuildChild(const SphinxProject& project, const QString& child) {
-    return QDir(pathToQString(project.buildPath)).filePath(child);
+    return QDir(toCanonicalQString(project.buildPath)).filePath(child);
 }
 
 int oneBasedRangeValue(const QJsonObject& range, const QString& side, const QString& field, int fallback = 0) {
@@ -202,7 +199,7 @@ void LspClient::start(const SphinxProject& project, const QString& pythonExe, co
     process_ = std::make_unique<QProcess>();
     process_->setProgram(pythonExe);
     process_->setArguments({QStringLiteral("-m"), QStringLiteral("esbonio.server")});
-    process_->setWorkingDirectory(pathToQString(project.rootPath));
+    process_->setWorkingDirectory(toCanonicalQString(project.rootPath));
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     env.insert(QStringLiteral("PYTHONIOENCODING"), QStringLiteral("utf-8"));
     env.insert(QStringLiteral("PYTHONUTF8"), QStringLiteral("1"));
@@ -334,10 +331,10 @@ void LspClient::readStderr() {
 }
 
 void LspClient::initialize() {
-    const QString rootPath = pathToQString(project_.rootPath);
+    const QString rootPath = toCanonicalQString(project_.rootPath);
     const QString rootUri = pathToUri(rootPath);
-    const QString confDir = pathToQString(project_.confPath.parent_path());
-    const QString sourceDir = pathToQString(project_.sourcePath);
+    const QString confDir = toCanonicalQString(project_.confPath.parent_path());
+    const QString sourceDir = toCanonicalQString(project_.sourcePath);
     const QString buildDir = projectBuildChild(project_, QStringLiteral("lsp/dummy"));
     const QString doctreeDir = projectBuildChild(project_, QStringLiteral("lsp/doctrees"));
 

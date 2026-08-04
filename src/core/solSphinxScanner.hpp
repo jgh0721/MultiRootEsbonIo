@@ -1,10 +1,19 @@
 ﻿#pragma once
 
+#include <QString>
+
 #include <filesystem>
+#include <set>
 #include <string>
 #include <vector>
 
 namespace mrst {
+
+/// std::filesystem::path <-> QString 변환. Qt 경계마다 파일 로컬 static 으로
+/// 중복 정의되던 것을 한 곳으로 모았다.
+[[nodiscard]] QString toQString(const std::filesystem::path& path);
+[[nodiscard]] QString toCanonicalQString(const std::filesystem::path& path);
+[[nodiscard]] std::filesystem::path toPath(const QString& text);
 
 struct SphinxProject {
     std::wstring projectId;
@@ -32,6 +41,7 @@ public:
 private:
     std::filesystem::path workspaceRoot_;
     ScannerSettings settings_;
+    std::set<std::string> excludedDirs_;   // 생성자에서 1회 구성 (소문자 정규화됨)
 
     [[nodiscard]] bool isExcludedDirectory(const std::filesystem::path& path) const;
 };

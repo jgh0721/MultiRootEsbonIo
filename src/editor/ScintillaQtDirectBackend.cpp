@@ -21,8 +21,6 @@
 namespace {
 
 using MessageInt = unsigned int;
-constexpr int kSciSetLexer = 4001;
-constexpr int kSciSetLexerLanguage = 4006;
 constexpr sptr_t kInvalidPosition = static_cast<sptr_t>(-1);
 constexpr int kBraceHighlightIndicatorId = 24;
 constexpr int kBraceBadLightIndicatorId = 25;
@@ -727,10 +725,10 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 	clearLexer();
 
 	const QString lexerKey = TextLexerRegistry::instance().lexerKeyForDisplayName(displayName);
-	m_editor->send(sciMessage(kSciSetLexer), SCLEX_NULL);
 	if (lexerKey.compare(QStringLiteral("none"), Qt::CaseInsensitive) == 0) {
+		// ILexer 를 비우면 Scintilla 는 컨테이너 렉싱 모드가 되지만, 여기서는
+		// SCI_COLOURISE 를 보내지 않으므로 styleNeeded 도 발생하지 않아 무채색이 된다.
 		m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
-		m_editor->sends(sciMessage(kSciSetLexerLanguage), 0, nullptr);
 		m_editor->send(sciMessage(SCI_SETPROPERTY),
 			reinterpret_cast<uptr_t>("fold"),
 			reinterpret_cast<sptr_t>("0"));
@@ -740,7 +738,8 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 
 	const QByteArray lexerName = lexerKey.toUtf8();
 
-	#if defined(MV_DIRECT_SCINTILLA_HAS_LEXILLA_LEXERS)
+	// Scintilla 5 에는 SCI_SETLEXER / SCI_SETLEXERLANGUAGE 가 없다. 렉서 지정 수단은
+	// Lexilla 의 CreateLexer() 로 만든 ILexer5 를 SCI_SETILEXER 로 넘기는 것뿐이다.
 	m_currentLexer = CreateLexer(lexerName.constData());
 	if (!m_currentLexer) {
 		m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
@@ -749,10 +748,6 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 	}
 
 	m_editor->send(sciMessage(SCI_SETILEXER), 0, reinterpret_cast<sptr_t>(m_currentLexer));
-	#else
-	m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
-	m_editor->sends(sciMessage(kSciSetLexerLanguage), 0, lexerName.constData());
-	#endif
 
 	m_editor->send(sciMessage(SCI_SETPROPERTY),
 		reinterpret_cast<uptr_t>("fold"),
@@ -767,7 +762,9 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 	applySyntaxStyles(m_darkTheme);
 
 	m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
-	const bool applied = m_editor->send(sciMessage(SCI_GETLEXER)) != SCLEX_NULL;
+	// SCI_GETLEXER 는 ILexer 의 GetIdentifier() 를 그대로 돌려주므로 렉서마다 값이
+	// 제각각이다. 적용 여부는 CreateLexer() 결과로 판단하는 편이 정확하다.
+	const bool applied = m_currentLexer != nullptr;
 	writeLexerTrace(displayName, lexerKey, applied);
 	return applied;
 }

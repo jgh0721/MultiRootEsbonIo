@@ -3,6 +3,7 @@
 
 #include "core/solAppSettings.hpp"
 #include "core/solBaseView.hpp"
+#include "core/solRestWorkspaceController.hpp"
 #include "core/solThemeManager.hpp"
 #include "core/solShadowBackupStore.hpp"
 #include "editor/QBaseEditor.hpp"
@@ -534,6 +535,11 @@ MainWindow::MainWindow( QWidget* parent )
         QSettingsDialog::ApplyShortcutsToActions( shortcuts, this );
     }
 
+    // Sphinx/Esbonio 조율자. 탭이 복원되기 전에 먼저 만들어 둔다.
+    controller_ = new mrst::WorkspaceController( this );
+    controller_->setPreviewView( Ui.webEngineView );
+    connect( controller_, &mrst::WorkspaceController::logMessage, this, &MainWindow::appendLog );
+
     if( settings.value( "textView/hotExitEnabled", true ).toBool() )
     {
         const QList<TextShadowBackupStore::Snapshot> hotExitSnapshots = TextShadowBackupStore::restorableSnapshots( false );
@@ -968,6 +974,15 @@ int MainWindow::addViewTab( QBaseView* view )
 
     connectViewStatusSignals( view );
 
+    if( controller_ )
+    {
+        if( QTextView* textView = textViewOf( view ) )
+        {
+            controller_->attachDocument( textView );
+            controller_->setActiveDocument( textView );
+        }
+    }
+
     updateCopyActionState();
     updatePasteActionState();
     return idx;
@@ -977,6 +992,12 @@ void MainWindow::disconnectViewSignals( QBaseView* view )
 {
     if( !view )
         return;
+
+    if( controller_ )
+    {
+        if( QTextView* textView = textViewOf( view ) )
+            controller_->detachDocument( textView );
+    }
 
     QObject::disconnect( view, nullptr, this, nullptr );
 }
@@ -1314,7 +1335,8 @@ void MainWindow::onWorkspaceOpen()
 {
     //if( !confirmSaveAll() )
     //    return;
-    const QString folder = QFileDialog::getExistingDirectory( this, QStringLiteral( "워크스페이스 폴더 열기" ), workspaceRoot_ );
+    const QString startDir = controller_ ? controller_->workspaceRoot() : QString{};
+    const QString folder = QFileDialog::getExistingDirectory( this, QStringLiteral( "워크스페이스 폴더 열기" ), startDir );
     if( !folder.isEmpty() )
         setWorkspace( folder );
 }
@@ -1345,6 +1367,13 @@ bool MainWindow::saveView( QBaseView* view, bool saveAs )
     //    started = saveAs ? pdfView->saveFileAs() : pdfView->saveFile( {} );
     else
         started = view->saveFile();
+
+    if( started && controller_ )
+    {
+        // 다른 이름으로 저장이면 경로가 바뀌었을 수 있어 프로젝트를 다시 해석한다.
+        if( QTextView* textView = textViewOf( view ) )
+            controller_->notifyDocumentSaved( textView );
+    }
 
     updateSaveActionState();
     return started;
@@ -1526,6 +1555,9 @@ void MainWindow::closeEvent( QCloseEvent* event )
 
 void MainWindow::onTabChanged( int /*index*/ )
 {
+    if( controller_ )
+        controller_->setActiveDocument( textViewOf( currentView() ) );
+
     updateTitle();
     updateViewerToolBar();
     updateStatusBar();
@@ -2107,6 +2139,10 @@ void MainWindow::shutdownUi()
     if( m_shuttingDown ) return;
     m_shuttingDown = true;
 
+    // LSP/프리뷰 프로세스는 위젯 파괴보다 먼저 정리해야 고아 프로세스가 남지 않는다.
+    if( controller_ )
+        controller_->shutdown();
+
     qDebug().noquote() << "[MainWindow] shutdownUi begin" << this
         << "tabCount=" << ( m_tabWidget ? m_tabWidget->count() : -1 );
 
@@ -2186,7 +2222,7 @@ void MainWindow::shutdownUi()
 
 void MainWindow::setWorkspace( const QString& Folder )
 {
-    workspaceRoot_ = QFileInfo( Folder ).absoluteFilePath();
+    const QString workspaceRoot = QFileInfo( Folder ).absoluteFilePath();
     //SettingsStore::addRecent( &appState_.recentFolders, workspaceRoot_ );
     //if( workspaceSearch_ != nullptr )
     //{
@@ -2209,25 +2245,23 @@ void MainWindow::setWorkspace( const QString& Folder )
     //        }
     //    } );
     //}
-    treLeftFolderTreeModel_->setRootPath( workspaceRoot_ );
-    Ui.treLeftSideFolterTree->setRootIndex( treLeftFolderTreeModel_->index( workspaceRoot_ ) );
+    treLeftFolderTreeModel_->setRootPath( workspaceRoot );
+    Ui.treLeftSideFolterTree->setRootIndex( treLeftFolderTreeModel_->index( workspaceRoot ) );
     for( int column = 1; column < treLeftFolderTreeModel_->columnCount(); ++column )
         Ui.treLeftSideFolterTree->hideColumn( column );
-    refreshProjectList();
+
+    // 스캔은 컨트롤러가 백그라운드로 수행하고 결과를 로그/시그널로 알려준다.
+    if( controller_ )
+        controller_->setWorkspaceRoot( workspaceRoot );
 }
 
 void MainWindow::refreshProjectList()
 {
-    if( workspaceRoot_.isEmpty() )
-        return;
+    if( controller_ )
+        controller_->rescanProjects();
+}
 
-    mrst::ProjectScanner scanner( workspaceRoot_.toStdWString() );
-    projects_ = scanner.scan();
-    appendLog( QStringLiteral( "Sphinx 프로젝트 %1개 발견" ).arg( projects_.size() ) );
-    for( int idx = 0; idx < projects_.size(); ++idx )
-    {
-        const auto& project = projects_[ idx ];
-        appendLog( QStringLiteral( "[%1]  %2 — %3" ).arg( idx + 1 ).arg( QString::fromStdWString( project.projectId ) ).arg( QString::fromStdWString( project.rootPath.wstring() ) ) );
-    }
-    //updateStatusBar();
+QTextView* MainWindow::textViewOf( QBaseView* view ) const
+{
+    return qobject_cast< QTextView* >( view );
 }
