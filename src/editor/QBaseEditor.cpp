@@ -3,6 +3,7 @@
 
 #include "core/solAppSettings.hpp"
 #include "core/solShadowBackupStore.hpp"
+#include "core/solThemeManager.hpp"
 
 #include "ColumnRulerWidget.hpp"
 #include "FindReplaceWidget.hpp"
@@ -938,6 +939,172 @@ int  QTextView::characterCount() const
         : 0;
 }
 
+// ═══════════════════════════════════════════════════════════
+// Sphinx/Esbonio 서비스 계층용 접근자
+
+QString QTextView::text() const
+{
+    return m_editor ? m_editor->text() : QString{};
+}
+
+QString QTextView::lineText( int line ) const
+{
+    // 밖에서는 1-based 줄 번호를 쓴다.
+    return m_editor ? m_editor->lineText( line - 1 ) : QString{};
+}
+
+QString QTextView::textRange( int startPos, int endPos ) const
+{
+    return m_editor ? QString::fromUtf8( m_editor->textRangeUtf8( startPos, endPos ) ) : QString{};
+}
+
+int QTextView::positionFromLineColumn( int line, int column ) const
+{
+    return m_editor ? m_editor->positionFromLineColumn( qMax( 0, line - 1 ), qMax( 0, column - 1 ) ) : 0;
+}
+
+int QTextView::currentPosition() const
+{
+    return m_editor ? m_editor->currentPos() : 0;
+}
+
+int QTextView::firstVisibleLine() const
+{
+    return m_editor ? m_editor->firstVisibleLine() + 1 : 1;
+}
+
+void QTextView::scrollToLine( int line, double viewportRatio )
+{
+    if( !m_editor )
+        return;
+
+    const int visibleLines = qMax( 1, m_editor->linesOnScreen() );
+    const double ratio = qBound( 0.0, viewportRatio, 1.0 );
+    const int targetLine = qBound( 1, line, qMax( 1, lineCount() ) ) - 1;
+    const int offset = static_cast< int >( visibleLines * ratio );
+    m_editor->setFirstVisibleLine( qMax( 0, targetLine - offset ) );
+}
+
+QPoint QTextView::caretGlobalPos() const
+{
+    if( !m_editor || !m_editor->widget() )
+        return {};
+
+    const QPoint local = m_editor->pointFromPosition( m_editor->currentPos() );
+    // 캐럿 아래쪽에 팝업이 오도록 한 줄 높이만큼 내린다.
+    const int lineHeight = qMax( 1, m_editor->textHeight( m_editor->lineFromPosition( m_editor->currentPos() ) ) );
+    return m_editor->widget()->mapToGlobal( local + QPoint( 0, lineHeight ) );
+}
+
+void QTextView::replaceRangeAtCursor( int backspaceCount, const QString& insertText )
+{
+    if( !m_editor )
+        return;
+
+    const int caret = m_editor->currentPos();
+    int start = caret;
+    if( backspaceCount > 0 )
+    {
+        // backspaceCount 는 글자 수이므로 바이트가 아니라 문서 위치로 환산해야 한다.
+        const int line = m_editor->lineFromPosition( caret );
+        const int column = m_editor->columnFromPosition( caret );
+        start = m_editor->positionFromLineColumn( line, qMax( 0, column - backspaceCount ) );
+    }
+
+    m_editor->setSearchTargetRange( start, caret );
+    m_editor->replaceInTarget( insertText );
+
+    const int newCaret = m_editor->targetEnd();
+    m_editor->setSelectionByPos( newCaret, newCaret );
+}
+
+// ── 진단 표시 ──────────────────────────────────────────────
+
+int QTextView::diagnosticIndicatorFor( int severity )
+{
+    switch( severity )
+    {
+        case 1:  return kDiagnosticErrorIndicatorId;
+        case 2:  return kDiagnosticWarningIndicatorId;
+        case 3:  return kDiagnosticInfoIndicatorId;
+        default: return kDiagnosticHintIndicatorId;
+    }
+}
+
+void QTextView::configureDiagnosticIndicators()
+{
+    if( !m_editor || m_diagnosticIndicatorsReady )
+        return;
+
+    const ThemeManager& theme = ThemeManager::instance();
+    const QColor errorColor = theme.color( QStringLiteral( "text.diagnostic.error" ) );
+    const QColor warningColor = theme.color( QStringLiteral( "text.diagnostic.warning" ) );
+    const QColor infoColor = theme.color( QStringLiteral( "text.diagnostic.info" ) );
+
+    // 테마에 아직 진단 색이 없을 수 있으므로 유효하지 않으면 표준색으로 대체한다.
+    m_editor->setIndicatorStyle( kDiagnosticErrorIndicatorId, 1,   // INDIC_SQUIGGLE
+                                errorColor.isValid() ? errorColor : QColor( 0xE5, 0x14, 0x00 ) );
+    m_editor->setIndicatorStyle( kDiagnosticWarningIndicatorId, 1, // INDIC_SQUIGGLE
+                                warningColor.isValid() ? warningColor : QColor( 0xBF, 0x81, 0x03 ) );
+    m_editor->setIndicatorStyle( kDiagnosticInfoIndicatorId, 1,    // INDIC_SQUIGGLE
+                                infoColor.isValid() ? infoColor : QColor( 0x1A, 0x85, 0xFF ) );
+    m_editor->setIndicatorStyle( kDiagnosticHintIndicatorId, 10,   // INDIC_DOTS
+                                infoColor.isValid() ? infoColor : QColor( 0x80, 0x80, 0x80 ) );
+    m_diagnosticIndicatorsReady = true;
+}
+
+void QTextView::setDiagnosticMarks( const QVector< mrst::DiagnosticEntry >& entries )
+{
+    if( !m_editor )
+        return;
+
+    configureDiagnosticIndicators();
+
+    for( const int indicatorId : { kDiagnosticErrorIndicatorId,
+                                  kDiagnosticWarningIndicatorId,
+                                  kDiagnosticInfoIndicatorId,
+                                  kDiagnosticHintIndicatorId } )
+    {
+        m_editor->clearAllIndicator( indicatorId );
+    }
+
+    m_diagnostics = entries;
+    if( entries.isEmpty() )
+        return;
+
+    const int documentEnd = m_editor->documentLength();
+    for( const mrst::DiagnosticEntry& entry : entries )
+    {
+        const int start = m_editor->positionFromLineColumn( qMax( 0, entry.line - 1 ),
+                                                           qMax( 0, entry.character - 1 ) );
+
+        // 끝 위치가 없거나 시작보다 앞이면 해당 줄 끝까지 표시한다.
+        int end = documentEnd;
+        if( entry.endLine >= entry.line )
+            end = m_editor->positionFromLineColumn( qMax( 0, entry.endLine - 1 ),
+                                                   qMax( 0, entry.endCharacter - 1 ) );
+        if( end <= start )
+            end = m_editor->lineEndPosition( qMax( 0, entry.line - 1 ) );
+
+        // 빈 줄이라 길이가 0이면 최소 한 글자는 칠해야 눈에 보인다.
+        const int length = qMax( 1, end - start );
+        if( start >= documentEnd )
+            continue;
+
+        m_editor->applyIndicator( diagnosticIndicatorFor( entry.severity ), start,
+                                 qMin( length, documentEnd - start ) );
+    }
+}
+
+QString QTextView::diagnosticTooltipAt( int position ) const
+{
+    if( !m_editor || m_diagnostics.isEmpty() )
+        return {};
+
+    const int line = m_editor->lineFromPosition( position ) + 1;
+    return mrst::diagnosticTooltipText( m_diagnostics, currentFilePath(), line );
+}
+
 int QTextView::tabWidth() const
 {
     return m_editorSettings.tabWidth;
@@ -1384,7 +1551,9 @@ bool QTextView::ensureEditorBackend()
                 m_cachedCurrentLine = line + 1;
                 m_cachedCurrentColumn = index + 1;
                 emit statusChanged();
+                emit sigCursorMoved( m_cachedCurrentLine, m_cachedCurrentColumn );
             } );
+    connect( m_editor, &ScintillaQtDirectBackend::charAdded, this, &QTextView::sigCharAdded );
     connect( m_editor, &ScintillaQtDirectBackend::linesChanged, this, [this] {
         m_cachedLineCount = qMax( 1, m_editor ? m_editor->lineCount() : 1 );
         if( m_ruler && m_editor )
@@ -1395,6 +1564,12 @@ bool QTextView::ensureEditorBackend()
         updateMetrics();
         scheduleHotExitBackup();
         emit statusChanged();
+
+        // 진단은 편집 즉시 낡은 정보가 되므로 다음 publish 까지 표시를 지운다.
+        if( !m_diagnostics.isEmpty() )
+            setDiagnosticMarks( {} );
+
+        emit sigTextEdited();
     } );
     connect( m_editor, &ScintillaQtDirectBackend::selectionChanged, this, [this] {
         updateMetrics();

@@ -1,11 +1,13 @@
 ﻿#pragma once
 
 #include "core/solBaseView.hpp"
+#include "core/solSphinxDiagnostics.hpp"
 
 #include "ScintillaDocument.hpp"
 #include "ScintillaEditorSettings.hpp"
 #include "TextFileSession.hpp"
 
+#include <QPoint>
 #include <QPointer>
 #include <QVector>
 #include <QPair>
@@ -136,6 +138,25 @@ public:
     ScintillaEditorSettings::ChangeHistoryMode changeHistoryMode() const;
     void setChangeHistoryMode( ScintillaEditorSettings::ChangeHistoryMode mode );
 
+    // ── Sphinx/Esbonio 서비스 계층용 접근자 ──
+    // LSP 문서 동기화, 자동완성 컨텍스트, 프리뷰 스크롤 동기화, 진단 표시가
+    // 전부 이 API 위에 올라간다. 문서 텍스트와 캐럿을 밖에서 물어볼 수 있어야 한다.
+    [[nodiscard]] QString text() const;
+    [[nodiscard]] QString lineText( int line ) const;
+    [[nodiscard]] QString textRange( int startPos, int endPos ) const;
+    [[nodiscard]] int     positionFromLineColumn( int line, int column ) const;
+    [[nodiscard]] int     currentPosition() const;
+    [[nodiscard]] int     firstVisibleLine() const;
+    void                  scrollToLine( int line, double viewportRatio = 0.35 );
+    /// 캐럿의 전역 화면 좌표. 자동완성 팝업 위치 기준점.
+    [[nodiscard]] QPoint  caretGlobalPos() const;
+    /// 커서 바로 앞 backspaceCount 글자를 지우고 insertText 를 넣는다.
+    /// LSP 완성 항목 삽입용.
+    void                  replaceRangeAtCursor( int backspaceCount, const QString& insertText );
+    /// 진단 스퀴글을 다시 그린다. 빈 목록이면 전부 지운다.
+    void                  setDiagnosticMarks( const QVector< mrst::DiagnosticEntry >& entries );
+    [[nodiscard]] QString diagnosticTooltipAt( int position ) const;
+
     QToolBar* createToolBar() override;
     void setTheme( Theme theme ) override;
 
@@ -143,6 +164,13 @@ signals:
     void encodingChanged( const QString& encoding );
     void languageChanged( const QString& language );
     void statusChanged();
+
+    /// 사용자가 문서를 편집했다 (파일 로드로 인한 변경은 제외).
+    void sigTextEdited();
+    /// 캐럿이 이동했다. 1-based 줄/열.
+    void sigCursorMoved( int line, int column );
+    /// 사용자가 문자를 입력했다. 자동완성 트리거 문자 감지용.
+    void sigCharAdded( int ch );
 
 private:
     struct SearchOptions
@@ -202,6 +230,18 @@ private:
     int m_currentMatchStart = -1;
     int m_currentMatchLength = 0;
     int m_searchResumePos = -1;
+
+    // ── 진단 표시 ──
+    // 20~23 은 검색 제외 기능이 이미 쓰고 있어 12~15 를 진단에 배정한다.
+    static constexpr int kDiagnosticErrorIndicatorId = 12;
+    static constexpr int kDiagnosticWarningIndicatorId = 13;
+    static constexpr int kDiagnosticInfoIndicatorId = 14;
+    static constexpr int kDiagnosticHintIndicatorId = 15;
+    QVector< mrst::DiagnosticEntry > m_diagnostics;
+    bool                m_diagnosticIndicatorsReady = false;
+
+    void configureDiagnosticIndicators();
+    [[nodiscard]] static int diagnosticIndicatorFor( int severity );
 
     void setupFindWidget();
     void connectFindWidgetSignals();

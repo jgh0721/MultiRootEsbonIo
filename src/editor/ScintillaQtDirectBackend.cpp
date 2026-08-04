@@ -30,6 +30,12 @@ MessageInt sciMessage(int value)
 	return static_cast<MessageInt>(value);
 }
 
+/// QColor -> Scintilla 색상 (0x00BBGGRR).
+sptr_t sciColour(const QColor& color)
+{
+	return static_cast<sptr_t>(color.red() | (color.green() << 8) | (color.blue() << 16));
+}
+
 int changeHistoryFlagsForMode(const ScintillaEditorSettings::ChangeHistoryMode mode)
 {
 	switch (mode) {
@@ -179,6 +185,14 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 			this, [this](Scintilla::Update) {
 				updateBraceHighlight();
 				emitCursorAndSelectionState();
+			});
+	connect(m_editor, &ScintillaEditBase::styleNeeded,
+			this, [this](Scintilla::Position position) {
+				emit styleNeeded(static_cast<int>(position));
+			});
+	connect(m_editor, &ScintillaEditBase::charAdded,
+			this, [this](int ch) {
+				emit charAdded(ch);
 			});
 	connect(m_editor, &ScintillaEditBase::marginClicked,
 			this, [this](Scintilla::Position position, Scintilla::KeyMod, int margin) {
@@ -661,6 +675,175 @@ QFont ScintillaQtDirectBackend::editorFont() const
 int ScintillaQtDirectBackend::firstVisibleLine() const
 {
 	return m_editor ? static_cast<int>(m_editor->send(sciMessage(SCI_GETFIRSTVISIBLELINE))) : 0;
+}
+
+void ScintillaQtDirectBackend::setFirstVisibleLine(int line)
+{
+	if (!m_editor)
+		return;
+
+	const sptr_t target = qMax<sptr_t>(0, static_cast<sptr_t>(line));
+	m_editor->send(sciMessage(SCI_SETFIRSTVISIBLELINE), target);
+}
+
+int ScintillaQtDirectBackend::linesOnScreen() const
+{
+	return m_editor ? static_cast<int>(m_editor->send(sciMessage(SCI_LINESONSCREEN))) : 0;
+}
+
+// ── 위치 변환 ──────────────────────────────────────────────
+
+int ScintillaQtDirectBackend::positionFromLine(int line) const
+{
+	if (!m_editor)
+		return 0;
+
+	const sptr_t safeLine = qBound(sptr_t(0), static_cast<sptr_t>(line), static_cast<sptr_t>(qMax(0, lineCount() - 1)));
+	return static_cast<int>(m_editor->send(sciMessage(SCI_POSITIONFROMLINE), safeLine));
+}
+
+int ScintillaQtDirectBackend::lineEndPosition(int line) const
+{
+	if (!m_editor)
+		return 0;
+
+	const sptr_t safeLine = qBound(sptr_t(0), static_cast<sptr_t>(line), static_cast<sptr_t>(qMax(0, lineCount() - 1)));
+	return static_cast<int>(m_editor->send(sciMessage(SCI_GETLINEENDPOSITION), safeLine));
+}
+
+int ScintillaQtDirectBackend::lineFromPosition(int position) const
+{
+	if (!m_editor)
+		return 0;
+
+	const sptr_t safePosition = qBound(sptr_t(0), static_cast<sptr_t>(position), static_cast<sptr_t>(documentLength()));
+	return static_cast<int>(m_editor->send(sciMessage(SCI_LINEFROMPOSITION), safePosition));
+}
+
+int ScintillaQtDirectBackend::columnFromPosition(int position) const
+{
+	if (!m_editor)
+		return 0;
+
+	const sptr_t safePosition = qBound(sptr_t(0), static_cast<sptr_t>(position), static_cast<sptr_t>(documentLength()));
+	return static_cast<int>(m_editor->send(sciMessage(SCI_GETCOLUMN), safePosition));
+}
+
+int ScintillaQtDirectBackend::positionFromLineColumn(int line, int column) const
+{
+	if (!m_editor)
+		return 0;
+
+	return static_cast<int>(positionFromLineIndex(m_editor, line, column));
+}
+
+QByteArray ScintillaQtDirectBackend::textRangeUtf8(int startPos, int endPos) const
+{
+	if (!m_editor)
+		return {};
+
+	const sptr_t length = documentLength();
+	const sptr_t start = qBound(sptr_t(0), static_cast<sptr_t>(startPos), length);
+	const sptr_t end = qBound(start, static_cast<sptr_t>(endPos), length);
+	if (end <= start)
+		return {};
+
+	QByteArray buffer(static_cast<qsizetype>(end - start) + 1, Qt::Uninitialized);
+	Sci_TextRangeFull range{};
+	range.chrg.cpMin = start;
+	range.chrg.cpMax = end;
+	range.lpstrText = buffer.data();
+	m_editor->send(sciMessage(SCI_GETTEXTRANGEFULL), 0, reinterpret_cast<sptr_t>(&range));
+	buffer.resize(static_cast<qsizetype>(end - start));
+	return buffer;
+}
+
+QString ScintillaQtDirectBackend::lineText(int line) const
+{
+	if (!m_editor || line < 0 || line >= lineCount())
+		return {};
+
+	const sptr_t length = m_editor->send(sciMessage(SCI_LINELENGTH), line);
+	if (length <= 0)
+		return {};
+
+	QByteArray buffer(static_cast<qsizetype>(length) + 1, Qt::Uninitialized);
+	m_editor->send(sciMessage(SCI_GETLINE), line, reinterpret_cast<sptr_t>(buffer.data()));
+	buffer.resize(static_cast<qsizetype>(length));
+	return QString::fromUtf8(buffer);
+}
+
+QPoint ScintillaQtDirectBackend::pointFromPosition(int position) const
+{
+	if (!m_editor)
+		return {};
+
+	const sptr_t safePosition = qBound(sptr_t(0), static_cast<sptr_t>(position), static_cast<sptr_t>(documentLength()));
+	const int x = static_cast<int>(m_editor->send(sciMessage(SCI_POINTXFROMPOSITION), 0, safePosition));
+	const int y = static_cast<int>(m_editor->send(sciMessage(SCI_POINTYFROMPOSITION), 0, safePosition));
+	return { x, y };
+}
+
+// ── 컨테이너 렉싱 지원 ─────────────────────────────────────
+
+int ScintillaQtDirectBackend::endStyled() const
+{
+	return m_editor ? static_cast<int>(m_editor->send(sciMessage(SCI_GETENDSTYLED))) : 0;
+}
+
+void ScintillaQtDirectBackend::startStyling(int position)
+{
+	if (!m_editor)
+		return;
+
+	const sptr_t safePosition = qBound(sptr_t(0), static_cast<sptr_t>(position), static_cast<sptr_t>(documentLength()));
+	m_editor->send(sciMessage(SCI_STARTSTYLING), safePosition);
+}
+
+void ScintillaQtDirectBackend::setStylingEx(const QByteArray& styleBytes)
+{
+	if (!m_editor || styleBytes.isEmpty())
+		return;
+
+	m_editor->send(sciMessage(SCI_SETSTYLINGEX),
+		static_cast<uptr_t>(styleBytes.size()),
+		reinterpret_cast<sptr_t>(styleBytes.constData()));
+}
+
+void ScintillaQtDirectBackend::colouriseAll()
+{
+	if (m_editor)
+		m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
+}
+
+void ScintillaQtDirectBackend::setStyleForeground(int style, const QColor& color)
+{
+	if (m_editor && color.isValid())
+		m_editor->send(sciMessage(SCI_STYLESETFORE), style, sciColour(color));
+}
+
+void ScintillaQtDirectBackend::setStyleBackground(int style, const QColor& color)
+{
+	if (m_editor && color.isValid())
+		m_editor->send(sciMessage(SCI_STYLESETBACK), style, sciColour(color));
+}
+
+void ScintillaQtDirectBackend::setStyleBold(int style, bool bold)
+{
+	if (m_editor)
+		m_editor->send(sciMessage(SCI_STYLESETBOLD), style, bold ? 1 : 0);
+}
+
+void ScintillaQtDirectBackend::setStyleItalic(int style, bool italic)
+{
+	if (m_editor)
+		m_editor->send(sciMessage(SCI_STYLESETITALIC), style, italic ? 1 : 0);
+}
+
+void ScintillaQtDirectBackend::setStyleUnderline(int style, bool underline)
+{
+	if (m_editor)
+		m_editor->send(sciMessage(SCI_STYLESETUNDERLINE), style, underline ? 1 : 0);
 }
 
 void ScintillaQtDirectBackend::restoreViewState(int caretPosition, int firstVisibleLine)

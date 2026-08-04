@@ -83,7 +83,32 @@ public:
 	QFont editorFont() const;
 
 	int firstVisibleLine() const;
+	void setFirstVisibleLine(int line);
+	int linesOnScreen() const;
 	void restoreViewState(int caretPosition, int firstVisibleLine);
+
+	// ── 위치 변환 ──
+	// Scintilla 위치는 UTF-8 바이트 오프셋이고 열은 코드 유닛 단위다.
+	int positionFromLine(int line) const;
+	int lineEndPosition(int line) const;
+	int lineFromPosition(int position) const;
+	int columnFromPosition(int position) const;
+	int positionFromLineColumn(int line, int column) const;
+	QByteArray textRangeUtf8(int startPos, int endPos) const;
+	QString lineText(int line) const;
+	QPoint pointFromPosition(int position) const;
+
+	// ── 컨테이너 렉싱 지원 ──
+	// ILexer 를 비운 상태에서 styleNeeded 시그널을 받아 직접 스타일을 칠할 때 쓴다.
+	int endStyled() const;
+	void startStyling(int position);
+	void setStylingEx(const QByteArray& styleBytes);
+	void colouriseAll();
+	void setStyleForeground(int style, const QColor& color);
+	void setStyleBackground(int style, const QColor& color);
+	void setStyleBold(int style, bool bold);
+	void setStyleItalic(int style, bool italic);
+	void setStyleUnderline(int style, bool underline);
 	int textHeight(int line) const;
 	int leftMarginWidth() const;
 	int changeHistoryFlags() const;
@@ -97,6 +122,11 @@ signals:
 	void linesChanged();
 	void textChanged();
 	void selectionChanged();
+	/// 컨테이너 렉싱 모드에서 Scintilla 가 스타일을 요구하는 구간의 끝 위치.
+	/// SCI_SETIDLESTYLING 때문에 문서 전체가 아니라 청크 단위로 도착한다.
+	void styleNeeded(int endPosition);
+	/// 사용자가 문자를 입력했다. 자동완성 트리거 감지에 쓴다.
+	void charAdded(int ch);
 
 private:
 	void configureCodeFolding(bool enabled);
