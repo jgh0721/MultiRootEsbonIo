@@ -33,6 +33,8 @@ int main( int argc, char* argv[] )
         arguments.removeFirst();   // 실행 파일 경로
         if( !arguments.isEmpty() )
             window->openStartupPaths( arguments );
+        else
+            window->restoreLastSession();
 
     } while( false );
 

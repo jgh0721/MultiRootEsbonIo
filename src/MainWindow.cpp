@@ -6,6 +6,8 @@
 #include "core/solPythonEnvMgr.hpp"
 #include "core/solRestWorkspaceController.hpp"
 #include "core/solSphinxDiagnosticsStore.hpp"
+#include "core/solWorkspaceSearch.hpp"
+#include "core/solWorkspaceSession.hpp"
 #include "core/solThemeManager.hpp"
 #include "core/solShadowBackupStore.hpp"
 #include "editor/QBaseEditor.hpp"
@@ -550,6 +552,7 @@ MainWindow::MainWindow( QWidget* parent )
 
     setupDiagnosticsTable();
     setupOutlineTrees();
+    setupWorkspaceSearchTab();
     setupMissingDependencyBar();
     setupPythonEnvironment();
 
@@ -580,6 +583,7 @@ MainWindow::MainWindow( QWidget* parent )
             openFile( snapshot.originalFilePath );
         }
     }
+
 }
 
 MainWindow::~MainWindow()
@@ -1576,6 +1580,8 @@ void MainWindow::closeEvent( QCloseEvent* event )
         }
     }
 
+    saveWorkspaceSessionNow();
+
     shutdownUi();
     QMainWindow::closeEvent( event );
 }
@@ -2268,6 +2274,12 @@ void MainWindow::shutdownUi()
 void MainWindow::setWorkspace( const QString& Folder )
 {
     const QString workspaceRoot = QFileInfo( Folder ).absoluteFilePath();
+
+    // 워크스페이스를 옮기기 전에 지금 것의 세션을 남긴다.
+    if( !workspaceRoot_.isEmpty() && workspaceRoot_ != workspaceRoot )
+        saveWorkspaceSessionNow();
+    workspaceRoot_ = workspaceRoot;
+    AppSettings().setValue( QStringLiteral( "workspace/lastRoot" ), workspaceRoot );
     //SettingsStore::addRecent( &appState_.recentFolders, workspaceRoot_ );
     //if( workspaceSearch_ != nullptr )
     //{
@@ -2471,6 +2483,285 @@ void MainWindow::setupOutlineTrees()
             [this]( const QString& reason ) {
                 setOutlinePlaceholder( Ui.treOutlineDocument, reason );
             } );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 워크스페이스 검색
+// ═══════════════════════════════════════════════════════════
+void MainWindow::setupWorkspaceSearchTab()
+{
+    if( Ui.tabStatistics == nullptr )
+        return;
+
+    auto* page = new QWidget( Ui.tabStatistics );
+    auto* layout = new QVBoxLayout( page );
+    layout->setContentsMargins( 4, 4, 4, 4 );
+    layout->setSpacing( 4 );
+
+    auto* controls = new QHBoxLayout;
+    searchQueryEdit_ = new QLineEdit( page );
+    searchQueryEdit_->setPlaceholderText( tr( "찾을 내용" ) );
+    searchReplaceEdit_ = new QLineEdit( page );
+    searchReplaceEdit_->setPlaceholderText( tr( "바꿀 내용" ) );
+    controls->addWidget( searchQueryEdit_, 1 );
+    controls->addWidget( searchReplaceEdit_, 1 );
+
+    auto* findButton = new QPushButton( tr( "찾기" ), page );
+    auto* previewButton = new QPushButton( tr( "바꾸기 미리보기" ), page );
+    searchApplyButton_ = new QPushButton( tr( "적용" ), page );
+    searchApplyButton_->setEnabled( false );
+    controls->addWidget( findButton );
+    controls->addWidget( previewButton );
+    controls->addWidget( searchApplyButton_ );
+    layout->addLayout( controls );
+
+    auto* options = new QHBoxLayout;
+    searchCaseBox_ = new QCheckBox( tr( "대/소문자 구분" ), page );
+    searchWordBox_ = new QCheckBox( tr( "단어 단위" ), page );
+    searchRegexBox_ = new QCheckBox( tr( "정규식" ), page );
+    searchStatusLabel_ = new QLabel( page );
+    options->addWidget( searchCaseBox_ );
+    options->addWidget( searchWordBox_ );
+    options->addWidget( searchRegexBox_ );
+    options->addStretch( 1 );
+    options->addWidget( searchStatusLabel_ );
+    layout->addLayout( options );
+
+    searchResultTree_ = new QTreeWidget( page );
+    searchResultTree_->setHeaderHidden( true );
+    searchResultTree_->setUniformRowHeights( true );
+    layout->addWidget( searchResultTree_, 1 );
+
+    Ui.tabStatistics->addTab( page, tr( "검색" ) );
+
+    connect( findButton, &QPushButton::clicked, this, &MainWindow::runWorkspaceSearch );
+    connect( searchQueryEdit_, &QLineEdit::returnPressed, this, &MainWindow::runWorkspaceSearch );
+    connect( previewButton, &QPushButton::clicked, this, &MainWindow::runWorkspaceReplacePreview );
+    connect( searchApplyButton_, &QPushButton::clicked, this, &MainWindow::applyWorkspaceReplace );
+    connect( searchResultTree_, &QTreeWidget::itemActivated, this, &MainWindow::onOutlineItemActivated );
+    connect( searchResultTree_, &QTreeWidget::itemDoubleClicked, this,
+            &MainWindow::onOutlineItemActivated );
+}
+
+namespace {
+
+mrst::SearchOptions searchOptionsFrom( const QCheckBox* caseBox, const QCheckBox* wordBox,
+                                       const QCheckBox* regexBox )
+{
+    mrst::SearchOptions options;
+    options.caseSensitive = caseBox != nullptr && caseBox->isChecked();
+    options.wholeWords = wordBox != nullptr && wordBox->isChecked();
+    options.regex = regexBox != nullptr && regexBox->isChecked();
+    return options;
+}
+
+}  // namespace
+
+void MainWindow::runWorkspaceSearch()
+{
+    if( searchResultTree_ == nullptr )
+        return;
+
+    searchResultTree_->clear();
+    pendingReplacePaths_.clear();
+    searchApplyButton_->setEnabled( false );
+
+    const QString query = searchQueryEdit_->text();
+    if( workspaceRoot_.isEmpty() || query.isEmpty() )
+    {
+        searchStatusLabel_->setText( tr( "워크스페이스와 찾을 내용을 지정하세요." ) );
+        return;
+    }
+
+    const QVector< mrst::SearchMatch > matches =
+        mrst::findInFiles( workspaceRoot_, query,
+                          searchOptionsFrom( searchCaseBox_, searchWordBox_, searchRegexBox_ ) );
+
+    const QDir root( workspaceRoot_ );
+    QHash< QString, QTreeWidgetItem* > fileItems;
+    for( const mrst::SearchMatch& match : matches )
+    {
+        QTreeWidgetItem*& fileItem = fileItems[ match.path ];
+        if( fileItem == nullptr )
+        {
+            fileItem = new QTreeWidgetItem( QStringList{ root.relativeFilePath( match.path ) } );
+            fileItem->setData( 0, Qt::UserRole, match.path );
+            fileItem->setData( 0, Qt::UserRole + 1, 1 );
+            searchResultTree_->addTopLevelItem( fileItem );
+        }
+
+        auto* hit = new QTreeWidgetItem(
+            QStringList{ QStringLiteral( "%1:%2  %3" ).arg( match.line ).arg( match.column ).arg( match.text ) } );
+        hit->setData( 0, Qt::UserRole, match.path );
+        hit->setData( 0, Qt::UserRole + 1, match.line );
+        fileItem->addChild( hit );
+    }
+    searchResultTree_->expandToDepth( 0 );
+
+    searchStatusLabel_->setText( tr( "파일 %1개에서 %2건" )
+                                    .arg( fileItems.size() )
+                                    .arg( matches.size() ) );
+}
+
+void MainWindow::runWorkspaceReplacePreview()
+{
+    if( searchResultTree_ == nullptr )
+        return;
+
+    searchResultTree_->clear();
+    pendingReplacePaths_.clear();
+    searchApplyButton_->setEnabled( false );
+
+    const QString query = searchQueryEdit_->text();
+    if( workspaceRoot_.isEmpty() || query.isEmpty() )
+    {
+        searchStatusLabel_->setText( tr( "워크스페이스와 찾을 내용을 지정하세요." ) );
+        return;
+    }
+
+    const QVector< mrst::ReplacePreview > previews = mrst::previewReplaceInFiles(
+        workspaceRoot_, query, searchReplaceEdit_->text(),
+        searchOptionsFrom( searchCaseBox_, searchWordBox_, searchRegexBox_ ) );
+
+    const QDir root( workspaceRoot_ );
+    int total = 0;
+    for( const mrst::ReplacePreview& preview : previews )
+    {
+        auto* fileItem = new QTreeWidgetItem(
+            QStringList{ tr( "%1  (%2건)" ).arg( root.relativeFilePath( preview.path ) )
+                             .arg( preview.replacements ) } );
+        fileItem->setData( 0, Qt::UserRole, preview.path );
+        fileItem->setData( 0, Qt::UserRole + 1, 1 );
+        searchResultTree_->addTopLevelItem( fileItem );
+
+        for( const QString& line : preview.diff.split( QLatin1Char( '\n' ) ) )
+            fileItem->addChild( new QTreeWidgetItem( QStringList{ line } ) );
+
+        pendingReplacePaths_ << preview.path;
+        total += preview.replacements;
+    }
+    searchResultTree_->expandToDepth( 0 );
+
+    searchApplyButton_->setEnabled( !pendingReplacePaths_.isEmpty() );
+    searchStatusLabel_->setText( tr( "미리보기: 파일 %1개, %2건" )
+                                    .arg( pendingReplacePaths_.size() )
+                                    .arg( total ) );
+}
+
+void MainWindow::applyWorkspaceReplace()
+{
+    if( pendingReplacePaths_.isEmpty() )
+        return;
+
+    // 되돌리기가 없는 작업이라 반드시 확인한다.
+    if( QMessageBox::question(
+            this, tr( "바꾸기 적용" ),
+            tr( "파일 %1개를 실제로 바꿉니다. 되돌릴 수 없습니다. 계속할까요?" )
+                .arg( pendingReplacePaths_.size() ) ) != QMessageBox::Yes )
+    {
+        return;
+    }
+
+    const QStringList changed = mrst::applyReplaceInFiles(
+        pendingReplacePaths_, searchQueryEdit_->text(), searchReplaceEdit_->text(),
+        searchOptionsFrom( searchCaseBox_, searchWordBox_, searchRegexBox_ ) );
+
+    pendingReplacePaths_.clear();
+    searchApplyButton_->setEnabled( false );
+    searchStatusLabel_->setText( tr( "파일 %1개를 바꿨습니다." ).arg( changed.size() ) );
+    appendLog( tr( "워크스페이스 바꾸기: 파일 %1개 변경" ).arg( changed.size() ) );
+
+    // 열려 있는 탭은 디스크와 어긋난 상태가 된다. 사용자가 알아야 한다.
+    if( !changed.isEmpty() )
+    {
+        appendLog( tr( "열려 있는 탭은 자동으로 다시 읽지 않습니다. 필요하면 다시 여세요." ) );
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 세션 영속성
+// ═══════════════════════════════════════════════════════════
+void MainWindow::saveWorkspaceSessionNow()
+{
+    if( workspaceRoot_.isEmpty() || m_tabWidget == nullptr )
+        return;
+
+    mrst::WorkspaceSession session;
+    session.workspaceRoot = workspaceRoot_;
+
+    for( int index = 0; index < m_tabWidget->count(); ++index )
+    {
+        QTextView* view = textViewOf( qobject_cast< QBaseView* >( m_tabWidget->widget( index ) ) );
+        if( view == nullptr || view->currentFilePath().isEmpty() )
+            continue;   // 이름 없는 버퍼는 hot exit 가 따로 챙긴다
+
+        mrst::OpenDocumentState document;
+        document.path = QFileInfo( view->currentFilePath() ).absoluteFilePath();
+        document.caretLine = view->caretLine();
+        document.caretColumn = view->caretColumn();
+        document.firstVisibleLine = view->firstVisibleLine();
+
+        if( m_tabWidget->currentIndex() == index )
+            session.activeIndex = static_cast< int >( session.documents.size() );
+        session.documents.push_back( document );
+    }
+
+    if( QSplitter* splitter = Ui.splSideWithContent )
+        session.sideSplitterSizes = splitter->sizes();
+    if( QSplitter* splitter = Ui.splEditWithStatisticsOnContent )
+        session.contentSplitterSizes = splitter->sizes();
+    if( QSplitter* splitter = Ui.splitter_2 )
+        session.previewSplitterSizes = splitter->sizes();
+
+    mrst::saveWorkspaceSession( session );
+}
+
+void MainWindow::restoreLastSession()
+{
+    const QString lastRoot = AppSettings().value( QStringLiteral( "workspace/lastRoot" ) ).toString();
+    if( lastRoot.isEmpty() || !QFileInfo( lastRoot ).isDir() )
+        return;
+
+    setWorkspace( lastRoot );
+
+    const mrst::WorkspaceSession session = mrst::loadWorkspaceSession( lastRoot );
+    if( session.documents.isEmpty() )
+        return;   // 워크스페이스만 되살렸다
+
+    for( const mrst::OpenDocumentState& document : session.documents )
+    {
+        if( !QFileInfo::exists( document.path ) )
+            continue;   // 그 사이 지워진 파일
+        openFile( document.path );
+    }
+
+    // 스플리터는 탭을 다 만든 뒤에 적용해야 레이아웃이 다시 계산되며 덮이지 않는다.
+    auto restoreSizes = []( QSplitter* splitter, const QList< int >& sizes ) {
+        if( splitter != nullptr && sizes.size() == splitter->count() )
+            splitter->setSizes( sizes );
+    };
+    restoreSizes( Ui.splSideWithContent, session.sideSplitterSizes );
+    restoreSizes( Ui.splEditWithStatisticsOnContent, session.contentSplitterSizes );
+    restoreSizes( Ui.splitter_2, session.previewSplitterSizes );
+
+    if( session.activeIndex >= 0 && session.activeIndex < m_tabWidget->count() )
+        m_tabWidget->setCurrentIndex( session.activeIndex );
+
+    // 캐럿 복원은 파일 로드가 비동기라 지금 하면 덮인다. 로드가 끝난 뒤에 옮긴다.
+    for( int index = 0; index < m_tabWidget->count() && index < session.documents.size(); ++index )
+    {
+        QTextView* view = textViewOf( qobject_cast< QBaseView* >( m_tabWidget->widget( index ) ) );
+        if( view == nullptr )
+            continue;
+
+        const mrst::OpenDocumentState state = session.documents.at( index );
+        connect( view, &QBaseView::sigFileOpened, this,
+                [view, state]( const QString& ) {
+                    view->goToPosition( state.caretLine, state.caretColumn );
+                    view->scrollToLine( state.firstVisibleLine, 0.0 );
+                },
+                Qt::SingleShotConnection );
+    }
 }
 
 void MainWindow::onOutlineItemActivated( QTreeWidgetItem* item, int /*column*/ )

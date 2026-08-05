@@ -46,6 +46,8 @@ public:
     /// 첫 인자가 폴더면 그것을 워크스페이스로 삼고 나머지를 파일로 연다.
     /// 첫 인자가 파일이면 그 상위 폴더가 워크스페이스가 된다.
     void openStartupPaths( const QStringList& paths );
+    /// 명령줄 인자가 없을 때, 마지막 워크스페이스와 열려 있던 탭을 되살린다.
+    void restoreLastSession();
     QBaseView* currentView() const;
 
 public slots:
@@ -202,6 +204,16 @@ private:
     void                                setupMissingDependencyBar();
     void                                showMissingDependencies( const QStringList& distributions );
 
+    // ── 세션 영속성 ──
+    /// 지금 워크스페이스의 열린 탭/캐럿/스플리터를 <root>/.multiroot/workspace.json 에 쓴다.
+    void                                saveWorkspaceSessionNow();
+
+    // ── 워크스페이스 검색 ──
+    void                                setupWorkspaceSearchTab();
+    void                                runWorkspaceSearch();
+    void                                runWorkspaceReplacePreview();
+    void                                applyWorkspaceReplace();
+
     mrst::WorkspaceController*          controller_ = nullptr;
     mrst::PythonEnvManager*             pythonEnv_ = nullptr;
     QLabel*                             envStatusLabel_ = nullptr;   // 상태 표시줄 환경 칩
@@ -210,4 +222,17 @@ private:
     QStringList                         missingDepPending_;
     QStringList                         missingDepDismissed_;        // 이번 세션에 거절한 것
 
+    QString                             workspaceRoot_;
+
+    // 검색 탭 위젯들. .ui 를 건드리지 않고 코드로 만든다.
+    QLineEdit*                          searchQueryEdit_ = nullptr;
+    QLineEdit*                          searchReplaceEdit_ = nullptr;
+    QCheckBox*                          searchCaseBox_ = nullptr;
+    QCheckBox*                          searchWordBox_ = nullptr;
+    QCheckBox*                          searchRegexBox_ = nullptr;
+    QTreeWidget*                        searchResultTree_ = nullptr;
+    QLabel*                             searchStatusLabel_ = nullptr;
+    QPushButton*                        searchApplyButton_ = nullptr;
+    /// 미리보기에서 확인한 대상. [적용]은 이 목록에만 쓴다.
+    QStringList                         pendingReplacePaths_;
 };
