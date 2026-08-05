@@ -28,7 +28,11 @@ public:
 
     void                                setMaxProcesses( int count );
     [[nodiscard]] int                   maxProcesses() const;
+    /// 서버 본체를 돌릴 인터프리터(항상 번들)와 sphinx-build 경로.
     void                                setPythonPaths( const QString& pythonExe, const QString& sphinxBuildExe );
+    /// 다음 activate() 에서 띄울 서버가 sphinx_agent 에 쓸 인터프리터.
+    /// 프로젝트마다 다를 수 있어 activate() 직전에 지정한다.
+    void                                setSphinxPythonCommand( const QString& pythonExe );
 
     /// 활성 탭의 프로젝트는 절대 축출하지 않는다.
     /// activate() 보다 **먼저** 불러야 새 프로젝트를 띄우다가 지금 전환 중인
@@ -65,6 +69,7 @@ private:
 
     QString                             pythonExe_;
     QString                             sphinxBuildExe_;
+    QString                             sphinxPythonCommand_;
     QString                             pinnedProjectId_;
     int                                 maxProcesses_ = 3;
 

@@ -21,6 +21,8 @@ struct PreviewBuildRequest
 {
     SphinxProject                       project;
     QString                             pythonExe;          ///< 빌더 스크립트를 돌릴 인터프리터
+    /// pythonExe 에 sphinx 가 없을 때 대신 쓸 인터프리터(번들). 비우면 폴백 없음.
+    QString                             fallbackPythonExe;
     QString                             builderScript;      ///< mrr_sphinx_preview_build.py 절대 경로
     QString                             sourceFile;         ///< 편집 중인 원본 (htmlPath 계산용)
     QString                             shadowFile;         ///< 미저장 버퍼 사본. 없으면 빈 문자열
@@ -85,7 +87,7 @@ signals:
 
 private:
     void                                startBuild();
-    void                                finishBuild( bool processOk, bool cancelled );
+    void                                finishBuild( int exitCode, bool crashed, bool cancelled );
     [[nodiscard]] PreviewBuildResult    readReport( const QString& reportPath ) const;
     [[nodiscard]] QString               allocateOutputDir();
     void                                cleanupOldOutputDirs( const QString& keepDir ) const;
@@ -101,6 +103,8 @@ private:
     QString                             activeReportPath_;
     QString                             lastHtmlPath_;
     int                                 buildSerial_ = 0;
+    /// 이번 요청에서 이미 번들로 한 번 물러섰는가 (무한 재시도 방지).
+    bool                                usedFallbackPython_ = false;
 };
 
 }  // namespace mrst

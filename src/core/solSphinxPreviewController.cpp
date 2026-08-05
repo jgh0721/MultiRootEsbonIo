@@ -90,6 +90,7 @@ void SphinxPreviewController::setDebounceInterval( const int milliseconds )
 
 void SphinxPreviewController::requestBuild( const PreviewBuildRequest& request )
 {
+    usedFallbackPython_ = false;
     pending_ = request;
     hasPending_ = true;
     debounceTimer_->start();
@@ -97,6 +98,7 @@ void SphinxPreviewController::requestBuild( const PreviewBuildRequest& request )
 
 void SphinxPreviewController::buildNow( const PreviewBuildRequest& request )
 {
+    usedFallbackPython_ = false;
     pending_ = request;
     hasPending_ = true;
     debounceTimer_->stop();
@@ -166,8 +168,11 @@ void SphinxPreviewController::startBuild()
         return;
     }
 
+    const bool continuingFallback = usedFallbackPython_;
     active_ = pending_;
     hasPending_ = false;
+    if( !continuingFallback )
+        usedFallbackPython_ = false;
 
     if( active_.pythonExe.isEmpty() || !QFileInfo::exists( active_.pythonExe ) )
     {
@@ -225,19 +230,38 @@ void SphinxPreviewController::startBuild()
     connect( task, &UvTask::failedToStart, this, [this, task]( const QString& message ) {
         emit logMessage( message );
         task->deleteLater();
-        finishBuild( false, false );
+        finishBuild( -1, true, false );
     } );
     connect( task, &UvTask::finished, this, [this, task]( const int exitCode, const bool crashed ) {
         const bool cancelled = task->wasCancelled();
         task->deleteLater();
-        finishBuild( !crashed && exitCode == 0, cancelled );
+        finishBuild( exitCode, crashed, cancelled );
     } );
 
     task->start();
 }
 
-void SphinxPreviewController::finishBuild( const bool processOk, const bool cancelled )
+void SphinxPreviewController::finishBuild( const int exitCode, const bool crashed, const bool cancelled )
 {
+    // 종료 코드 4 = 빌더가 sphinx/docutils 를 임포트하지 못했다.
+    // 프로젝트 venv 가 문서용이 아니라 애플리케이션용인 경우가 흔하다
+    // (저장소 루트의 .venv 에는 Sphinx 가 없는 식). 이때 그냥 실패시키면
+    // 프리뷰가 영영 안 뜨므로 번들 런타임으로 한 번 물러선다.
+    if( !cancelled && exitCode == 4 && !usedFallbackPython_
+        && !active_.fallbackPythonExe.isEmpty()
+        && active_.fallbackPythonExe != active_.pythonExe )
+    {
+        usedFallbackPython_ = true;
+        emit logMessage( tr( "프로젝트 환경에 Sphinx 가 없어 내장 환경으로 다시 시도합니다." ) );
+
+        pending_ = active_;
+        pending_.pythonExe = active_.fallbackPythonExe;
+        hasPending_ = true;
+        startBuild();
+        return;
+    }
+
+    const bool processOk = !crashed && exitCode == 0;
     PreviewBuildResult result = readReport( activeReportPath_ );
     result.projectId = QString::fromStdWString( active_.project.projectId );
     result.cancelled = cancelled;

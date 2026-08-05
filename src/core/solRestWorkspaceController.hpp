@@ -22,6 +22,8 @@ class LspServerPool;
 class PreviewBridge;
 class ProjectRegistry;
 class PythonEnvManager;
+class PythonEnvResolver;
+struct ResolvedPythonEnv;
 class SphinxPreviewController;
 class VirtualProjectManager;
 struct PreviewBuildResult;
@@ -125,6 +127,7 @@ private:
 
     ProjectRegistry*                    registry_ = nullptr;
     PythonEnvManager*                   pythonEnv_ = nullptr;
+    PythonEnvResolver*                  envResolver_ = nullptr;
     QWebEngineView*                     previewView_ = nullptr;
     SphinxPreviewController*            previewController_ = nullptr;
     VirtualProjectManager*              virtualProjects_ = nullptr;

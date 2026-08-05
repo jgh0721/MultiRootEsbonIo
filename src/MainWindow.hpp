@@ -194,9 +194,17 @@ private:
     void                                updateEnvStatusChip();
     void                                setupDiagnosticsTable();
     void                                refreshDiagnosticsTable();
+    /// 누락된 Sphinx 확장/테마를 알리는 비모달 바.
+    /// 프리뷰 빌드는 디바운스 타이머로 발화하므로 모달을 띄우면 쓸 수 없게 된다.
+    void                                setupMissingDependencyBar();
+    void                                showMissingDependencies( const QStringList& distributions );
 
     mrst::WorkspaceController*          controller_ = nullptr;
     mrst::PythonEnvManager*             pythonEnv_ = nullptr;
     QLabel*                             envStatusLabel_ = nullptr;   // 상태 표시줄 환경 칩
+    QWidget*                            missingDepBar_ = nullptr;
+    QLabel*                             missingDepLabel_ = nullptr;
+    QStringList                         missingDepPending_;
+    QStringList                         missingDepDismissed_;        // 이번 세션에 거절한 것
 
 };

@@ -656,6 +656,61 @@ void PythonEnvManager::updateProgressFromUvLine( const QString& line )
         emit progressChanged( 90, tr( "설치 완료" ) );
 }
 
+void PythonEnvManager::installPackagesAsync( const QStringList& distributions,
+                                            const QString& targetPythonExe )
+{
+    if( distributions.isEmpty() )
+        return;
+
+    const QString target = targetPythonExe.isEmpty() ? pythonExe() : targetPythonExe;
+    if( !QFileInfo::exists( target ) )
+    {
+        emit packageInstallFinished( false, distributions );
+        return;
+    }
+
+    UvTask::Request request;
+    request.program = uvExecutable();
+    request.arguments = QStringList{ QStringLiteral( "pip" ), QStringLiteral( "install" ),
+                                    QStringLiteral( "--python" ), target }
+                      + distributions;
+    request.workingDirectory = projectDir();
+    request.environment = uvEnvironment();
+    request.tag = QStringLiteral( "uv pip install" );
+
+    auto* task = new UvTask( std::move( request ), this );
+    const bool intoBundled = ( target == pythonExe() );
+
+    connect( task, &UvTask::outputLine, this, &PythonEnvManager::bootstrapLog );
+    connect( task, &UvTask::failedToStart, this, [this, task, distributions]( const QString& message ) {
+        emit bootstrapLog( message );
+        emit packageInstallFinished( false, distributions );
+        task->deleteLater();
+    } );
+    connect( task, &UvTask::finished, this,
+            [this, task, distributions, intoBundled]( const int exitCode, const bool crashed ) {
+                const bool ok = !crashed && exitCode == 0 && !task->wasCancelled();
+                task->deleteLater();
+
+                if( ok && intoBundled )
+                {
+                    // uv sync 는 lock 에 없는 패키지를 prune 한다. 여기 남겨 두지
+                    // 않으면 다음 환경 재구성 때 조용히 사라진다.
+                    for( const QString& distribution : distributions )
+                    {
+                        if( !extraPackages_.contains( distribution ) )
+                            extraPackages_ << distribution;
+                    }
+                    saveUvSettings();
+                }
+
+                emit packageInstallFinished( ok, distributions );
+            } );
+
+    emit bootstrapLog( tr( "패키지 설치: %1" ).arg( distributions.join( QStringLiteral( ", " ) ) ) );
+    task->start();
+}
+
 void PythonEnvManager::requestUvVersionAsync()
 {
     const QString uvPath = uvExecutable();

@@ -6,6 +6,7 @@
 #include "solEsbonioLspPool.hpp"
 #include "solPreviewBridge.hpp"
 #include "solPythonEnvMgr.hpp"
+#include "solPythonEnvResolver.hpp"
 #include "solSphinxPreviewController.hpp"
 #include "solSphinxProjectRegistry.hpp"
 #include "solVirtualProjectMgr.hpp"
@@ -221,7 +222,10 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
             return;
         }
         previewUrl_ = previewView_->url();
-        emit logMessage( tr( "프리뷰 표시: %1" ).arg( previewUrl_.fileName() ) );
+        // 초기 placeholder 는 setHtml 로 넣은 것이라 파일 URL 이 아니다.
+        // fileName() 이 의미 없는 조각을 내놓으므로 로그를 남기지 않는다.
+        if( previewUrl_.isLocalFile() )
+            emit logMessage( tr( "프리뷰 표시: %1" ).arg( previewUrl_.fileName() ) );
     } );
 
     // 핫스왑 실패는 조용히 넘어가면 안 된다. 화면이 낡은 채로 남기 때문에
@@ -344,6 +348,13 @@ void WorkspaceController::setPythonEnvironment( PythonEnvManager* manager )
     pythonEnv_ = manager;
     if( pythonEnv_ != nullptr && previewController_ != nullptr )
         previewController_->setShadowDir( pythonEnv_->shadowDir() );
+
+    if( envResolver_ == nullptr )
+    {
+        envResolver_ = new PythonEnvResolver( manager, this );
+        connect( envResolver_, &PythonEnvResolver::logMessage, this, &WorkspaceController::logMessage );
+        envResolver_->setWorkspaceRoot( registry_->workspaceRoot() );
+    }
 }
 
 QString WorkspaceController::writeShadowCopy( QTextView* view, const QString& path ) const
@@ -388,9 +399,17 @@ void WorkspaceController::requestPreviewBuild( const bool immediate )
     if( project == nullptr )
         return;   // 가상 프로젝트는 Phase 7 에서 처리한다.
 
+    // 프리뷰도 프로젝트가 정한 인터프리터로 돌린다. 그래야 그 venv 의 테마와
+    // 확장이 그대로 반영된다. 빌더 스크립트는 절대 경로로 넘기므로 프로젝트
+    // 환경에 아무 것도 설치하지 않는다.
+    const ResolvedPythonEnv env = envResolver_->resolve( *project );
+
     PreviewBuildRequest request;
     request.project = *project;
-    request.pythonExe = pythonEnv_->pythonExe();
+    request.pythonExe = env.pythonExe.isEmpty() ? pythonEnv_->pythonExe() : env.pythonExe;
+    // 프로젝트 venv 가 문서용이 아니라 애플리케이션용이면 Sphinx 가 없다.
+    // 그때는 내장 환경으로 물러선다.
+    request.fallbackPythonExe = pythonEnv_->pythonExe();
     request.builderScript = pythonEnv_->previewBuilderScript();
     request.sourceFile = context->path;
     request.shadowFile = writeShadowCopy( view, context->path );
@@ -527,7 +546,10 @@ void WorkspaceController::ensureLspForActiveDocument()
 
     const QString projectId = QString::fromStdWString( project->projectId );
 
+    // 서버 본체는 항상 번들에서, sphinx_agent 는 프로젝트가 정한 인터프리터로.
     lspPool_->setPythonPaths( pythonEnv_->pythonExe(), pythonEnv_->sphinxBuildExe() );
+    const ResolvedPythonEnv env = envResolver_->resolve( *project );
+    lspPool_->setSphinxPythonCommand( env.isBundled() ? QString{} : env.pythonExe );
     // activate() 보다 먼저 pin 해야, 자리가 부족할 때 지금 전환 중인 프로젝트를
     // 밀어내는 일이 없다.
     lspPool_->setPinnedProject( projectId );
@@ -610,6 +632,8 @@ DiagnosticsStore* WorkspaceController::diagnostics() const
 void WorkspaceController::setWorkspaceRoot( const QString& root )
 {
     registry_->setWorkspaceRoot( root );
+    if( envResolver_ != nullptr )
+        envResolver_->setWorkspaceRoot( registry_->workspaceRoot() );
     if( registry_->workspaceRoot().isEmpty() )
         return;
 

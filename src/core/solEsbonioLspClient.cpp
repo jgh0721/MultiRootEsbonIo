@@ -548,9 +548,6 @@ QJsonObject LspClient::sphinxConfiguration() const {
         configOverrides.insert(QStringLiteral("html_style"), QJsonValue::Null);
     }
 
-    // pythonCommand 는 일부러 넣지 않는다. 넣으면 esbonio 가 그 인터프리터로
-    // 하위 프로세스를 다시 띄우는데, 비ASCII 경로에서 깨진다.
-    // (프로젝트별 인터프리터 지정은 Phase 8 에서 다룬다.)
     // 첫 항목은 반드시 리터럴 "sphinx-build" 여야 한다.
     // esbonio 의 sphinx_agent/config.py fromcli() 는
     //     if args[0] == "sphinx-build": args = args[1:]
@@ -559,7 +556,7 @@ QJsonObject LspClient::sphinxConfiguration() const {
     // 해석되어 "Cannot find source directory (...sphinx-build.exe)" 로 죽는다.
     // 어차피 에이전트는 Sphinx 를 in-process 로 만들기 때문에 실행 파일 경로는
     // 필요 없다.
-    return {
+    QJsonObject config{
         {QStringLiteral("buildCommand"), QJsonArray{
             QStringLiteral("sphinx-build"), QStringLiteral("-b"), QStringLiteral("dummy"),
             QStringLiteral("-c"), confDir,
@@ -569,6 +566,19 @@ QJsonObject LspClient::sphinxConfiguration() const {
         {QStringLiteral("configOverrides"), configOverrides},
         {QStringLiteral("enableDevTools"), false},
     };
+
+    // pythonCommand 를 주면 esbonio 는 sphinx_agent 를 그 인터프리터로 띄운다.
+    // 프로젝트 자기 venv 의 테마/확장을 쓰려면 이게 필요하다.
+    // 서버 본체는 여전히 번들에서 돌기 때문에 사용자 venv 에 esbonio 는 없어도 된다.
+    if (!sphinxPythonCommand_.isEmpty()) {
+        config.insert(QStringLiteral("pythonCommand"), QJsonArray{sphinxPythonCommand_});
+    }
+
+    return config;
+}
+
+void LspClient::setSphinxPythonCommand(const QString& pythonExe) {
+    sphinxPythonCommand_ = pythonExe;
 }
 
 QJsonValue LspClient::configurationForSection(const QString& section) const {

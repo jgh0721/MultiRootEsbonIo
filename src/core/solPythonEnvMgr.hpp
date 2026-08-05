@@ -95,6 +95,11 @@ public:
     void                                configureEnvironmentAsync( bool forceRebuild = false );
     void                                cancel();
     void                                requestUvVersionAsync();
+    /// 지정한 환경에 패키지를 설치한다. targetPythonExe 가 비면 번들 환경.
+    /// 번들에 설치한 것은 extraPackages 에 남겨 다음 sync 후 다시 적용한다
+    /// (uv sync 는 lock 에 없는 것을 prune 하므로 그러지 않으면 사라진다).
+    void                                installPackagesAsync( const QStringList& distributions,
+                                                              const QString& targetPythonExe = {} );
 
 signals:
     void                                stateChanged( mrst::EnvState state );
@@ -104,6 +109,7 @@ signals:
     void                                bootstrapLog( const QString& text );
     void                                failed( const QString& message );
     void                                uvVersionReady( const QString& description );
+    void                                packageInstallFinished( bool success, const QStringList& distributions );
 
 private:
     void                                setState( EnvState next );

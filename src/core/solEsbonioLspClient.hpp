@@ -93,6 +93,12 @@ public:
     /// 오류가 난다. configOverrides 로 None 을 강제하기 위해 미리 확인한다.
     void setHtmlStyleOverride(bool overrideToNull);
 
+    /// conf.py / 확장 / 테마를 해석할 인터프리터. 비우면 esbonio 가 자기 것을 쓴다.
+    ///
+    /// esbonio 서버 자체는 항상 번들에서 돌리고, sphinx_agent 만 이 인터프리터로
+    /// 띄운다. 그래서 사용자 venv 에 esbonio 를 설치할 필요가 없다.
+    void setSphinxPythonCommand(const QString& pythonExe);
+
     void start(const SphinxProject& project, const QString& pythonExe, const QString& sphinxBuildExe);
     void stop();
     void didOpen(const QString& path, const QString& text, const QString& languageId = QStringLiteral("rst"));
@@ -135,6 +141,7 @@ private:
     QString sphinxBuildExe_;
     QString activeProjectId_;
     bool htmlStyleOverride_ = false;
+    QString sphinxPythonCommand_;
     QHash<QString, int> documentVersions_;
     /// 우리가 보낸 요청: id -> method. 예전에는 completion/documentSymbol 을
     /// 따로 들고 있었는데, 그러면 "이 id 가 내 것인가" 를 추측하게 된다.

@@ -549,7 +549,13 @@ MainWindow::MainWindow( QWidget* parent )
             } );
 
     setupDiagnosticsTable();
+    setupMissingDependencyBar();
     setupPythonEnvironment();
+
+    connect( controller_, &mrst::WorkspaceController::missingDependenciesDetected, this,
+            [this]( const QString&, const QStringList& distributions, const QStringList& themes ) {
+                showMissingDependencies( distributions + themes );
+            } );
 
     if( settings.value( "textView/hotExitEnabled", true ).toBool() )
     {
@@ -2390,6 +2396,67 @@ void MainWindow::refreshDiagnosticsTable()
                   : tr( "진단 %1건 (%2)" ).arg( entries.size() ).arg( breakdown.join( QStringLiteral( ", " ) ) ) );
 }
 
+void MainWindow::setupMissingDependencyBar()
+{
+    // 프리뷰 위에 얇게 얹는다. 모달이 아니라서 무시하고 계속 편집할 수 있다.
+    QWidget* host = Ui.frmWebPreview;
+    if( host == nullptr || host->layout() == nullptr )
+        return;
+
+    missingDepBar_ = new QWidget( host );
+    missingDepBar_->setVisible( false );
+    missingDepBar_->setAutoFillBackground( true );
+    missingDepBar_->setStyleSheet(
+        QStringLiteral( "background-color: palette(alternate-base); border-bottom: 1px solid palette(mid);" ) );
+
+    auto* layout = new QHBoxLayout( missingDepBar_ );
+    layout->setContentsMargins( 8, 4, 8, 4 );
+
+    missingDepLabel_ = new QLabel( missingDepBar_ );
+    missingDepLabel_->setWordWrap( true );
+    layout->addWidget( missingDepLabel_, 1 );
+
+    auto* installButton = new QPushButton( tr( "설치" ), missingDepBar_ );
+    auto* ignoreButton = new QPushButton( tr( "무시" ), missingDepBar_ );
+    layout->addWidget( installButton );
+    layout->addWidget( ignoreButton );
+
+    connect( installButton, &QPushButton::clicked, this, [this] {
+        if( pythonEnv_ == nullptr || missingDepPending_.isEmpty() )
+            return;
+        // 사용자 venv 를 함부로 건드리지 않는다. 내장 환경에만 설치한다.
+        pythonEnv_->installPackagesAsync( missingDepPending_ );
+        missingDepBar_->setVisible( false );
+    } );
+    connect( ignoreButton, &QPushButton::clicked, this, [this] {
+        missingDepDismissed_ += missingDepPending_;
+        missingDepPending_.clear();
+        missingDepBar_->setVisible( false );
+    } );
+
+    host->layout()->addWidget( missingDepBar_ );
+}
+
+void MainWindow::showMissingDependencies( const QStringList& distributions )
+{
+    if( missingDepBar_ == nullptr )
+        return;
+
+    QStringList fresh;
+    for( const QString& name : distributions )
+    {
+        if( !missingDepDismissed_.contains( name ) )
+            fresh << name;
+    }
+    if( fresh.isEmpty() )
+        return;
+
+    missingDepPending_ = fresh;
+    missingDepLabel_->setText( tr( "Sphinx 확장/테마를 찾을 수 없습니다: %1" )
+                                  .arg( fresh.join( QStringLiteral( ", " ) ) ) );
+    missingDepBar_->setVisible( true );
+}
+
 void MainWindow::setupPythonEnvironment()
 {
     pythonEnv_ = new mrst::PythonEnvManager( this );
@@ -2403,6 +2470,13 @@ void MainWindow::setupPythonEnvironment()
     connect( pythonEnv_, &mrst::PythonEnvManager::bootstrapLog, this, &MainWindow::appendLog );
     connect( pythonEnv_, &mrst::PythonEnvManager::stateChanged, this,
             [this]( mrst::EnvState ) { updateEnvStatusChip(); } );
+    connect( pythonEnv_, &mrst::PythonEnvManager::packageInstallFinished, this,
+            [this]( const bool ok, const QStringList& distributions ) {
+                appendLog( ok ? tr( "패키지 설치 완료: %1" ).arg( distributions.join( QStringLiteral( ", " ) ) )
+                              : tr( "패키지 설치 실패: %1" ).arg( distributions.join( QStringLiteral( ", " ) ) ) );
+                if( ok && controller_ != nullptr )
+                    controller_->requestPreviewBuild( true );
+            } );
     connect( pythonEnv_, &mrst::PythonEnvManager::readyChanged, this, [this]( const bool ready ) {
         // 런타임이 준비되기 전에 열린 문서는 프리뷰/LSP 를 건너뛰었으므로 지금 시도한다.
         if( ready && controller_ != nullptr )

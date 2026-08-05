@@ -34,6 +34,11 @@ void LspServerPool::setPythonPaths( const QString& pythonExe, const QString& sph
     sphinxBuildExe_ = sphinxBuildExe;
 }
 
+void LspServerPool::setSphinxPythonCommand( const QString& pythonExe )
+{
+    sphinxPythonCommand_ = pythonExe;
+}
+
 void LspServerPool::setPinnedProject( const QString& projectId )
 {
     pinnedProjectId_ = projectId;
@@ -132,6 +137,7 @@ LspClient* LspServerPool::activate( const SphinxProject& project )
             } );
 
     client->setHtmlStyleOverride( confDeclaresEmptyHtmlStyle( project.confPath ) );
+    client->setSphinxPythonCommand( sphinxPythonCommand_ );
     client->start( project, pythonExe_, sphinxBuildExe_ );
 
     emit projectSpawned( projectId );
