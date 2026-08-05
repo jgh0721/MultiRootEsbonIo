@@ -112,3 +112,6 @@ tools/setQtDIR.cmd
 tools/release.state
 tools/SDCM/
 tools/signtool/
+
+# 워크스페이스별 런타임 캐시 (프로젝트 스캔 결과)
+.multiroot/

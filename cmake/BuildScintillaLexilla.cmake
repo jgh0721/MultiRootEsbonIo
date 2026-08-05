@@ -50,7 +50,6 @@ set_target_properties(ScintillaEditBaseQt PROPERTIES
 )
 
 target_include_directories(ScintillaEditBaseQt BEFORE PUBLIC
-    "${CMAKE_CURRENT_LIST_DIR}/../src/compat"
     "${MV_SCINTILLA_ROOT}/include"
     "${MV_SCINTILLA_ROOT}/src"
     "${MV_SCINTILLA_ROOT}/qt/ScintillaEditBase"
@@ -63,10 +62,14 @@ target_link_libraries(ScintillaEditBaseQt PUBLIC
     Qt6::Widgets
 )
 
-target_compile_definitions(ScintillaEditBaseQt PRIVATE
-    SCINTILLA_QT=1
-    MAKING_LIBRARY=1
-    _CRT_SECURE_NO_WARNINGS
+target_compile_definitions(ScintillaEditBaseQt
+    PRIVATE
+        SCINTILLA_QT=1
+        MAKING_LIBRARY=1
+        _CRT_SECURE_NO_WARNINGS
+    INTERFACE
+        # 링크하는 쪽이 직접 백엔드 사용 여부를 컴파일 타임에 알 수 있게 전파한다.
+        MV_HAVE_SCINTILLA_DIRECT_BACKEND=1
 )
 
 add_library(LexillaStatic STATIC
@@ -86,8 +89,14 @@ target_include_directories(LexillaStatic BEFORE PUBLIC
     "${MV_SCINTILLA_ROOT}/include"
 )
 
-target_compile_definitions(LexillaStatic PRIVATE
-    _CRT_SECURE_NO_WARNINGS
+target_compile_definitions(LexillaStatic
+    PRIVATE
+        _CRT_SECURE_NO_WARNINGS
+    INTERFACE
+        # CreateLexer()/GetLexerCount() 를 정적으로 링크했음을 소비자에게 전파한다.
+        # 이 정의가 없으면 ScintillaQtDirectBackend::applyLanguage 와
+        # dlgSettings 의 lexer 열거가 조용히 죽은 분기로 빠진다.
+        MV_DIRECT_SCINTILLA_HAS_LEXILLA_LEXERS=1
 )
 
 if(MSVC)
@@ -101,10 +110,8 @@ set(MV_SCINTILLA_DIRECT_TARGETS
     LexillaStatic
 )
 
-set(MV_SCINTILLA_DIRECT_COMPILE_DEFINITIONS
-    MV_HAVE_SCINTILLA_DIRECT_BACKEND=1
-    MV_DIRECT_SCINTILLA_HAS_LEXILLA_LEXERS=1
-)
+# 컴파일 정의는 위 두 타깃의 INTERFACE 로 전파된다. 예전에는 여기서 변수로만
+# 계산하고 어떤 타깃에도 적용하지 않아 관련 #if 분기가 전부 죽어 있었다.
 
 message(STATUS "MV direct Scintilla backend enabled: Scintilla ${MV_SCINTILLA_GIT_TAG}, Lexilla ${MV_LEXILLA_GIT_TAG}")
 

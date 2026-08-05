@@ -1,9 +1,12 @@
 ﻿#pragma once
 
 #include "ScintillaDocument.hpp"
+#include "RstContainerLexer.hpp"
 
 #include <QFont>
 #include <QPointer>
+
+#include <memory>
 
 class ScintillaEditBase;
 
@@ -83,7 +86,43 @@ public:
 	QFont editorFont() const;
 
 	int firstVisibleLine() const;
+	void setFirstVisibleLine(int line);
+	int linesOnScreen() const;
+
+	// ── 뷰포트 비율 기준 스크롤 ──
+	//
+	// 전부 픽셀 좌표로 계산한다. 문서 줄 번호로 계산하면 자동 줄바꿈이나 코드
+	// 접기가 있을 때 어긋난다 (한 문서 줄이 화면에서는 여러 줄을 차지하거나
+	// 아예 안 보일 수 있다).
+	//
+	// 반환/입력은 "소수 줄 번호" 다. 12.5 는 12번 줄의 세로 중간 지점을 뜻하며,
+	// 줄바꿈으로 여러 행을 차지하는 줄 안에서의 위치까지 표현할 수 있다.
+	double fractionalLineAtViewportRatio(double ratio) const;
+	void scrollFractionalLineToViewportRatio(double fractionalLine, double ratio);
 	void restoreViewState(int caretPosition, int firstVisibleLine);
+
+	// ── 위치 변환 ──
+	// Scintilla 위치는 UTF-8 바이트 오프셋이고 열은 코드 유닛 단위다.
+	int positionFromLine(int line) const;
+	int lineEndPosition(int line) const;
+	int lineFromPosition(int position) const;
+	int columnFromPosition(int position) const;
+	int positionFromLineColumn(int line, int column) const;
+	QByteArray textRangeUtf8(int startPos, int endPos) const;
+	QString lineText(int line) const;
+	QPoint pointFromPosition(int position) const;
+
+	// ── 컨테이너 렉싱 지원 ──
+	// ILexer 를 비운 상태에서 styleNeeded 시그널을 받아 직접 스타일을 칠할 때 쓴다.
+	int endStyled() const;
+	void startStyling(int position);
+	void setStylingEx(const QByteArray& styleBytes);
+	void colouriseAll();
+	void setStyleForeground(int style, const QColor& color);
+	void setStyleBackground(int style, const QColor& color);
+	void setStyleBold(int style, bool bold);
+	void setStyleItalic(int style, bool italic);
+	void setStyleUnderline(int style, bool underline);
 	int textHeight(int line) const;
 	int leftMarginWidth() const;
 	int changeHistoryFlags() const;
@@ -91,12 +130,25 @@ public:
 	bool applyLanguage(const QString& displayName);
 	void applyThemeColors(bool dark);
 
+	/// reST 컨테이너 렉서의 메타데이터 캐시. Esbonio 자동완성 결과를 여기에
+	/// 넣으면 directive/role 이 UNKNOWN -> VALID/INVALID 로 바뀐다.
+	/// 컨테이너 렉싱 중이 아니면 nullptr.
+	[[nodiscard]] mrst::rst::RstMetadataCache* rstMetadataCache() const;
+	void restyleDocument();
+
 signals:
 	void modificationChanged(bool modified);
 	void cursorPositionChanged(int line, int index);
 	void linesChanged();
 	void textChanged();
 	void selectionChanged();
+	/// 컨테이너 렉싱 모드에서 Scintilla 가 스타일을 요구하는 구간의 끝 위치.
+	/// SCI_SETIDLESTYLING 때문에 문서 전체가 아니라 청크 단위로 도착한다.
+	void styleNeeded(int endPosition);
+	/// 사용자가 문자를 입력했다. 자동완성 트리거 감지에 쓴다.
+	void charAdded(int ch);
+	/// 세로 스크롤이 변했다. 프리뷰 동기화에 쓴다.
+	void viewportScrolled();
 
 private:
 	void configureCodeFolding(bool enabled);
@@ -107,9 +159,12 @@ private:
 	void updateBraceHighlight();
 	void clearLexer();
 	void applySyntaxStyles(bool dark);
+	void applyRstSyntaxStyles();
 	void setKeywordsForLexer(const QString& lexerKey);
+	void handleStyleNeeded(int endPosition);
 
 	QPointer<ScintillaEditBase> m_editor;
+	std::unique_ptr<mrst::rst::RstContainerLexer> m_rstLexer;   // 컨테이너 렉싱 중에만 유효
 	Scintilla::ILexer5*         m_currentLexer = nullptr; // Non-owning after SCI_SETILEXER while the editor is alive; cleared when the editor dies.
 	QFont               m_editorFont;
 	QString             m_currentLexerKey;

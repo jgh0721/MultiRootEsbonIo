@@ -27,6 +27,15 @@ int main( int argc, char* argv[] )
         MainWindow* window = new MainWindow;
         window->show();
 
+        // 명령줄로 받은 폴더/파일들을 연다.
+        // 예) MultiRoot-reST-CPP.exe D:\Docs D:\Docs\A\index.rst D:\Docs\B\index.rst
+        QStringList arguments = QApplication::arguments();
+        arguments.removeFirst();   // 실행 파일 경로
+        if( !arguments.isEmpty() )
+            window->openStartupPaths( arguments );
+        else
+            window->restoreLastSession();
+
     } while( false );
 
     return QApplication::exec();

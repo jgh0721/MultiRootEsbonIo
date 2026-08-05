@@ -620,12 +620,33 @@ QWidget* QSettingsDialog::createEsbonioPage()
     m_esbonioExeLabel = createValueLabel( uvGroup );
     formLayout->addRow( tr( "Esbonio:" ), m_esbonioExeLabel );
 
+    // 멀티루트에서는 프로젝트마다 Esbonio 서버가 하나씩 뜬다. 동시에 몇 개까지
+    // 유지할지 정한다. 초과분은 가장 오래 쓰지 않은 것부터 종료된다.
+    m_maxLspProcessesSpin = new QSpinBox( uvGroup );
+    m_maxLspProcessesSpin->setRange( 1, 8 );
+    m_maxLspProcessesSpin->setValue( AppSettings().value(
+                                         QStringLiteral( "esbonio/maxLspProcesses" ), 3 ).toInt() );
+    m_maxLspProcessesSpin->setToolTip( tr( "동시에 유지할 Esbonio 서버 수입니다.\n"
+                                          "초과하면 가장 오래 사용하지 않은 프로젝트의 서버를 종료합니다." ) );
+    formLayout->addRow( tr( "최대 Esbonio 프로세스:" ), m_maxLspProcessesSpin );
+
+    connect( m_maxLspProcessesSpin, &QSpinBox::valueChanged, this, [this]( const int value ) {
+        AppSettings().setValue( QStringLiteral( "esbonio/maxLspProcesses" ), value );
+        emit settingsApplied();
+    } );
+
     uvLayout->addLayout( formLayout );
 
     auto* actionLayout      = new QHBoxLayout;
+    m_pythonEnvProgress     = new QProgressBar( uvGroup );
+    m_pythonEnvProgress->setVisible( false );
+    m_pythonEnvProgress->setTextVisible( true );
     m_configurePythonButton = new QPushButton( tr( "구성" ), uvGroup );
-    actionLayout->addStretch( 1 );
+    m_cancelPythonButton    = new QPushButton( tr( "취소" ), uvGroup );
+    m_cancelPythonButton->setEnabled( false );
+    actionLayout->addWidget( m_pythonEnvProgress, 1 );
     actionLayout->addWidget( m_configurePythonButton );
+    actionLayout->addWidget( m_cancelPythonButton );
     uvLayout->addLayout( actionLayout );
 
     layout->addWidget( uvGroup );
@@ -669,16 +690,55 @@ QWidget* QSettingsDialog::createEsbonioPage()
             m_pythonEnvLog->append( text );
     } );
 
+    // 진행률/취소는 비동기 부트스트랩과 함께 동작한다. 대화상자를 닫아도
+    // 구성은 백그라운드에서 계속된다.
+    connect( m_pythonEnvManager, &mrst::PythonEnvManager::progressChanged, this,
+            [this]( const int percent, const QString& phase ) {
+                if( m_pythonEnvProgress == nullptr )
+                    return;
+                m_pythonEnvProgress->setVisible( true );
+                if( percent < 0 )
+                {
+                    m_pythonEnvProgress->setRange( 0, 0 );   // 불확정
+                }
+                else
+                {
+                    m_pythonEnvProgress->setRange( 0, 100 );
+                    m_pythonEnvProgress->setValue( percent );
+                }
+                m_pythonEnvProgress->setFormat( phase );
+            } );
+
+    connect( m_pythonEnvManager, &mrst::PythonEnvManager::stateChanged, this,
+            [this]( const mrst::EnvState ) {
+                const bool busy = m_pythonEnvManager->isBusy();
+                if( m_configurePythonButton != nullptr )
+                    m_configurePythonButton->setEnabled( !busy );
+                if( m_cancelPythonButton != nullptr )
+                    m_cancelPythonButton->setEnabled( busy );
+                if( m_pythonEnvProgress != nullptr && !busy )
+                    m_pythonEnvProgress->setVisible( false );
+                refreshEsbonioStatus();
+            } );
+
+    connect( m_pythonEnvManager, &mrst::PythonEnvManager::failed, this, [this]( const QString& message ) {
+        QMessageBox::critical( this, tr( "Python/Esbonio 환경 구성 실패" ), message );
+    } );
+
+    connect( m_pythonEnvManager, &mrst::PythonEnvManager::readyChanged, this, [this]( const bool ready ) {
+        if( ready )
+            QMessageBox::information( this, tr( "Python/Esbonio 환경 구성" ), tr( "환경 구성이 완료되었습니다." ) );
+    } );
+
     connect( m_configurePythonButton, &QPushButton::clicked, this, [this] {
         saveEsbonioSettings();
         if( m_pythonEnvLog != nullptr )
             m_pythonEnvLog->clear();
-        m_configurePythonButton->setEnabled( false );
-        const bool ok = m_pythonEnvManager->configureEnvironment( this );
-        m_configurePythonButton->setEnabled( true );
-        refreshEsbonioStatus();
-        if( ok )
-            QMessageBox::information( this, tr( "Python/Esbonio 환경 구성" ), tr( "환경 구성이 완료되었습니다." ) );
+        m_pythonEnvManager->configureEnvironmentAsync( true );
+    } );
+
+    connect( m_cancelPythonButton, &QPushButton::clicked, this, [this] {
+        m_pythonEnvManager->cancel();
     } );
 
     return page;

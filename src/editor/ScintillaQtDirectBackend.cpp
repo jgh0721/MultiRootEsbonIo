@@ -21,8 +21,6 @@
 namespace {
 
 using MessageInt = unsigned int;
-constexpr int kSciSetLexer = 4001;
-constexpr int kSciSetLexerLanguage = 4006;
 constexpr sptr_t kInvalidPosition = static_cast<sptr_t>(-1);
 constexpr int kBraceHighlightIndicatorId = 24;
 constexpr int kBraceBadLightIndicatorId = 25;
@@ -30,6 +28,12 @@ constexpr int kBraceBadLightIndicatorId = 25;
 MessageInt sciMessage(int value)
 {
 	return static_cast<MessageInt>(value);
+}
+
+/// QColor -> Scintilla 색상 (0x00BBGGRR).
+sptr_t sciColour(const QColor& color)
+{
+	return static_cast<sptr_t>(color.red() | (color.green() << 8) | (color.blue() << 16));
 }
 
 int changeHistoryFlagsForMode(const ScintillaEditorSettings::ChangeHistoryMode mode)
@@ -178,9 +182,20 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 				emit textChanged();
 			});
 	connect(m_editor, &ScintillaEditBase::updateUi,
-			this, [this](Scintilla::Update) {
+			this, [this](Scintilla::Update updated) {
 				updateBraceHighlight();
 				emitCursorAndSelectionState();
+				if ((static_cast<int>(updated) & static_cast<int>(Scintilla::Update::VScroll)) != 0)
+					emit viewportScrolled();
+			});
+	connect(m_editor, &ScintillaEditBase::styleNeeded,
+			this, [this](Scintilla::Position position) {
+				handleStyleNeeded(static_cast<int>(position));
+				emit styleNeeded(static_cast<int>(position));
+			});
+	connect(m_editor, &ScintillaEditBase::charAdded,
+			this, [this](int ch) {
+				emit charAdded(ch);
 			});
 	connect(m_editor, &ScintillaEditBase::marginClicked,
 			this, [this](Scintilla::Position position, Scintilla::KeyMod, int margin) {
@@ -665,6 +680,230 @@ int ScintillaQtDirectBackend::firstVisibleLine() const
 	return m_editor ? static_cast<int>(m_editor->send(sciMessage(SCI_GETFIRSTVISIBLELINE))) : 0;
 }
 
+void ScintillaQtDirectBackend::setFirstVisibleLine(int line)
+{
+	if (!m_editor)
+		return;
+
+	const sptr_t target = qMax<sptr_t>(0, static_cast<sptr_t>(line));
+	m_editor->send(sciMessage(SCI_SETFIRSTVISIBLELINE), target);
+}
+
+int ScintillaQtDirectBackend::linesOnScreen() const
+{
+	return m_editor ? static_cast<int>(m_editor->send(sciMessage(SCI_LINESONSCREEN))) : 0;
+}
+
+double ScintillaQtDirectBackend::fractionalLineAtViewportRatio(const double ratio) const
+{
+	if (!m_editor)
+		return 1.0;
+
+	// SCI_POSITIONFROMPOINT 는 픽셀 좌표를 받으므로 줄바꿈/접기와 무관하게
+	// "화면 이 높이에 실제로 보이는 문자" 를 돌려준다.
+	const int height = qMax(1, m_editor->height());
+	const sptr_t y = static_cast<sptr_t>(height * qBound(0.0, ratio, 1.0));
+	const sptr_t position = m_editor->send(sciMessage(SCI_POSITIONFROMPOINT), 0, y);
+	if (position < 0)
+		return qMax(1, firstVisibleLine() + 1);
+
+	const int docLine = lineFromPosition(static_cast<int>(position));
+
+	// 이 줄이 화면에서 여러 행으로 접혀 있으면, 그 안 어디쯤인지까지 표현한다.
+	const sptr_t lineTopY = m_editor->send(sciMessage(SCI_POINTYFROMPOSITION), 0,
+										   positionFromLine(docLine));
+	const int rowHeight = qMax(1, textHeight(docLine));
+	const int wrapRows = qMax(1, static_cast<int>(m_editor->send(sciMessage(SCI_WRAPCOUNT), docLine)));
+	const double fraction = qBound(0.0,
+								   static_cast<double>(y - lineTopY) / (wrapRows * rowHeight),
+								   0.999);
+
+	return ( docLine + 1 ) + fraction;   // 밖에서는 1-based
+}
+
+void ScintillaQtDirectBackend::scrollFractionalLineToViewportRatio(const double fractionalLine,
+																   const double ratio)
+{
+	if (!m_editor)
+		return;
+
+	const int totalLines = qMax(1, lineCount());
+	const double clamped = qBound(1.0, fractionalLine, static_cast<double>(totalLines));
+	const int docLine = qBound(0, static_cast<int>(clamped) - 1, totalLines - 1);
+	const double fraction = qBound(0.0, clamped - static_cast<int>(clamped), 0.999);
+
+	const int height = qMax(1, m_editor->height());
+	const int rowHeight = qMax(1, textHeight(docLine));
+	const int wrapRows = qMax(1, static_cast<int>(m_editor->send(sciMessage(SCI_WRAPCOUNT), docLine)));
+
+	// 목표: 그 줄의 fraction 지점이 화면 height*ratio 에 오는 것.
+	// 따라서 줄의 "윗변" 은 그보다 fraction*줄높이 만큼 위에 있어야 한다.
+	const double desiredTopY = height * qBound(0.0, ratio, 1.0) - fraction * wrapRows * rowHeight;
+	const sptr_t currentTopY = m_editor->send(sciMessage(SCI_POINTYFROMPOSITION), 0,
+											  positionFromLine(docLine));
+
+	// 현재 위치와의 차이를 화면 행 수로 환산해 스크롤한다. SCI_LINESCROLL 은
+	// 화면 행(wrap 된 하위 행 포함) 단위라 줄바꿈이 있어도 정확하다.
+	const int deltaRows = static_cast<int>( qRound( ( currentTopY - desiredTopY ) / rowHeight ) );
+	if (deltaRows != 0)
+		m_editor->send(sciMessage(SCI_LINESCROLL), 0, deltaRows);
+}
+
+// ── 위치 변환 ──────────────────────────────────────────────
+
+int ScintillaQtDirectBackend::positionFromLine(int line) const
+{
+	if (!m_editor)
+		return 0;
+
+	const sptr_t safeLine = qBound(sptr_t(0), static_cast<sptr_t>(line), static_cast<sptr_t>(qMax(0, lineCount() - 1)));
+	return static_cast<int>(m_editor->send(sciMessage(SCI_POSITIONFROMLINE), safeLine));
+}
+
+int ScintillaQtDirectBackend::lineEndPosition(int line) const
+{
+	if (!m_editor)
+		return 0;
+
+	const sptr_t safeLine = qBound(sptr_t(0), static_cast<sptr_t>(line), static_cast<sptr_t>(qMax(0, lineCount() - 1)));
+	return static_cast<int>(m_editor->send(sciMessage(SCI_GETLINEENDPOSITION), safeLine));
+}
+
+int ScintillaQtDirectBackend::lineFromPosition(int position) const
+{
+	if (!m_editor)
+		return 0;
+
+	const sptr_t safePosition = qBound(sptr_t(0), static_cast<sptr_t>(position), static_cast<sptr_t>(documentLength()));
+	return static_cast<int>(m_editor->send(sciMessage(SCI_LINEFROMPOSITION), safePosition));
+}
+
+int ScintillaQtDirectBackend::columnFromPosition(int position) const
+{
+	if (!m_editor)
+		return 0;
+
+	const sptr_t safePosition = qBound(sptr_t(0), static_cast<sptr_t>(position), static_cast<sptr_t>(documentLength()));
+	return static_cast<int>(m_editor->send(sciMessage(SCI_GETCOLUMN), safePosition));
+}
+
+int ScintillaQtDirectBackend::positionFromLineColumn(int line, int column) const
+{
+	if (!m_editor)
+		return 0;
+
+	return static_cast<int>(positionFromLineIndex(m_editor, line, column));
+}
+
+QByteArray ScintillaQtDirectBackend::textRangeUtf8(int startPos, int endPos) const
+{
+	if (!m_editor)
+		return {};
+
+	const sptr_t length = documentLength();
+	const sptr_t start = qBound(sptr_t(0), static_cast<sptr_t>(startPos), length);
+	const sptr_t end = qBound(start, static_cast<sptr_t>(endPos), length);
+	if (end <= start)
+		return {};
+
+	QByteArray buffer(static_cast<qsizetype>(end - start) + 1, Qt::Uninitialized);
+	Sci_TextRangeFull range{};
+	range.chrg.cpMin = start;
+	range.chrg.cpMax = end;
+	range.lpstrText = buffer.data();
+	m_editor->send(sciMessage(SCI_GETTEXTRANGEFULL), 0, reinterpret_cast<sptr_t>(&range));
+	buffer.resize(static_cast<qsizetype>(end - start));
+	return buffer;
+}
+
+QString ScintillaQtDirectBackend::lineText(int line) const
+{
+	if (!m_editor || line < 0 || line >= lineCount())
+		return {};
+
+	const sptr_t length = m_editor->send(sciMessage(SCI_LINELENGTH), line);
+	if (length <= 0)
+		return {};
+
+	QByteArray buffer(static_cast<qsizetype>(length) + 1, Qt::Uninitialized);
+	m_editor->send(sciMessage(SCI_GETLINE), line, reinterpret_cast<sptr_t>(buffer.data()));
+	buffer.resize(static_cast<qsizetype>(length));
+	return QString::fromUtf8(buffer);
+}
+
+QPoint ScintillaQtDirectBackend::pointFromPosition(int position) const
+{
+	if (!m_editor)
+		return {};
+
+	const sptr_t safePosition = qBound(sptr_t(0), static_cast<sptr_t>(position), static_cast<sptr_t>(documentLength()));
+	const int x = static_cast<int>(m_editor->send(sciMessage(SCI_POINTXFROMPOSITION), 0, safePosition));
+	const int y = static_cast<int>(m_editor->send(sciMessage(SCI_POINTYFROMPOSITION), 0, safePosition));
+	return { x, y };
+}
+
+// ── 컨테이너 렉싱 지원 ─────────────────────────────────────
+
+int ScintillaQtDirectBackend::endStyled() const
+{
+	return m_editor ? static_cast<int>(m_editor->send(sciMessage(SCI_GETENDSTYLED))) : 0;
+}
+
+void ScintillaQtDirectBackend::startStyling(int position)
+{
+	if (!m_editor)
+		return;
+
+	const sptr_t safePosition = qBound(sptr_t(0), static_cast<sptr_t>(position), static_cast<sptr_t>(documentLength()));
+	m_editor->send(sciMessage(SCI_STARTSTYLING), safePosition);
+}
+
+void ScintillaQtDirectBackend::setStylingEx(const QByteArray& styleBytes)
+{
+	if (!m_editor || styleBytes.isEmpty())
+		return;
+
+	m_editor->send(sciMessage(SCI_SETSTYLINGEX),
+		static_cast<uptr_t>(styleBytes.size()),
+		reinterpret_cast<sptr_t>(styleBytes.constData()));
+}
+
+void ScintillaQtDirectBackend::colouriseAll()
+{
+	if (m_editor)
+		m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
+}
+
+void ScintillaQtDirectBackend::setStyleForeground(int style, const QColor& color)
+{
+	if (m_editor && color.isValid())
+		m_editor->send(sciMessage(SCI_STYLESETFORE), style, sciColour(color));
+}
+
+void ScintillaQtDirectBackend::setStyleBackground(int style, const QColor& color)
+{
+	if (m_editor && color.isValid())
+		m_editor->send(sciMessage(SCI_STYLESETBACK), style, sciColour(color));
+}
+
+void ScintillaQtDirectBackend::setStyleBold(int style, bool bold)
+{
+	if (m_editor)
+		m_editor->send(sciMessage(SCI_STYLESETBOLD), style, bold ? 1 : 0);
+}
+
+void ScintillaQtDirectBackend::setStyleItalic(int style, bool italic)
+{
+	if (m_editor)
+		m_editor->send(sciMessage(SCI_STYLESETITALIC), style, italic ? 1 : 0);
+}
+
+void ScintillaQtDirectBackend::setStyleUnderline(int style, bool underline)
+{
+	if (m_editor)
+		m_editor->send(sciMessage(SCI_STYLESETUNDERLINE), style, underline ? 1 : 0);
+}
+
 void ScintillaQtDirectBackend::restoreViewState(int caretPosition, int firstVisibleLine)
 {
 	if (!m_editor)
@@ -727,10 +966,27 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 	clearLexer();
 
 	const QString lexerKey = TextLexerRegistry::instance().lexerKeyForDisplayName(displayName);
-	m_editor->send(sciMessage(kSciSetLexer), SCLEX_NULL);
-	if (lexerKey.compare(QStringLiteral("none"), Qt::CaseInsensitive) == 0) {
+
+	// reStructuredText: Lexilla 에 렉서가 없으므로 컨테이너 렉싱을 쓴다.
+	// ILexer 를 비운 채 SCI_COLOURISE 를 보내면 Scintilla 가 SCN_STYLENEEDED 로
+	// 스타일을 요청하고, handleStyleNeeded() 가 직접 칠한다.
+	if (lexerKey.compare(QStringLiteral("rst-container"), Qt::CaseInsensitive) == 0) {
+		m_rstLexer = std::make_unique<mrst::rst::RstContainerLexer>();
 		m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
-		m_editor->sends(sciMessage(kSciSetLexerLanguage), 0, nullptr);
+		m_editor->send(sciMessage(SCI_SETPROPERTY),
+			reinterpret_cast<uptr_t>("fold"),
+			reinterpret_cast<sptr_t>("0"));
+		m_currentLexerKey = lexerKey;
+		applySyntaxStyles(m_darkTheme);
+		m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
+		writeLexerTrace(displayName, lexerKey, true);
+		return true;
+	}
+
+	if (lexerKey.compare(QStringLiteral("none"), Qt::CaseInsensitive) == 0) {
+		// ILexer 를 비우면 Scintilla 는 컨테이너 렉싱 모드가 되지만, 여기서는
+		// SCI_COLOURISE 를 보내지 않으므로 styleNeeded 도 발생하지 않아 무채색이 된다.
+		m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
 		m_editor->send(sciMessage(SCI_SETPROPERTY),
 			reinterpret_cast<uptr_t>("fold"),
 			reinterpret_cast<sptr_t>("0"));
@@ -740,7 +996,8 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 
 	const QByteArray lexerName = lexerKey.toUtf8();
 
-	#if defined(MV_DIRECT_SCINTILLA_HAS_LEXILLA_LEXERS)
+	// Scintilla 5 에는 SCI_SETLEXER / SCI_SETLEXERLANGUAGE 가 없다. 렉서 지정 수단은
+	// Lexilla 의 CreateLexer() 로 만든 ILexer5 를 SCI_SETILEXER 로 넘기는 것뿐이다.
 	m_currentLexer = CreateLexer(lexerName.constData());
 	if (!m_currentLexer) {
 		m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
@@ -749,10 +1006,6 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 	}
 
 	m_editor->send(sciMessage(SCI_SETILEXER), 0, reinterpret_cast<sptr_t>(m_currentLexer));
-	#else
-	m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
-	m_editor->sends(sciMessage(kSciSetLexerLanguage), 0, lexerName.constData());
-	#endif
 
 	m_editor->send(sciMessage(SCI_SETPROPERTY),
 		reinterpret_cast<uptr_t>("fold"),
@@ -767,7 +1020,9 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 	applySyntaxStyles(m_darkTheme);
 
 	m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
-	const bool applied = m_editor->send(sciMessage(SCI_GETLEXER)) != SCLEX_NULL;
+	// SCI_GETLEXER 는 ILexer 의 GetIdentifier() 를 그대로 돌려주므로 렉서마다 값이
+	// 제각각이다. 적용 여부는 CreateLexer() 결과로 판단하는 편이 정확하다.
+	const bool applied = m_currentLexer != nullptr;
 	writeLexerTrace(displayName, lexerKey, applied);
 	return applied;
 }
@@ -919,6 +1174,110 @@ void ScintillaQtDirectBackend::clearLexer()
 		m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
 	m_currentLexer = nullptr;
 	m_currentLexerKey.clear();
+	m_rstLexer.reset();
+}
+
+mrst::rst::RstMetadataCache* ScintillaQtDirectBackend::rstMetadataCache() const
+{
+	return m_rstLexer ? &m_rstLexer->metadataCache() : nullptr;
+}
+
+void ScintillaQtDirectBackend::restyleDocument()
+{
+	if (!m_editor)
+		return;
+
+	// SCI_STARTSTYLING(0) 으로 endStyled 를 되돌려야 문서 전체가 다시 요청된다.
+	m_editor->send(sciMessage(SCI_STARTSTYLING), 0);
+	m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
+}
+
+void ScintillaQtDirectBackend::handleStyleNeeded(int endPosition)
+{
+	if (!m_editor || !m_rstLexer)
+		return;
+
+	const int documentEnd = documentLength();
+	const int startPosition = endStyled();
+	if (endPosition <= startPosition || startPosition >= documentEnd)
+		return;
+
+	const int totalLines = qMax(1, lineCount());
+	const int firstLine = lineFromPosition(startPosition);
+	const int lastLine = qMin(lineFromPosition(qMin(endPosition, documentEnd)), totalLines - 1);
+
+	// 렉서는 제목/구분선 판정을 위해 앞뒤 한 줄을 문맥으로 요구한다.
+	// 문맥까지 포함해 렉싱한 뒤, 실제로 칠할 구간만 잘라 쓴다.
+	const int contextFirstLine = qMax(0, firstLine - 1);
+	const int contextLastLine = qMin(totalLines - 1, lastLine + 1);
+
+	const int contextStart = positionFromLine(contextFirstLine);
+	const int contextEnd = (contextLastLine + 1 < totalLines)
+		? positionFromLine(contextLastLine + 1)
+		: documentEnd;
+
+	const QByteArray chunk = textRangeUtf8(contextStart, contextEnd);
+	if (chunk.isEmpty())
+		return;
+
+	const std::vector<unsigned char> styles =
+		m_rstLexer->styleBytes(std::string(chunk.constData(), static_cast<std::size_t>(chunk.size())));
+
+	const int paintStart = positionFromLine(firstLine);
+	const int paintEnd = (lastLine + 1 < totalLines) ? positionFromLine(lastLine + 1) : documentEnd;
+	const int offset = paintStart - contextStart;
+	const int length = paintEnd - paintStart;
+	if (offset < 0 || length <= 0 || static_cast<std::size_t>(offset + length) > styles.size())
+		return;
+
+	QByteArray styleBytes(length, Qt::Uninitialized);
+	std::memcpy(styleBytes.data(), styles.data() + offset, static_cast<std::size_t>(length));
+
+	startStyling(paintStart);
+	setStylingEx(styleBytes);
+}
+
+void ScintillaQtDirectBackend::applyRstSyntaxStyles()
+{
+	if (!m_editor)
+		return;
+
+	using namespace mrst::rst;
+	auto& theme = ThemeManager::instance();
+	const auto rstColour = [&theme](const char* token) {
+		return theme.color(QStringLiteral("text.lexer.rst.%1").arg(QLatin1String(token)));
+	};
+
+	setStyleForeground(STYLE_TITLE, rstColour("title"));
+	setStyleBold(STYLE_TITLE, true);
+	setStyleForeground(STYLE_TRANSITION, rstColour("transition"));
+	setStyleForeground(STYLE_COMMENT, rstColour("comment"));
+	setStyleItalic(STYLE_COMMENT, true);
+	setStyleForeground(STYLE_EXPLICIT_MARKUP, rstColour("explicitMarkup"));
+
+	setStyleForeground(STYLE_DIRECTIVE_VALID, rstColour("directiveValid"));
+	setStyleBold(STYLE_DIRECTIVE_VALID, true);
+	setStyleForeground(STYLE_DIRECTIVE_INVALID, rstColour("directiveInvalid"));
+	setStyleBold(STYLE_DIRECTIVE_INVALID, true);
+	setStyleForeground(STYLE_DIRECTIVE_UNKNOWN, rstColour("directiveUnknown"));
+	setStyleBold(STYLE_DIRECTIVE_UNKNOWN, true);
+
+	setStyleForeground(STYLE_ROLE_VALID, rstColour("roleValid"));
+	setStyleForeground(STYLE_ROLE_INVALID, rstColour("roleInvalid"));
+	setStyleForeground(STYLE_ROLE_UNKNOWN, rstColour("roleUnknown"));
+
+	setStyleForeground(STYLE_LITERAL, rstColour("literal"));
+	setStyleForeground(STYLE_INLINE_LITERAL, rstColour("inlineLiteral"));
+	setStyleForeground(STYLE_EMPHASIS, rstColour("emphasis"));
+	setStyleItalic(STYLE_EMPHASIS, true);
+	setStyleForeground(STYLE_STRONG, rstColour("strong"));
+	setStyleBold(STYLE_STRONG, true);
+	setStyleForeground(STYLE_INTERPRETED, rstColour("interpreted"));
+	setStyleForeground(STYLE_HYPERLINK, rstColour("hyperlink"));
+	setStyleUnderline(STYLE_HYPERLINK, true);
+	setStyleForeground(STYLE_SUBSTITUTION, rstColour("substitution"));
+	setStyleForeground(STYLE_FIELD_NAME, rstColour("fieldName"));
+	setStyleBold(STYLE_FIELD_NAME, true);
 }
 
 void ScintillaQtDirectBackend::applyThemeColors(bool dark)
@@ -972,6 +1331,11 @@ void ScintillaQtDirectBackend::applyThemeColors(bool dark)
 	m_darkTheme = ThemeManager::instance().currentTheme() == ThemeManager::Dark;
 	configureBraceHighlightIndicators();
 	applySyntaxStyles(m_darkTheme);
+
+	// SCI_STYLECLEARALL 이 컨테이너 스타일까지 초기화하므로 다시 칠해야 한다.
+	if (m_rstLexer)
+		restyleDocument();
+
 	m_editor->update();
 }
 
@@ -979,6 +1343,12 @@ void ScintillaQtDirectBackend::applySyntaxStyles(bool dark)
 {
 	if (!m_editor || m_currentLexerKey.isEmpty())
 		return;
+
+	// reST 는 Lexilla 스타일 번호 체계를 쓰지 않으므로 별도 경로.
+	if (m_currentLexerKey == QStringLiteral("rst-container")) {
+		applyRstSyntaxStyles();
+		return;
+	}
 
 	auto colourToSci = [](unsigned int r, unsigned int g, unsigned int b) -> sptr_t {
 		return static_cast<sptr_t>(r | (g << 8) | (b << 16));

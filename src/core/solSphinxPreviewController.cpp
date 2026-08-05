@@ -1,245 +1,355 @@
 ﻿#include "stdafx.h"
 #include "solSphinxPreviewController.hpp"
 
+#include "solUvTaskRunner.hpp"
+
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QProcessEnvironment>
-#include <QRegularExpression>
-#include <QTextStream>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QTimer>
 
 namespace mrst {
-
 namespace {
 
-bool isRestAdornmentLine(const QString& text) {
-    const QString trimmed = text.trimmed();
-    if (trimmed.size() < 3) {
-        return false;
-    }
-    static const QString chars = QStringLiteral("=-`:'\"~^_*+#<>");
-    if (!chars.contains(trimmed.front())) {
-        return false;
-    }
-    for (const QChar ch : trimmed) {
-        if (ch != trimmed.front()) {
-            return false;
-        }
-    }
-    return true;
+constexpr int kDefaultDebounceMs = 350;
+
+/// 출력 디렉터리 이름의 랜덤 부분. uuid 32자를 그대로 쓰면 깊은 docname 과
+/// 합쳐져 Windows MAX_PATH 에 걸린다.
+QString shortToken( const QString& seed, const int serial )
+{
+    const QByteArray digest = QCryptographicHash::hash(
+        ( seed + QString::number( serial ) ).toUtf8(), QCryptographicHash::Sha1 );
+    return QString::fromLatin1( digest.toHex().left( 8 ) );
 }
 
-QString sourceMapSupportMarkup() {
-    return QStringLiteral(R"(
-<style id="mrst-source-map-style">.mrst-source-anchor{display:inline-block;width:0;height:0;overflow:hidden;scroll-margin-top:32px;}</style>
-<script id="mrst-source-map">
-window.mrstSourceAnchors = function() {
-  return Array.from(document.querySelectorAll('[data-mrst-source-line]')).map(function(e) {
-    return { line: parseInt(e.getAttribute('data-mrst-source-line'), 10) || 1, y: e.getBoundingClientRect().top + window.scrollY, element: e };
-  }).sort(function(a, b) { return a.line - b.line; });
-};
-window.mrstScrollToSourceLine = function(line) {
-  const anchors = window.mrstSourceAnchors();
-  if (!anchors.length) return false;
-  let best = anchors[0];
-  for (const anchor of anchors) {
-    if (anchor.line <= line) best = anchor; else break;
-  }
-  best.element.scrollIntoView({block: 'center', behavior: 'auto'});
-  return true;
-};
-window.mrstLineFromViewportY = function(y) {
-  const anchors = window.mrstSourceAnchors();
-  if (!anchors.length) return 0;
-  const target = window.scrollY + y;
-  let best = anchors[0];
-  let distance = Math.abs(best.y - target);
-  for (const anchor of anchors) {
-    const d = Math.abs(anchor.y - target);
-    if (d < distance) { best = anchor; distance = d; }
-  }
-  return best.line;
-};
-</script>
-)");
+DiagnosticEntry diagnosticFromJson( const QJsonObject& object )
+{
+    DiagnosticEntry entry;
+    entry.path = object.value( QStringLiteral( "path" ) ).toString();
+    entry.uri = pathToFileUri( entry.path );
+    entry.line = qMax( 1, object.value( QStringLiteral( "line" ) ).toInt( 1 ) );
+    entry.character = 1;
+    entry.endLine = entry.line;
+    entry.endCharacter = 2;
+    entry.message = object.value( QStringLiteral( "message" ) ).toString();
+    entry.source = QStringLiteral( "sphinx-build" );
+
+    const QString severity = object.value( QStringLiteral( "severity" ) ).toString();
+    if( severity == QStringLiteral( "error" ) || severity == QStringLiteral( "critical" )
+        || severity == QStringLiteral( "severe" ) )
+        entry.severity = 1;
+    else
+        entry.severity = 2;
+
+    return entry;
 }
 
 }  // namespace
 
-bool annotateHtmlWithSourceLines(const QString& htmlPath, const QString& sourceFile) {
-    if (htmlPath.trimmed().isEmpty() || sourceFile.trimmed().isEmpty()) {
-        return false;
-    }
-    QFile htmlFile(htmlPath);
-    if (!htmlFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        return false;
-    }
-    QString html = QString::fromUtf8(htmlFile.readAll());
-    htmlFile.close();
-    if (html.contains(QStringLiteral("id=\"mrst-source-map\""))) {
-        return true;
-    }
-
-    QFile source(sourceFile);
-    if (!source.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        return false;
-    }
-    const QStringList lines = QString::fromUtf8(source.readAll()).split(QLatin1Char('\n'));
-    int inserted = 0;
-    for (int i = 0; i < lines.size() && inserted < 800; ++i) {
-        const QString trimmed = lines[i].trimmed();
-        if (trimmed.size() < 3 || isRestAdornmentLine(trimmed) || trimmed.startsWith(QStringLiteral(".. ")) || trimmed.startsWith(QLatin1Char(':'))) {
-            continue;
-        }
-        const QString escaped = trimmed.toHtmlEscaped();
-        const int pos = html.indexOf(escaped, 0, Qt::CaseSensitive);
-        if (pos < 0) {
-            continue;
-        }
-        const QString anchor = QStringLiteral("<span id=\"mrst-source-line-%1\" data-mrst-source-line=\"%1\" class=\"mrst-source-anchor\"></span>").arg(i + 1);
-        if (html.mid(qMax(0, pos - 160), 320).contains(anchor)) {
-            continue;
-        }
-        html.insert(pos, anchor);
-        ++inserted;
-    }
-    const QString support = sourceMapSupportMarkup();
-    const int body = html.lastIndexOf(QStringLiteral("</body>"), -1, Qt::CaseInsensitive);
-    if (body >= 0) {
-        html.insert(body, support);
-    } else {
-        html.append(support);
-    }
-    if (!htmlFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
-        return false;
-    }
-    htmlFile.write(html.toUtf8());
-    return inserted > 0;
+SphinxPreviewController::SphinxPreviewController( QObject* parent )
+    : QObject( parent )
+    , debounceTimer_( new QTimer( this ) )
+{
+    debounceTimer_->setSingleShot( true );
+    debounceTimer_->setInterval( kDefaultDebounceMs );
+    connect( debounceTimer_, &QTimer::timeout, this, [this] {
+        if( hasPending_ )
+            startBuild();
+    } );
 }
 
-SphinxPreviewController::SphinxPreviewController(QObject* parent) : QObject(parent) {}
-
-SphinxPreviewController::~SphinxPreviewController() {
-    cancel();
+SphinxPreviewController::~SphinxPreviewController()
+{
+    if( task_ )
+        task_->cancel();
 }
 
-bool SphinxPreviewController::isBuilding() const {
-    return process_ != nullptr && process_->state() != QProcess::NotRunning;
+bool SphinxPreviewController::isBuilding() const
+{
+    return task_ != nullptr && task_->isRunning();
 }
 
-QString SphinxPreviewController::lastHtmlPath() const {
+QString SphinxPreviewController::lastHtmlPath() const
+{
     return lastHtmlPath_;
 }
 
-void SphinxPreviewController::build(const SphinxProject& project, const QString& sphinxBuildExe, const QString& sourceFile) {
-    cancel();
-    activeProject_ = project;
-    activeSourceFile_ = sourceFile;
-    activeOutput_.clear();
-    const QString buildRoot = projectPath(project.buildPath);
-    activeOutDir_ = QDir(buildRoot).filePath(QStringLiteral("preview/html"));
-    const QString doctreeDir = QDir(buildRoot).filePath(QStringLiteral("preview/doctrees"));
-    QDir().mkpath(activeOutDir_);
-    QDir().mkpath(doctreeDir);
+void SphinxPreviewController::setShadowDir( const QString& path )
+{
+    shadowDir_ = path;
+}
 
-    process_ = std::make_unique<QProcess>();
-    process_->setProgram(sphinxBuildExe);
-    process_->setArguments({
-        QStringLiteral("-b"), QStringLiteral("html"),
-        QStringLiteral("-c"), projectPath(project.confPath.parent_path()),
-        QStringLiteral("-d"), doctreeDir,
-        projectPath(project.sourcePath),
-        activeOutDir_,
-    });
-    process_->setWorkingDirectory(projectPath(project.rootPath));
-    process_->setProcessChannelMode(QProcess::MergedChannels);
-    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    env.insert(QStringLiteral("PYTHONIOENCODING"), QStringLiteral("utf-8"));
-    env.insert(QStringLiteral("PYTHONUTF8"), QStringLiteral("1"));
-    process_->setProcessEnvironment(env);
-    connect(process_.get(), &QProcess::readyReadStandardOutput, this, &SphinxPreviewController::readOutput);
-    connect(process_.get(), &QProcess::finished, this, &SphinxPreviewController::processFinished);
-    emit buildStarted();
-    process_->start();
-    if (!process_->waitForStarted(5000)) {
-        emit logMessage(QStringLiteral("sphinx-build 시작 실패: %1").arg(sphinxBuildExe));
-        emit buildFinished(false, {});
-        process_.reset();
+void SphinxPreviewController::setDebounceInterval( const int milliseconds )
+{
+    debounceTimer_->setInterval( qMax( 0, milliseconds ) );
+}
+
+void SphinxPreviewController::requestBuild( const PreviewBuildRequest& request )
+{
+    usedFallbackPython_ = false;
+    pending_ = request;
+    hasPending_ = true;
+    debounceTimer_->start();
+}
+
+void SphinxPreviewController::buildNow( const PreviewBuildRequest& request )
+{
+    usedFallbackPython_ = false;
+    pending_ = request;
+    hasPending_ = true;
+    debounceTimer_->stop();
+    startBuild();
+}
+
+void SphinxPreviewController::cancel()
+{
+    debounceTimer_->stop();
+    hasPending_ = false;
+    if( task_ )
+        task_->cancel();
+}
+
+QString SphinxPreviewController::writeShadowCopy() const
+{
+    if( pending_.shadowFile.isEmpty() || shadowDir_.isEmpty() )
+        return {};
+
+    return pending_.shadowFile;   // 호출 측이 이미 파일로 만들어 넘긴다.
+}
+
+QString SphinxPreviewController::allocateOutputDir()
+{
+    const QString buildRoot = toCanonicalQString( active_.project.buildPath );
+    const QString previewRoot = QDir( buildRoot ).filePath( QStringLiteral( "preview-html" ) );
+    QDir().mkpath( previewRoot );
+
+    const QString name = QStringLiteral( "build-%1-%2" )
+                             .arg( buildSerial_, 4, 10, QLatin1Char( '0' ) )
+                             .arg( shortToken( previewRoot, buildSerial_ ) );
+    ++buildSerial_;
+
+    const QString outDir = QDir( previewRoot ).filePath( name );
+    QDir().mkpath( outDir );
+    return outDir;
+}
+
+void SphinxPreviewController::cleanupOldOutputDirs( const QString& keepDir ) const
+{
+    const QString buildRoot = toCanonicalQString( active_.project.buildPath );
+    QDir previewRoot( QDir( buildRoot ).filePath( QStringLiteral( "preview-html" ) ) );
+    if( !previewRoot.exists() )
+        return;
+
+    const QString keepName = QFileInfo( keepDir ).fileName();
+    const QFileInfoList entries = previewRoot.entryInfoList( QDir::Dirs | QDir::NoDotAndDotDot );
+    for( const QFileInfo& entry : entries )
+    {
+        if( entry.fileName() == keepName )
+            continue;
+        // QWebEngine 이 이전 HTML 을 물고 있으면 지워지지 않는다. 실패해도 무시하고
+        // 다음 기회에 다시 시도한다.
+        QDir( entry.absoluteFilePath() ).removeRecursively();
     }
 }
 
-void SphinxPreviewController::cancel() {
-    if (process_ == nullptr) {
+void SphinxPreviewController::startBuild()
+{
+    if( !hasPending_ )
+        return;
+
+    // 이미 도는 중이면 취소하고, 끝난 뒤 재무장한다.
+    if( isBuilding() )
+    {
+        task_->cancel();
         return;
     }
-    if (process_->state() != QProcess::NotRunning) {
-        process_->terminate();
-        if (!process_->waitForFinished(1000)) {
-            process_->kill();
-            process_->waitForFinished(1000);
+
+    const bool continuingFallback = usedFallbackPython_;
+    active_ = pending_;
+    hasPending_ = false;
+    if( !continuingFallback )
+        usedFallbackPython_ = false;
+
+    if( active_.pythonExe.isEmpty() || !QFileInfo::exists( active_.pythonExe ) )
+    {
+        emit logMessage( tr( "Python 런타임이 아직 준비되지 않아 프리뷰를 건너뜁니다." ) );
+        return;
+    }
+    if( active_.builderScript.isEmpty() || !QFileInfo::exists( active_.builderScript ) )
+    {
+        emit logMessage( tr( "프리뷰 빌더 스크립트를 찾을 수 없습니다: %1" )
+                            .arg( QDir::toNativeSeparators( active_.builderScript ) ) );
+        return;
+    }
+
+    const QString buildRoot = toCanonicalQString( active_.project.buildPath );
+    activeOutDir_ = allocateOutputDir();
+    activeReportPath_ = QDir( activeOutDir_ ).filePath( QStringLiteral( ".mrr-build.json" ) );
+
+    // doctree 는 회전시키지 않고 프로젝트당 하나로 공유한다. 원본은 회전하는
+    // out-dir 안에 두어 매 빌드마다 전체 재파싱을 했다. _static 잠금 문제는
+    // 출력 디렉터리에만 해당하고, 빌드는 직렬화되므로 공유가 안전하다.
+    const QString doctreeDir = QDir( buildRoot ).filePath( QStringLiteral( "preview/doctrees" ) );
+    QDir().mkpath( doctreeDir );
+
+    QStringList arguments{
+        active_.builderScript,
+        QStringLiteral( "--conf-dir" ), toCanonicalQString( active_.project.confPath.parent_path() ),
+        QStringLiteral( "--source-dir" ), toCanonicalQString( active_.project.sourcePath ),
+        QStringLiteral( "--out-dir" ), activeOutDir_,
+        QStringLiteral( "--doctree-dir" ), doctreeDir,
+        QStringLiteral( "--report" ), activeReportPath_,
+        QStringLiteral( "--auto-fix-legacy-conf" ),
+    };
+    if( !active_.sourceFile.isEmpty() )
+        arguments << QStringLiteral( "--primary" ) << active_.sourceFile;
+    if( !active_.shadowFile.isEmpty() && !active_.sourceFile.isEmpty() )
+    {
+        arguments << QStringLiteral( "--shadow" )
+                  << QStringLiteral( "%1=%2" ).arg( active_.sourceFile, active_.shadowFile );
+    }
+
+    UvTask::Request request;
+    request.program = active_.pythonExe;
+    request.arguments = arguments;
+    request.workingDirectory = toCanonicalQString( active_.project.rootPath );
+    request.environment = utf8ProcessEnvironment();
+    request.tag = QStringLiteral( "sphinx preview" );
+
+    auto* task = new UvTask( std::move( request ), this );
+    task_ = task;
+
+    const QString projectId = QString::fromStdWString( active_.project.projectId );
+    emit buildStarted( projectId );
+
+    connect( task, &UvTask::outputLine, this, &SphinxPreviewController::logMessage );
+    connect( task, &UvTask::failedToStart, this, [this, task]( const QString& message ) {
+        emit logMessage( message );
+        task->deleteLater();
+        finishBuild( -1, true, false );
+    } );
+    connect( task, &UvTask::finished, this, [this, task]( const int exitCode, const bool crashed ) {
+        const bool cancelled = task->wasCancelled();
+        task->deleteLater();
+        finishBuild( exitCode, crashed, cancelled );
+    } );
+
+    task->start();
+}
+
+void SphinxPreviewController::finishBuild( const int exitCode, const bool crashed, const bool cancelled )
+{
+    // 종료 코드 4 = 빌더가 sphinx/docutils 를 임포트하지 못했다.
+    // 프로젝트 venv 가 문서용이 아니라 애플리케이션용인 경우가 흔하다
+    // (저장소 루트의 .venv 에는 Sphinx 가 없는 식). 이때 그냥 실패시키면
+    // 프리뷰가 영영 안 뜨므로 번들 런타임으로 한 번 물러선다.
+    if( !cancelled && exitCode == 4 && !usedFallbackPython_
+        && !active_.fallbackPythonExe.isEmpty()
+        && active_.fallbackPythonExe != active_.pythonExe )
+    {
+        usedFallbackPython_ = true;
+        emit logMessage( tr( "프로젝트 환경에 Sphinx 가 없어 내장 환경으로 다시 시도합니다." ) );
+
+        pending_ = active_;
+        pending_.pythonExe = active_.fallbackPythonExe;
+        hasPending_ = true;
+        startBuild();
+        return;
+    }
+
+    const bool processOk = !crashed && exitCode == 0;
+    PreviewBuildResult result = readReport( activeReportPath_ );
+    result.projectId = QString::fromStdWString( active_.project.projectId );
+    result.cancelled = cancelled;
+    if( !processOk )
+        result.ok = false;
+
+    if( result.ok && !result.htmlPath.isEmpty() && QFileInfo::exists( result.htmlPath ) )
+    {
+        lastHtmlPath_ = result.htmlPath;
+        cleanupOldOutputDirs( activeOutDir_ );
+    }
+    else if( !cancelled )
+    {
+        result.ok = false;
+    }
+
+    if( !cancelled )
+    {
+        // 진단보다 먼저 "무엇이 다시 읽혔는지" 를 알려야 소비자가 교체 범위를
+        // 정할 수 있다.
+        emit processedSourcesKnown( result.sources );
+        emit diagnosticsReady( QStringLiteral( "sphinx-build" ), result.diagnostics );
+
+        if( !result.missingExtensions.isEmpty() || !result.missingThemes.isEmpty() )
+        {
+            emit missingDependenciesDetected( result.projectId, result.missingExtensions,
+                                             result.missingThemes );
         }
+
+        emit logMessage( result.ok ? tr( "프리뷰 빌드 완료" ) : tr( "프리뷰 빌드 실패" ) );
     }
-    process_.reset();
+
+    emit buildFinished( result );
+
+    // 빌드 중 새 요청이 들어왔으면 이어서 처리한다.
+    if( hasPending_ )
+        debounceTimer_->start();
 }
 
-void SphinxPreviewController::readOutput() {
-    if (process_ == nullptr) {
-        return;
-    }
-    const QString output = QString::fromUtf8(process_->readAllStandardOutput()).trimmed();
-    if (!output.isEmpty()) {
-        activeOutput_ += output;
-        activeOutput_ += QLatin1Char('\n');
-        emit logMessage(output);
-    }
-}
+PreviewBuildResult SphinxPreviewController::readReport( const QString& reportPath ) const
+{
+    PreviewBuildResult result;
 
-void SphinxPreviewController::processFinished(int exitCode, QProcess::ExitStatus exitStatus) {
-    readOutput();
-    const bool success = exitStatus == QProcess::NormalExit && exitCode == 0;
-    lastHtmlPath_ = success ? sourceFileHtmlPath(activeProject_, activeOutDir_, activeSourceFile_) : QString{};
-    if (success && !QFileInfo(lastHtmlPath_).isFile()) {
-        lastHtmlPath_ = rootDocHtmlPath(activeProject_, activeOutDir_);
-    }
-    if (success && QFileInfo(lastHtmlPath_).isFile() && !activeSourceFile_.isEmpty()) {
-        annotateHtmlWithSourceLines(lastHtmlPath_, activeSourceFile_);
-    }
-    emit diagnosticsReady(QStringLiteral("sphinx-build"), parseSphinxBuildDiagnostics(activeOutput_, projectPath(activeProject_.rootPath)));
-    emit logMessage(success ? QStringLiteral("Sphinx preview build 완료") : QStringLiteral("Sphinx preview build 실패(exit=%1)").arg(exitCode));
-    emit buildFinished(success, lastHtmlPath_);
-    process_.reset();
-}
+    QFile file( reportPath );
+    if( !file.open( QIODevice::ReadOnly ) )
+        return result;
 
-QString SphinxPreviewController::projectPath(const std::filesystem::path& path) const {
-    return QString::fromStdWString(std::filesystem::weakly_canonical(path).wstring());
-}
+    const QJsonDocument document = QJsonDocument::fromJson( file.readAll() );
+    file.close();
+    if( !document.isObject() )
+        return result;
 
-QString SphinxPreviewController::rootDocHtmlPath(const SphinxProject& project, const QString& outDir) const {
-    QString docName = QString::fromStdString(project.rootDoc);
-    if (docName.isEmpty()) {
-        docName = QStringLiteral("index");
-    }
-    return QDir(outDir).filePath(docName + QStringLiteral(".html"));
-}
+    const QJsonObject root = document.object();
+    result.ok = root.value( QStringLiteral( "ok" ) ).toBool();
+    result.htmlPath = root.value( QStringLiteral( "htmlPath" ) ).toString();
+    result.primaryDocname = root.value( QStringLiteral( "primaryDocname" ) ).toString();
+    result.sphinxVersion = root.value( QStringLiteral( "sphinxVersion" ) ).toString();
+    result.htmlTheme = root.value( QStringLiteral( "htmlTheme" ) ).toString();
+    result.traceback = root.value( QStringLiteral( "traceback" ) ).toString();
 
-QString SphinxPreviewController::sourceFileHtmlPath(const SphinxProject& project, const QString& outDir, const QString& sourceFile) const {
-    if (sourceFile.trimmed().isEmpty()) {
-        return rootDocHtmlPath(project, outDir);
+    const QJsonArray sources = root.value( QStringLiteral( "sources" ) ).toArray();
+    for( const QJsonValue& value : sources )
+        result.sources << value.toString();
+
+    const QJsonArray diagnostics = root.value( QStringLiteral( "diagnostics" ) ).toArray();
+    for( const QJsonValue& value : diagnostics )
+    {
+        if( value.isObject() )
+            result.diagnostics.push_back( diagnosticFromJson( value.toObject() ) );
     }
-    std::error_code ec;
-    const std::filesystem::path sourcePath = std::filesystem::weakly_canonical(std::filesystem::path(sourceFile.toStdWString()), ec);
-    const std::filesystem::path sourceRoot = std::filesystem::weakly_canonical(project.sourcePath, ec);
-    std::filesystem::path relative = std::filesystem::relative(sourcePath, sourceRoot, ec);
-    if (ec || relative.empty() || relative.native().starts_with(L"..")) {
-        relative = sourcePath.filename();
+
+    const QJsonArray missing = root.value( QStringLiteral( "missingExtensions" ) ).toArray();
+    for( const QJsonValue& value : missing )
+    {
+        const QJsonObject entry = value.toObject();
+        const QString distribution = entry.value( QStringLiteral( "distribution" ) ).toString();
+        const QString module = entry.value( QStringLiteral( "module" ) ).toString();
+        if( !distribution.isEmpty() )
+            result.missingExtensions << distribution;
+        if( !module.isEmpty() )
+            result.missingModules << module;
     }
-    QString relativeDoc = QString::fromStdWString(relative.wstring()).replace(QLatin1Char('\\'), QLatin1Char('/'));
-    relativeDoc.replace(QRegularExpression(QStringLiteral(R"(\.(rst|txt|md)$)"), QRegularExpression::CaseInsensitiveOption), QStringLiteral(".html"));
-    if (!relativeDoc.endsWith(QStringLiteral(".html"), Qt::CaseInsensitive)) {
-        relativeDoc += QStringLiteral(".html");
-    }
-    return QDir(outDir).filePath(relativeDoc);
+
+    const QJsonArray themes = root.value( QStringLiteral( "missingThemes" ) ).toArray();
+    for( const QJsonValue& value : themes )
+        result.missingThemes << value.toString();
+
+    return result;
 }
 
 }  // namespace mrst
-

@@ -1,58 +1,31 @@
 [project]
-name = "multiroot-rest-cpp"
-version = "0.1.0"
-description = "Multi-root Sphinx/reStructuredText editor using Esbonio, and Sphinx."
-readme = "README.md"
-requires-python = ">=3.11"
+name = "multiroot-rest-runtime"
+version = "1.0.0"
+description = "Sphinx/Esbonio runtime for MultiRoot-reST-CPP"
+requires-python = ">=3.12,<3.13"
 dependencies = [
-    "PySide6>=6.7",
-    "Sphinx>=8,<=9",
     "esbonio>=2,<3",
-    "charset-normalizer>=3.3",
-    "sphinx-rtd-theme",
-    "shibuya",
-    "sphinx-book-theme",
-    "pydata-sphinx-theme",
-    "piccolo-theme",
-    "sphinxawesome-theme",
-    "sphinx-bootstrap-theme",
-    "cloud-sptheme",
-    "groundwork-sphinx-theme",
-    "myst-parser>=5.1.0",
-    "sphinx-design>=0.7.0",
-    "furo>=2025.12.19",
+    "sphinx>=8,<9",
+    "docutils>=0.21",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8",
-    "ruff>=0.5",
+themes = [
+    "furo",
+    "sphinx-rtd-theme>=3",
+    "pydata-sphinx-theme>=0.16",
+    "sphinx-book-theme>=1.1",
+    "shibuya",
+    "piccolo-theme",
+    "sphinxawesome-theme",
 ]
-build = [
-    "pyinstaller>=6.10",
-]
-
-[project.scripts]
-multiroot-rest = "multiroot_rest.app:main"
-multiroot-rest-scintilla-doctor = "multiroot_rest.cli:scintilla_doctor"
-multiroot-rest-qt-doctor = "multiroot_rest.cli:qt_doctor"
-
-[build-system]
-requires = ["hatchling>=1.25"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/multiroot_rest"]
-
-[tool.ruff]
-line-length = 100
-target-version = "py311"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src", "."]
-markers = [
-    "slow: marks tests as slow/integration (deselect with '-m \"not slow\"')",
+extensions = [
+    "myst-parser>=4",
+    "sphinx-design>=0.6",
+    "sphinx-copybutton>=0.5",
+    "sphinxcontrib-mermaid>=1",
+    "sphinx-tabs>=3.4",
 ]
 
-
+[tool.uv]
+package = false

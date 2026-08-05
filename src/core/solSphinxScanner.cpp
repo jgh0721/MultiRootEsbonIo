@@ -64,12 +64,29 @@ int relativeDepth(const fs::path& path, const fs::path& base) {
 
 }  // namespace
 
+QString toQString(const fs::path& path) {
+    return QString::fromStdWString(path.wstring());
+}
+
+QString toCanonicalQString(const fs::path& path) {
+    return QString::fromStdWString(fs::weakly_canonical(path).wstring());
+}
+
+fs::path toPath(const QString& text) {
+    return fs::path(text.toStdWString());
+}
+
 bool SphinxProject::contains(const fs::path& filePath) const {
     return pathIsBelow(filePath, sourcePath) || pathIsBelow(filePath, rootPath);
 }
 
 ProjectScanner::ProjectScanner(fs::path workspaceRoot, ScannerSettings settings)
-    : workspaceRoot_(fs::weakly_canonical(std::move(workspaceRoot))), settings_(std::move(settings)) {}
+    : workspaceRoot_(fs::weakly_canonical(std::move(workspaceRoot))), settings_(std::move(settings)) {
+    excludedDirs_ = defaultExcludedDirs();
+    for (const std::string& extra : settings_.excludedDirs) {
+        excludedDirs_.insert(lower(extra));
+    }
+}
 
 std::vector<SphinxProject> ProjectScanner::scan() const {
     std::vector<SphinxProject> projects;
@@ -113,11 +130,7 @@ SphinxProject ProjectScanner::projectFromConf(const fs::path& confPath) const {
 }
 
 bool ProjectScanner::isExcludedDirectory(const fs::path& path) const {
-    std::set<std::string> excluded = defaultExcludedDirs();
-    for (const std::string& extra : settings_.excludedDirs) {
-        excluded.insert(lower(extra));
-    }
-    return excluded.contains(lower(path.filename().string()));
+    return excludedDirs_.contains(lower(path.filename().string()));
 }
 
 std::string readRootDoc(const fs::path& confPath) {
@@ -134,6 +147,30 @@ std::string readRootDoc(const fs::path& confPath) {
         rootDoc = (*it)[2].str();
     }
     return normalizeDocName(rootDoc);
+}
+
+bool confDeclaresEmptyHtmlStyle(const fs::path& confPath) {
+    std::ifstream file(confPath, std::ios::binary);
+    if (!file) {
+        return false;
+    }
+    std::ostringstream stream;
+    stream << file.rdbuf();
+    const std::string text = stream.str();
+
+    // 마지막 대입이 이긴다 (readRootDoc 과 같은 방식).
+    static const std::regex assignment(R"((?:^|\n)[ \t]*html_style[ \t]*(?::[^=\n]*)?=[ \t]*([^\n]*))");
+    bool empty = false;
+    for (std::sregex_iterator it(text.begin(), text.end(), assignment), end; it != end; ++it) {
+        std::string value = trim((*it)[1].str());
+        // 줄 끝 주석 제거 (따옴표 안의 #은 신경 쓰지 않는다 — 폴백이므로).
+        const std::size_t hash = value.find('#');
+        if (hash != std::string::npos) {
+            value = trim(value.substr(0, hash));
+        }
+        empty = (value == "''" || value == "\"\"" || value == "''''''" || value == "\"\"\"\"\"\"");
+    }
+    return empty;
 }
 
 fs::path inferSourcePath(const fs::path& rootPath, const std::string& rootDoc) {
