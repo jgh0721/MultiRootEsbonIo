@@ -152,6 +152,7 @@ if(MRST_BUILD_TESTS)
             tests/TestRunner.hpp
             tests/tst_RstContainerLexer.cpp
             tests/tst_LspMessageRouting.cpp
+            tests/tst_ProjectResolution.cpp
             # 테스트 대상 프로덕션 소스는 OBJECT 라이브러리로 빼지 않고 명시 나열한다
             # (globbing 금지 + 단일 타깃이라는 이 프로젝트의 규칙을 따른다).
             src/editor/RstContainerLexer.cpp
