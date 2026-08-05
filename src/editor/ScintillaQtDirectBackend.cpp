@@ -694,34 +694,59 @@ int ScintillaQtDirectBackend::linesOnScreen() const
 	return m_editor ? static_cast<int>(m_editor->send(sciMessage(SCI_LINESONSCREEN))) : 0;
 }
 
-int ScintillaQtDirectBackend::lineAtViewportRatio(const double ratio) const
+double ScintillaQtDirectBackend::fractionalLineAtViewportRatio(const double ratio) const
 {
 	if (!m_editor)
-		return 1;
+		return 1.0;
 
-	// SCI_POSITIONFROMPOINT 는 픽셀 좌표를 그대로 받으므로 줄바꿈/접기가 있어도
-	// "화면 이 높이에 실제로 보이는 줄" 을 정확히 돌려준다.
+	// SCI_POSITIONFROMPOINT 는 픽셀 좌표를 받으므로 줄바꿈/접기와 무관하게
+	// "화면 이 높이에 실제로 보이는 문자" 를 돌려준다.
 	const int height = qMax(1, m_editor->height());
 	const sptr_t y = static_cast<sptr_t>(height * qBound(0.0, ratio, 1.0));
 	const sptr_t position = m_editor->send(sciMessage(SCI_POSITIONFROMPOINT), 0, y);
 	if (position < 0)
 		return qMax(1, firstVisibleLine() + 1);
 
-	return lineFromPosition(static_cast<int>(position)) + 1;   // 밖에서는 1-based
+	const int docLine = lineFromPosition(static_cast<int>(position));
+
+	// 이 줄이 화면에서 여러 행으로 접혀 있으면, 그 안 어디쯤인지까지 표현한다.
+	const sptr_t lineTopY = m_editor->send(sciMessage(SCI_POINTYFROMPOSITION), 0,
+										   positionFromLine(docLine));
+	const int rowHeight = qMax(1, textHeight(docLine));
+	const int wrapRows = qMax(1, static_cast<int>(m_editor->send(sciMessage(SCI_WRAPCOUNT), docLine)));
+	const double fraction = qBound(0.0,
+								   static_cast<double>(y - lineTopY) / (wrapRows * rowHeight),
+								   0.999);
+
+	return ( docLine + 1 ) + fraction;   // 밖에서는 1-based
 }
 
-void ScintillaQtDirectBackend::scrollLineToViewportRatio(const int line, const double ratio)
+void ScintillaQtDirectBackend::scrollFractionalLineToViewportRatio(const double fractionalLine,
+																   const double ratio)
 {
 	if (!m_editor)
 		return;
 
-	const sptr_t docLine = qBound(sptr_t(0), static_cast<sptr_t>(line - 1),
-								  static_cast<sptr_t>(qMax(0, lineCount() - 1)));
-	// 접힌 줄이 있으면 문서 줄 번호와 화면 줄 번호가 다르다.
-	const sptr_t visibleLine = m_editor->send(sciMessage(SCI_VISIBLEFROMDOCLINE), docLine);
-	const int onScreen = qMax(1, linesOnScreen());
-	const sptr_t offset = static_cast<sptr_t>(onScreen * qBound(0.0, ratio, 1.0));
-	m_editor->send(sciMessage(SCI_SETFIRSTVISIBLELINE), qMax(sptr_t(0), visibleLine - offset));
+	const int totalLines = qMax(1, lineCount());
+	const double clamped = qBound(1.0, fractionalLine, static_cast<double>(totalLines));
+	const int docLine = qBound(0, static_cast<int>(clamped) - 1, totalLines - 1);
+	const double fraction = qBound(0.0, clamped - static_cast<int>(clamped), 0.999);
+
+	const int height = qMax(1, m_editor->height());
+	const int rowHeight = qMax(1, textHeight(docLine));
+	const int wrapRows = qMax(1, static_cast<int>(m_editor->send(sciMessage(SCI_WRAPCOUNT), docLine)));
+
+	// 목표: 그 줄의 fraction 지점이 화면 height*ratio 에 오는 것.
+	// 따라서 줄의 "윗변" 은 그보다 fraction*줄높이 만큼 위에 있어야 한다.
+	const double desiredTopY = height * qBound(0.0, ratio, 1.0) - fraction * wrapRows * rowHeight;
+	const sptr_t currentTopY = m_editor->send(sciMessage(SCI_POINTYFROMPOSITION), 0,
+											  positionFromLine(docLine));
+
+	// 현재 위치와의 차이를 화면 행 수로 환산해 스크롤한다. SCI_LINESCROLL 은
+	// 화면 행(wrap 된 하위 행 포함) 단위라 줄바꿈이 있어도 정확하다.
+	const int deltaRows = static_cast<int>( qRound( ( currentTopY - desiredTopY ) / rowHeight ) );
+	if (deltaRows != 0)
+		m_editor->send(sciMessage(SCI_LINESCROLL), 0, deltaRows);
 }
 
 // ── 위치 변환 ──────────────────────────────────────────────

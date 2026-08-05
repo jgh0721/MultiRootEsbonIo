@@ -76,7 +76,7 @@ void PreviewBridge::resetReady()
     ready_ = false;
 }
 
-void PreviewBridge::requestScrollToLine( const int sourceIndex, const int line, const double ratio )
+void PreviewBridge::requestScrollToLine( const int sourceIndex, const double line, const double ratio )
 {
     if( !ready_ )
     {
@@ -116,12 +116,12 @@ void PreviewBridge::ready( int /*protocolVersion*/ )
     }
 }
 
-void PreviewBridge::sourceLocationClicked( const int sourceIndex, const int line, const double viewportRatio )
+void PreviewBridge::sourceLocationClicked( const int sourceIndex, const double line, const double viewportRatio )
 {
     emit editorNavigationRequested( sourceIndex, line, viewportRatio );
 }
 
-void PreviewBridge::previewScrolled( const int sourceIndex, const int line, const double viewportRatio )
+void PreviewBridge::previewScrolled( const int sourceIndex, const double line, const double viewportRatio )
 {
     emit previewScrollChanged( sourceIndex, line, viewportRatio );
 }

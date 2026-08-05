@@ -981,18 +981,18 @@ int QTextView::firstVisibleLine() const
 
 void QTextView::scrollToLine( int line, double viewportRatio )
 {
-    scrollLineToViewportRatio( line, viewportRatio );
+    scrollFractionalLineToViewportRatio( line, viewportRatio );
 }
 
-int QTextView::lineAtViewportRatio( const double ratio ) const
+double QTextView::fractionalLineAtViewportRatio( const double ratio ) const
 {
-    return m_editor ? m_editor->lineAtViewportRatio( ratio ) : 1;
+    return m_editor ? m_editor->fractionalLineAtViewportRatio( ratio ) : 1.0;
 }
 
-void QTextView::scrollLineToViewportRatio( const int line, const double ratio )
+void QTextView::scrollFractionalLineToViewportRatio( const double fractionalLine, const double ratio )
 {
     if( m_editor )
-        m_editor->scrollLineToViewportRatio( qBound( 1, line, qMax( 1, lineCount() ) ), ratio );
+        m_editor->scrollFractionalLineToViewportRatio( fractionalLine, ratio );
 }
 
 QPoint QTextView::caretGlobalPos() const

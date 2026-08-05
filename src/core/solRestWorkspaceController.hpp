@@ -93,7 +93,7 @@ private:
     // 에디터 -> 프리뷰, 프리뷰 -> 에디터 양방향. 어느 쪽이든 "기준 비율 위치에
     // 있는 줄" 을 상대편의 같은 비율 위치로 보낸다.
     void                                syncPreviewFromEditor();
-    void                                syncEditorFromPreview( int sourceIndex, int line, double ratio );
+    void                                syncEditorFromPreview( int sourceIndex, double line, double ratio );
     [[nodiscard]] int                   sourceIndexForPath( const QString& path ) const;
     [[nodiscard]] QString               pathForSourceIndex( int sourceIndex ) const;
 

@@ -27,33 +27,34 @@ public:
     void                                resetReady();
 
     /// (src, line) 이 프리뷰 창의 ratio 위치에 오도록 스크롤을 요청한다.
+    /// line 은 소수다 — 에디터 쪽 줄바꿈 안에서의 위치까지 담는다.
     /// 브리지 핸드셰이크 전이면 마지막 요청 하나를 큐잉했다가 ready 때 보낸다.
-    void                                requestScrollToLine( int sourceIndex, int line, double ratio );
+    void                                requestScrollToLine( int sourceIndex, double line, double ratio );
     void                                requestRebind();
     /// milliseconds 동안 프리뷰의 스크롤 보고를 무시한다 (피드백 루프 차단).
     void                                suppressScrollFeedback( int milliseconds );
 
 public slots:   // JS 에서 호출한다
     void                                ready( int protocolVersion );
-    void                                sourceLocationClicked( int sourceIndex, int line, double viewportRatio );
-    void                                previewScrolled( int sourceIndex, int line, double viewportRatio );
+    void                                sourceLocationClicked( int sourceIndex, double line, double viewportRatio );
+    void                                previewScrolled( int sourceIndex, double line, double viewportRatio );
 
 signals:
     // → JS
-    void                                scrollToLineRequested( int sourceIndex, int line, double ratio );
+    void                                scrollToLineRequested( int sourceIndex, double line, double ratio );
     void                                rebindRequested();
     void                                scrollFeedbackSuppressed( int milliseconds );
 
     // → C++ 내부
     void                                bridgeReady();
-    void                                editorNavigationRequested( int sourceIndex, int line, double viewportRatio );
-    void                                previewScrollChanged( int sourceIndex, int line, double viewportRatio );
+    void                                editorNavigationRequested( int sourceIndex, double line, double viewportRatio );
+    void                                previewScrollChanged( int sourceIndex, double line, double viewportRatio );
 
 private:
     bool                                ready_ = false;
     bool                                hasPendingScroll_ = false;
     int                                 pendingSourceIndex_ = 0;
-    int                                 pendingLine_ = 1;
+    double                              pendingLine_ = 1.0;
     double                              pendingRatio_ = 0.5;
 };
 

@@ -102,17 +102,17 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
 
     // 프리뷰 -> 에디터
     connect( previewBridge_, &PreviewBridge::previewScrollChanged, this,
-            [this]( const int sourceIndex, const int line, const double ratio ) {
+            [this]( const int sourceIndex, const double line, const double ratio ) {
                 syncEditorFromPreview( sourceIndex, line, ratio );
             } );
 
     // 프리뷰 클릭 -> 에디터 이동 (클릭 지점 비율을 그대로 유지)
     connect( previewBridge_, &PreviewBridge::editorNavigationRequested, this,
-            [this]( const int sourceIndex, const int line, const double ratio ) {
+            [this]( const int sourceIndex, const double line, const double ratio ) {
                 syncEditorFromPreview( sourceIndex, line, ratio );
                 const QString path = pathForSourceIndex( sourceIndex );
                 if( !path.isEmpty() )
-                    emit navigateRequested( path, line, 1 );
+                    emit navigateRequested( path, static_cast< int >( line ), 1 );
             } );
 }
 
@@ -153,15 +153,16 @@ void WorkspaceController::syncPreviewFromEditor()
     if( sourceIndex < 0 )
         return;   // 이 문서가 아직 프리뷰에 포함되지 않았다.
 
-    // 에디터 창의 kAnchorRatio 높이에 실제로 보이는 줄을 기준으로 삼는다.
-    const int anchorLine = activeView_->lineAtViewportRatio( kAnchorRatio );
+    // 에디터 창의 kAnchorRatio 높이에 실제로 보이는 (소수) 줄을 기준으로 삼는다.
+    // 소수부는 에디터 쪽 자동 줄바꿈 안에서의 위치다.
+    const double anchorLine = activeView_->fractionalLineAtViewportRatio( kAnchorRatio );
 
     // 프리뷰가 우리 때문에 움직인 것을 다시 우리에게 보고하지 않도록 막는다.
     previewBridge_->suppressScrollFeedback( static_cast< int >( kSyncGuardMs ) );
     previewBridge_->requestScrollToLine( sourceIndex, anchorLine, kAnchorRatio );
 }
 
-void WorkspaceController::syncEditorFromPreview( const int sourceIndex, const int line, const double ratio )
+void WorkspaceController::syncEditorFromPreview( const int sourceIndex, const double line, const double ratio )
 {
     if( activeView_.isNull() )
         return;
@@ -180,7 +181,7 @@ void WorkspaceController::syncEditorFromPreview( const int sourceIndex, const in
     // 에디터를 움직이면 viewportScrolled 가 나오고, 그게 다시 프리뷰를
     // 스크롤시킨다. 그 왕복을 여기서 끊는다.
     suppressSyncUntilMs_ = QDateTime::currentMSecsSinceEpoch() + kSyncGuardMs;
-    activeView_->scrollLineToViewportRatio( line, ratio );
+    activeView_->scrollFractionalLineToViewportRatio( line, ratio );
 }
 
 void WorkspaceController::setPythonEnvironment( PythonEnvManager* manager )

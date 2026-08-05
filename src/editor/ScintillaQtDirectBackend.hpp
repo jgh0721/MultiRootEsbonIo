@@ -90,10 +90,15 @@ public:
 	int linesOnScreen() const;
 
 	// ── 뷰포트 비율 기준 스크롤 ──
-	// "화면 세로 ratio 위치에 있는 줄" 과 "그 줄을 ratio 위치로 보내기".
-	// 줄바꿈/코드 접기가 있어도 맞도록 visible line 좌표계를 쓴다.
-	int lineAtViewportRatio(double ratio) const;
-	void scrollLineToViewportRatio(int line, double ratio);
+	//
+	// 전부 픽셀 좌표로 계산한다. 문서 줄 번호로 계산하면 자동 줄바꿈이나 코드
+	// 접기가 있을 때 어긋난다 (한 문서 줄이 화면에서는 여러 줄을 차지하거나
+	// 아예 안 보일 수 있다).
+	//
+	// 반환/입력은 "소수 줄 번호" 다. 12.5 는 12번 줄의 세로 중간 지점을 뜻하며,
+	// 줄바꿈으로 여러 행을 차지하는 줄 안에서의 위치까지 표현할 수 있다.
+	double fractionalLineAtViewportRatio(double ratio) const;
+	void scrollFractionalLineToViewportRatio(double fractionalLine, double ratio);
 	void restoreViewState(int caretPosition, int firstVisibleLine);
 
 	// ── 위치 변환 ──

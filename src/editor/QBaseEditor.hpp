@@ -148,10 +148,12 @@ public:
     [[nodiscard]] int     currentPosition() const;
     [[nodiscard]] int     firstVisibleLine() const;
     void                  scrollToLine( int line, double viewportRatio = 0.35 );
-    /// 창 세로 ratio 위치에 실제로 보이는 줄 (1-based).
-    [[nodiscard]] int     lineAtViewportRatio( double ratio ) const;
-    /// 해당 줄이 창 세로 ratio 위치에 오도록 스크롤한다.
-    void                  scrollLineToViewportRatio( int line, double ratio );
+    /// 창 세로 ratio 위치에 실제로 보이는 줄 (1-based, 소수).
+    /// 12.5 는 12번 줄의 세로 중간을 뜻한다 — 자동 줄바꿈으로 여러 행을
+    /// 차지하는 줄 안에서의 위치까지 표현한다.
+    [[nodiscard]] double  fractionalLineAtViewportRatio( double ratio ) const;
+    /// 그 (소수) 줄 위치가 창 세로 ratio 위치에 오도록 스크롤한다.
+    void                  scrollFractionalLineToViewportRatio( double fractionalLine, double ratio );
     /// 캐럿의 전역 화면 좌표. 자동완성 팝업 위치 기준점.
     [[nodiscard]] QPoint  caretGlobalPos() const;
     /// 커서 바로 앞 backspaceCount 글자를 지우고 insertText 를 넣는다.

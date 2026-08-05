@@ -30,6 +30,8 @@
     var suppressUntil = 0;
     var scrollTimer = null;
     var cachedRanges = null;
+    var cachedAnchors = null;
+    var lastViewportWidth = 0;
 
     function now() {
         return new Date().getTime();
@@ -37,6 +39,15 @@
 
     function invalidateCache() {
         cachedRanges = null;
+        cachedAnchors = null;
+    }
+
+    /// 창 너비가 바뀌면 자동 줄바꿈 위치가 달라져 모든 기준점 좌표가 무의미해진다.
+    function invalidateIfResized() {
+        if (window.innerWidth !== lastViewportWidth) {
+            lastViewportWidth = window.innerWidth;
+            invalidateCache();
+        }
     }
 
     /// 화면에 실제로 자리를 차지하는 범위 요소들을 문서 좌표로 수집한다.
@@ -89,85 +100,130 @@
         return out;
     }
 
-    /// 원본 줄 -> 문서 Y 좌표.
-    /// 줄을 포함하는 가장 좁은 범위를 골라 그 안에서 비율 보간한다.
-    /// (가장 좁은 것을 고르는 이유: section 같은 큰 요소보다 문단/줄 단위 요소가
-    ///  훨씬 정확하기 때문)
-    function documentYForLine(src, line) {
-        var all = ranges();
-        var best = null;
-        for (var i = 0; i < all.length; i += 1) {
-            var range = all[i];
-            if (range.src !== src || line < range.start || line > range.end) {
-                continue;
-            }
-            if (!best || range.height < best.height) {
-                best = range;
-            }
-        }
-        if (best) {
-            var span = Math.max(1, best.end - best.start + 1);
-            var ratioInRange = Math.min(1, Math.max(0, (line - best.start) / span));
-            return best.top + best.height * ratioInRange;
+    /// 보간 기준점 목록.
+    ///
+    /// 여기가 이 파일의 핵심이다. 원본 줄 간격과 렌더된 픽셀 간격은 비례하지
+    /// 않는다 — 에디터에서 접히지도 줄바꿈되지도 않은 한 줄이, 좁은 프리뷰
+    /// 창에서는 여러 줄로 접혀 몇 배 높이를 차지할 수 있다. 반대로 여러 원본
+    /// 줄이 한 문단으로 합쳐져 한 줄 높이만 차지할 수도 있다.
+    ///
+    /// 그래서 "줄 수에 비례해 픽셀을 나눈다" 는 가정을 쓰지 않고, 실제로 측정된
+    /// 기준점 쌍 사이를 구간별 선형 보간한다. 두 기준점 사이의 픽셀 거리는 이미
+    /// 줄바꿈이 반영된 실제 렌더 높이이므로, 접힘 정도가 구간마다 달라도 맞는다.
+    function anchorTable() {
+        if (cachedAnchors) {
+            return cachedAnchors;
         }
 
-        var list = anchors();
-        if (!list.length) {
-            return null;
+        var byKey = {};
+        var all = ranges();
+        for (var i = 0; i < all.length; i += 1) {
+            var range = all[i];
+            var key = range.src + ":" + range.start;
+            var existing = byKey[key];
+            // 같은 시작 줄을 가진 요소가 여럿이면 가장 작은 것을 쓴다.
+            // (section 같은 큰 요소보다 문단 단위 요소가 훨씬 정확하다.)
+            if (!existing || range.height < existing.height) {
+                byKey[key] = range;
+            }
         }
-        var previous = list[0];
-        var next = list[list.length - 1];
-        for (var j = 0; j < list.length; j += 1) {
-            if (list[j].line <= line) { previous = list[j]; }
-            if (list[j].line >= line) { next = list[j]; break; }
+
+        var points = [];
+        for (var k in byKey) {
+            if (Object.prototype.hasOwnProperty.call(byKey, k)) {
+                var r = byKey[k];
+                points.push({ src: r.src, line: r.start, end: r.end, y: r.top, height: r.height });
+            }
         }
-        var lineSpan = Math.max(1, next.line - previous.line);
-        var t = Math.min(1, Math.max(0, (line - previous.line) / lineSpan));
-        return previous.y + (next.y - previous.y) * t;
+        points.sort(function (a, b) { return a.y - b.y || a.line - b.line; });
+
+        // 보간이 흔들리지 않으려면 y 와 line 이 함께 증가해야 한다.
+        // 순서가 뒤집힌 기준점(부동 요소 등)은 버린다.
+        var monotonic = [];
+        for (var m = 0; m < points.length; m += 1) {
+            var last = monotonic.length ? monotonic[monotonic.length - 1] : null;
+            if (last && points[m].src === last.src && points[m].line <= last.line) {
+                continue;
+            }
+            monotonic.push(points[m]);
+        }
+
+        // 마지막 요소의 끝을 기준점으로 하나 더 둬서 문서 끝쪽 보간을 가둔다.
+        if (monotonic.length) {
+            var tail = monotonic[monotonic.length - 1];
+            monotonic.push({
+                src: tail.src,
+                line: Math.max(tail.line + 1, tail.end + 1),
+                end: tail.end + 1,
+                y: tail.y + tail.height,
+                height: 0
+            });
+        }
+
+        cachedAnchors = monotonic;
+        return monotonic;
     }
 
-    /// 문서 Y 좌표 -> 원본 줄. documentYForLine 의 역함수.
-    function lineForDocumentY(y) {
-        var all = ranges();
-        var best = null;
-        for (var i = 0; i < all.length; i += 1) {
-            var range = all[i];
-            if (y < range.top || y > range.top + range.height) {
-                continue;
-            }
-            if (!best || range.height < best.height) {
-                best = range;
+    /// 원본 줄(소수 가능) -> 문서 Y 좌표.
+    function documentYForLine(src, line) {
+        var table = anchorTable();
+        var mine = [];
+        for (var i = 0; i < table.length; i += 1) {
+            if (table[i].src === src) {
+                mine.push(table[i]);
             }
         }
-        if (best) {
-            var ratioInRange = Math.min(1, Math.max(0, (y - best.top) / best.height));
-            var span = best.end - best.start;
-            return {
-                src: best.src,
-                line: Math.max(1, Math.round(best.start + span * ratioInRange))
-            };
-        }
-
-        var list = anchors();
-        if (!list.length) {
+        if (!mine.length) {
             return null;
         }
-        var previous = list[0];
-        var next = list[list.length - 1];
-        for (var j = 0; j < list.length; j += 1) {
-            if (list[j].y <= y) { previous = list[j]; }
-            if (list[j].y >= y) { next = list[j]; break; }
+        if (line <= mine[0].line) {
+            return mine[0].y;
         }
-        var ySpan = Math.max(1, next.y - previous.y);
-        var t = Math.min(1, Math.max(0, (y - previous.y) / ySpan));
-        return {
-            src: previous.src,
-            line: Math.max(1, Math.round(previous.line + (next.line - previous.line) * t))
-        };
+        for (var j = 0; j < mine.length - 1; j += 1) {
+            var a = mine[j];
+            var b = mine[j + 1];
+            if (line >= a.line && line <= b.line) {
+                var lineSpan = Math.max(1e-6, b.line - a.line);
+                var t = (line - a.line) / lineSpan;
+                // a.y ~ b.y 의 픽셀 거리에는 프리뷰 쪽 자동 줄바꿈이 이미 반영돼 있다.
+                return a.y + (b.y - a.y) * t;
+            }
+        }
+        return mine[mine.length - 1].y;
+    }
+
+    /// 문서 Y 좌표 -> 원본 줄(소수). documentYForLine 의 역함수.
+    function lineForDocumentY(y) {
+        var table = anchorTable();
+        if (!table.length) {
+            return null;
+        }
+        if (y <= table[0].y) {
+            return { src: table[0].src, line: table[0].line };
+        }
+        for (var i = 0; i < table.length - 1; i += 1) {
+            var a = table[i];
+            var b = table[i + 1];
+            if (y >= a.y && y <= b.y) {
+                // 두 기준점이 다른 파일에 속하면(include 경계) 보간하지 않고
+                // 가까운 쪽으로 붙인다.
+                if (a.src !== b.src) {
+                    return (y - a.y) <= (b.y - y)
+                        ? { src: a.src, line: a.line }
+                        : { src: b.src, line: b.line };
+                }
+                var ySpan = Math.max(1e-6, b.y - a.y);
+                var t = (y - a.y) / ySpan;
+                return { src: a.src, line: a.line + (b.line - a.line) * t };
+            }
+        }
+        var lastPoint = table[table.length - 1];
+        return { src: lastPoint.src, line: lastPoint.line };
     }
 
     /// 프리뷰를 스크롤해 (src, line) 이 창의 ratio 위치에 오게 한다.
     function scrollToSourceLine(src, line, ratio) {
+        invalidateIfResized();
         var y = documentYForLine(src, line);
         if (y === null) {
             return;
@@ -181,6 +237,7 @@
         if (!bridge || now() < suppressUntil) {
             return;
         }
+        invalidateIfResized();
         var hit = lineForDocumentY(window.scrollY + window.innerHeight * ANCHOR_RATIO);
         if (hit) {
             bridge.previewScrolled(hit.src, hit.line, ANCHOR_RATIO);
@@ -246,6 +303,7 @@
     window.__mrrTestHooks = {
         documentYForLine: documentYForLine,
         lineForDocumentY: lineForDocumentY,
+        anchorTable: anchorTable,
         ranges: ranges
     };
 
