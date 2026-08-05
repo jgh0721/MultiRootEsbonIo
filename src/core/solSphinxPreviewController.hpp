@@ -4,50 +4,101 @@
 #include "solSphinxScanner.hpp"
 
 #include <QObject>
-#include <QProcess>
+#include <QPointer>
 #include <QString>
+#include <QStringList>
 
 #include <memory>
 
+class QTimer;
+
 namespace mrst {
 
-bool annotateHtmlWithSourceLines(const QString& htmlPath, const QString& sourceFile);
+class UvTask;
 
-class SphinxPreviewController final : public QObject {
+/// 한 번의 프리뷰 빌드 요청.
+struct PreviewBuildRequest
+{
+    SphinxProject                       project;
+    QString                             pythonExe;          ///< 빌더 스크립트를 돌릴 인터프리터
+    QString                             builderScript;      ///< mrr_sphinx_preview_build.py 절대 경로
+    QString                             sourceFile;         ///< 편집 중인 원본 (htmlPath 계산용)
+    QString                             shadowFile;         ///< 미저장 버퍼 사본. 없으면 빈 문자열
+};
+
+/// 빌더가 남긴 사이드카 JSON 을 그대로 옮긴 결과.
+struct PreviewBuildResult
+{
+    bool                                ok = false;
+    bool                                cancelled = false;
+    QString                             projectId;
+    QString                             htmlPath;
+    QString                             primaryDocname;
+    QStringList                         sources;            ///< data-mrr-src 인덱스와 순서가 같다
+    QString                             sphinxVersion;
+    QString                             htmlTheme;
+    QVector< DiagnosticEntry >          diagnostics;
+    QStringList                         missingExtensions;  ///< 배포명 (설치 제안용)
+    QStringList                         missingModules;     ///< 모듈명 (표시용)
+    QStringList                         missingThemes;
+    QString                             traceback;
+};
+
+/// Sphinx HTML 프리뷰 빌드를 관리한다.
+///
+/// sphinx-build 를 직접 부르지 않고 번들 인터프리터로 mrr_sphinx_preview_build.py
+/// 를 돌린다. 그래야 doctree 에서 정확한 원본 줄 범위를 얻을 수 있다.
+class SphinxPreviewController final : public QObject
+{
     Q_OBJECT
 
 public:
-    explicit SphinxPreviewController(QObject* parent = nullptr);
+    explicit SphinxPreviewController( QObject* parent = nullptr );
     ~SphinxPreviewController() override;
 
-    [[nodiscard]] bool isBuilding() const;
-    [[nodiscard]] QString lastHtmlPath() const;
+    [[nodiscard]] bool                  isBuilding() const;
+    [[nodiscard]] QString               lastHtmlPath() const;
 
-    void build(const SphinxProject& project, const QString& sphinxBuildExe, const QString& sourceFile = {});
-    void cancel();
+    void                                setShadowDir( const QString& path );
+    void                                setDebounceInterval( int milliseconds );
+
+    /// 디바운스 후 빌드한다. 편집 중에는 이쪽을 쓴다.
+    void                                requestBuild( const PreviewBuildRequest& request );
+    /// 즉시 빌드한다. 저장/탭 전환처럼 사용자가 결과를 기다리는 경우.
+    void                                buildNow( const PreviewBuildRequest& request );
+    void                                cancel();
 
 signals:
-    void logMessage(const QString& text);
-    void buildStarted();
-    void buildFinished(bool success, const QString& htmlPath);
-    void diagnosticsReady(const QString& source, const QVector<DiagnosticEntry>& entries);
-
-private slots:
-    void readOutput();
-    void processFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void                                logMessage( const QString& text );
+    void                                buildStarted( const QString& projectId );
+    void                                buildFinished( const mrst::PreviewBuildResult& result );
+    void                                diagnosticsReady( const QString& source,
+                                                          const QVector< DiagnosticEntry >& entries );
+    /// Phase 8 (누락 패키지 자동 설치) 로 이어지는 진입점.
+    void                                missingDependenciesDetected( const QString& projectId,
+                                                                     const QStringList& distributions,
+                                                                     const QStringList& themes );
 
 private:
-    [[nodiscard]] QString projectPath(const std::filesystem::path& path) const;
-    [[nodiscard]] QString rootDocHtmlPath(const SphinxProject& project, const QString& outDir) const;
-    [[nodiscard]] QString sourceFileHtmlPath(const SphinxProject& project, const QString& outDir, const QString& sourceFile) const;
+    void                                startBuild();
+    void                                finishBuild( bool processOk, bool cancelled );
+    [[nodiscard]] PreviewBuildResult    readReport( const QString& reportPath ) const;
+    [[nodiscard]] QString               allocateOutputDir();
+    void                                cleanupOldOutputDirs( const QString& keepDir ) const;
+    [[nodiscard]] QString               writeShadowCopy() const;
 
-    std::unique_ptr<QProcess> process_;
-    SphinxProject activeProject_;
-    QString activeOutDir_;
-    QString activeSourceFile_;
-    QString activeOutput_;
-    QString lastHtmlPath_;
+    PreviewBuildRequest                 pending_;
+    PreviewBuildRequest                 active_;
+    bool                                hasPending_ = false;
+    QTimer*                             debounceTimer_ = nullptr;
+    QPointer< UvTask >                  task_;
+    QString                             shadowDir_;
+    QString                             activeOutDir_;
+    QString                             activeReportPath_;
+    QString                             lastHtmlPath_;
+    int                                 buildSerial_ = 0;
 };
 
 }  // namespace mrst
 
+Q_DECLARE_METATYPE( mrst::PreviewBuildResult )

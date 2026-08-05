@@ -1587,6 +1587,21 @@ void MainWindow::appendLog( const QString& text )
         return;
 
     Ui.logView->appendPlainText( trimmed );
+
+    // MRST_LOG_FILE 이 지정되면 로그 창 내용을 파일로도 남긴다.
+    // (MV_TEXT_LEXER_TRACE_FILE 과 같은 방식. GUI 없이 동작을 확인할 때 쓴다.)
+    static const QString logFilePath =
+        QString::fromLocal8Bit( qgetenv( "MRST_LOG_FILE" ) ).trimmed();
+    if( logFilePath.isEmpty() )
+        return;
+
+    QFile logFile( logFilePath );
+    if( logFile.open( QIODevice::Append | QIODevice::Text ) )
+    {
+        QTextStream stream( &logFile );
+        stream.setEncoding( QStringConverter::Utf8 );
+        stream << trimmed << Qt::endl;
+    }
 }
 
 void MainWindow::onSettings()
@@ -2272,6 +2287,8 @@ QTextView* MainWindow::textViewOf( QBaseView* view ) const
 void MainWindow::setupPythonEnvironment()
 {
     pythonEnv_ = new mrst::PythonEnvManager( this );
+    if( controller_ != nullptr )
+        controller_->setPythonEnvironment( pythonEnv_ );
 
     envStatusLabel_ = new QLabel( this );
     envStatusLabel_->setContentsMargins( 8, 0, 8, 0 );
@@ -2280,6 +2297,11 @@ void MainWindow::setupPythonEnvironment()
     connect( pythonEnv_, &mrst::PythonEnvManager::bootstrapLog, this, &MainWindow::appendLog );
     connect( pythonEnv_, &mrst::PythonEnvManager::stateChanged, this,
             [this]( mrst::EnvState ) { updateEnvStatusChip(); } );
+    connect( pythonEnv_, &mrst::PythonEnvManager::readyChanged, this, [this]( const bool ready ) {
+        // 런타임이 준비되기 전에 열린 문서는 프리뷰를 건너뛰었으므로 지금 시도한다.
+        if( ready && controller_ != nullptr )
+            controller_->requestPreviewBuild( true );
+    } );
     connect( pythonEnv_, &mrst::PythonEnvManager::progressChanged, this,
             [this]( const int percent, const QString& phase ) {
                 if( envStatusLabel_ == nullptr )

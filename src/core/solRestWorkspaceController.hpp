@@ -1,11 +1,14 @@
 ﻿#pragma once
 
+#include "solSphinxDiagnostics.hpp"
 #include "solSphinxScanner.hpp"
 
 #include <QHash>
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
+#include <QVector>
 
 class QTextView;
 class QWebEngineView;
@@ -13,7 +16,9 @@ class QWebEngineView;
 namespace mrst {
 
 class ProjectRegistry;
+class PythonEnvManager;
 class SphinxPreviewController;
+struct PreviewBuildResult;
 
 /// 열린 문서 하나에 대한 Sphinx 관점의 상태.
 ///
@@ -42,6 +47,8 @@ public:
 
     /// 프리뷰가 그려질 위젯을 주입한다. 컨트롤러는 소유권을 갖지 않는다.
     void                                setPreviewView( QWebEngineView* view );
+    /// Python 런타임 제공자를 주입한다. 소유권 없음.
+    void                                setPythonEnvironment( PythonEnvManager* manager );
 
     void                                setWorkspaceRoot( const QString& root );
     [[nodiscard]] QString               workspaceRoot() const;
@@ -59,18 +66,30 @@ public:
 
     [[nodiscard]] QString               activeProjectId() const;
 
+    /// 활성 문서의 프리뷰를 다시 빌드한다.
+    /// immediate=false 면 디바운스(편집 중), true 면 즉시(저장/탭 전환).
+    void                                requestPreviewBuild( bool immediate = false );
+
 signals:
     void                                logMessage( const QString& text );
     void                                projectsChanged( int count );
     void                                activeProjectChanged( const QString& projectId, bool isVirtual );
     void                                navigateRequested( const QString& path, int line, int column );
+    void                                diagnosticsChanged( const QString& source,
+                                                            const QVector< DiagnosticEntry >& entries );
+    void                                missingDependenciesDetected( const QString& projectId,
+                                                                     const QStringList& distributions,
+                                                                     const QStringList& themes );
 
 private:
     [[nodiscard]] DocumentContext*      contextFor( QTextView* view );
     void                                resolveProject( DocumentContext& context );
     void                                logProjectList();
+    void                                onPreviewFinished( const PreviewBuildResult& result );
+    [[nodiscard]] QString               writeShadowCopy( QTextView* view, const QString& path ) const;
 
     ProjectRegistry*                    registry_ = nullptr;
+    PythonEnvManager*                   pythonEnv_ = nullptr;
     QWebEngineView*                     previewView_ = nullptr;
     SphinxPreviewController*            previewController_ = nullptr;
 

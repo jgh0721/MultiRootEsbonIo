@@ -44,6 +44,10 @@ WARNING_NO_LINE_RE = re.compile(
     r"^(?P<path>.+?):\s*(?P<level>WARNING|ERROR|CRITICAL|SEVERE):\s*(?P<message>.*)$"
 )
 
+# Sphinx 는 StringIO 로 보내도 색을 입힌다. 진단 텍스트에 이스케이프가 섞이면
+# 그대로 진단 테이블에 노출되므로 파싱 전에 제거한다.
+ANSI_RE = re.compile(r"\x1B\[[0-9;?]*[ -/]*[@-~]")
+
 MISSING_EXTENSION_RE = re.compile(r"Could not import extension ([\w.]+)")
 MISSING_THEME_RE = re.compile(r"no theme named ['\"]([^'\"]+)['\"]")
 MISSING_MODULE_RE = re.compile(r"No module named ['\"]([^'\"]+)['\"]")
@@ -200,7 +204,7 @@ def _mark_first_anchor_per_line(entries: list[dict]) -> None:
 
 def _parse_warnings(text: str) -> list[dict]:
     diagnostics: list[dict] = []
-    for raw_line in text.splitlines():
+    for raw_line in ANSI_RE.sub("", text).splitlines():
         line = raw_line.strip()
         if not line:
             continue
@@ -231,6 +235,7 @@ def _parse_warnings(text: str) -> list[dict]:
 
 
 def _collect_missing(text: str) -> tuple[list[dict], list[str]]:
+    text = ANSI_RE.sub("", text)
     modules = {m for m in MISSING_EXTENSION_RE.findall(text)}
     modules.update(MISSING_MODULE_RE.findall(text))
     themes = sorted(set(MISSING_THEME_RE.findall(text)))

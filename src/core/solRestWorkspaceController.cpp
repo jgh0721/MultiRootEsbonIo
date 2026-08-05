@@ -2,10 +2,17 @@
 #include "solRestWorkspaceController.hpp"
 
 #include "solAppSettings.hpp"
+#include "solPythonEnvMgr.hpp"
+#include "solSphinxPreviewController.hpp"
 #include "solSphinxProjectRegistry.hpp"
 #include "editor/QBaseEditor.hpp"
 
+#include <QCryptographicHash>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QUrl>
+#include <QWebEngineView>
 
 namespace mrst {
 
@@ -22,7 +29,18 @@ QString unresolvedProjectLabel()
 WorkspaceController::WorkspaceController( QObject* parent )
     : QObject( parent )
     , registry_( new ProjectRegistry( this ) )
+    , previewController_( new SphinxPreviewController( this ) )
 {
+    connect( previewController_, &SphinxPreviewController::logMessage, this, &WorkspaceController::logMessage );
+    connect( previewController_, &SphinxPreviewController::diagnosticsReady, this,
+            [this]( const QString& source, const QVector< DiagnosticEntry >& entries ) {
+                emit diagnosticsChanged( source, entries );
+            } );
+    connect( previewController_, &SphinxPreviewController::missingDependenciesDetected, this,
+            &WorkspaceController::missingDependenciesDetected );
+    connect( previewController_, &SphinxPreviewController::buildFinished, this,
+            &WorkspaceController::onPreviewFinished );
+
     connect( registry_, &ProjectRegistry::logMessage, this, &WorkspaceController::logMessage );
     connect( registry_, &ProjectRegistry::scanStarted, this, [this] {
         emit logMessage( tr( "Sphinx 프로젝트를 검색하는 중..." ) );
@@ -49,6 +67,88 @@ WorkspaceController::~WorkspaceController() = default;
 void WorkspaceController::setPreviewView( QWebEngineView* view )
 {
     previewView_ = view;
+    if( previewView_ == nullptr )
+        return;
+
+    connect( previewView_, &QWebEngineView::loadFinished, this, [this]( const bool ok ) {
+        if( !ok )
+            emit logMessage( tr( "프리뷰 HTML 로드 실패" ) );
+        else
+            emit logMessage( tr( "프리뷰 표시: %1" ).arg( previewView_->url().fileName() ) );
+    } );
+}
+
+void WorkspaceController::setPythonEnvironment( PythonEnvManager* manager )
+{
+    pythonEnv_ = manager;
+    if( pythonEnv_ != nullptr && previewController_ != nullptr )
+        previewController_->setShadowDir( pythonEnv_->shadowDir() );
+}
+
+QString WorkspaceController::writeShadowCopy( QTextView* view, const QString& path ) const
+{
+    if( view == nullptr || pythonEnv_ == nullptr || !view->isModified() )
+        return {};
+
+    const QString directory = pythonEnv_->shadowDir();
+    if( directory.isEmpty() || !QDir().mkpath( directory ) )
+        return {};
+
+    // 원본 경로 해시로 이름을 만들어 문서마다 파일 하나를 재사용한다.
+    const QByteArray digest = QCryptographicHash::hash( path.toUtf8(), QCryptographicHash::Sha1 );
+    const QString shadowPath = QDir( directory ).filePath(
+        QStringLiteral( "%1.%2" ).arg( QString::fromLatin1( digest.toHex().left( 16 ) ),
+                                      QFileInfo( path ).suffix() ) );
+
+    QFile file( shadowPath );
+    if( !file.open( QIODevice::WriteOnly | QIODevice::Truncate ) )
+        return {};
+
+    file.write( view->text().toUtf8() );
+    file.close();
+    return shadowPath;
+}
+
+void WorkspaceController::requestPreviewBuild( const bool immediate )
+{
+    if( shuttingDown_ || previewController_ == nullptr || pythonEnv_ == nullptr )
+        return;
+
+    // 런타임이 준비되기 전에는 조용히 넘어간다. 준비되면 다시 호출된다.
+    if( !pythonEnv_->isReady() )
+        return;
+
+    QTextView* view = activeView_;
+    DocumentContext* context = contextFor( view );
+    if( view == nullptr || context == nullptr || context->path.isEmpty() )
+        return;
+
+    const SphinxProject* project = registry_->findById( context->projectId );
+    if( project == nullptr )
+        return;   // 가상 프로젝트는 Phase 7 에서 처리한다.
+
+    PreviewBuildRequest request;
+    request.project = *project;
+    request.pythonExe = pythonEnv_->pythonExe();
+    request.builderScript = pythonEnv_->previewBuilderScript();
+    request.sourceFile = context->path;
+    request.shadowFile = writeShadowCopy( view, context->path );
+
+    if( immediate )
+        previewController_->buildNow( request );
+    else
+        previewController_->requestBuild( request );
+}
+
+void WorkspaceController::onPreviewFinished( const PreviewBuildResult& result )
+{
+    if( result.cancelled || previewView_ == nullptr )
+        return;
+
+    if( !result.ok || result.htmlPath.isEmpty() )
+        return;
+
+    previewView_->load( QUrl::fromLocalFile( result.htmlPath ) );
 }
 
 ProjectRegistry* WorkspaceController::projectRegistry() const
@@ -101,6 +201,8 @@ void WorkspaceController::reloadSettings()
 void WorkspaceController::shutdown()
 {
     shuttingDown_ = true;
+    if( previewController_ != nullptr )
+        previewController_->cancel();
     documents_.clear();
     activeView_ = nullptr;
     activeProjectId_.clear();
@@ -116,6 +218,12 @@ void WorkspaceController::attachDocument( QTextView* view )
     context.path = view->currentFilePath().isEmpty() ? QString{} : QFileInfo( view->currentFilePath() ).absoluteFilePath();
     resolveProject( context );
     documents_.insert( view, context );
+
+    // 편집 중에는 디바운스된 프리뷰 재빌드만 건다.
+    connect( view, &QTextView::sigTextEdited, this, [this, view] {
+        if( activeView_ == view )
+            requestPreviewBuild( false );
+    } );
 }
 
 void WorkspaceController::detachDocument( QTextView* view )
@@ -172,6 +280,8 @@ void WorkspaceController::setActiveDocument( QTextView* view )
     emit activeProjectChanged( activeProjectId_, context->isVirtual );
     emit logMessage( tr( "활성 프로젝트: %1" )
                         .arg( activeProjectId_.isEmpty() ? unresolvedProjectLabel() : activeProjectId_ ) );
+
+    requestPreviewBuild( true );
 }
 
 void WorkspaceController::notifyDocumentSaved( QTextView* view )

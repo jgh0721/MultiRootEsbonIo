@@ -340,7 +340,9 @@ bool QTextView::openFile( const QString& filePath )
                                               tr( "텍스트 편집기 백엔드를 사용할 수 없습니다:\n%1" ).arg( result.filePath ) );
                 return;
             }
+            self->m_applyingFileContent = true;
             self->m_editor->setText( result.text );
+            self->m_applyingFileContent = false;
             self->m_editor->setModified( restoredFromHotExit );
             self->m_cachedCurrentLine = 1;
             self->m_cachedCurrentColumn = 1;
@@ -592,7 +594,9 @@ void QTextView::reloadWithEncoding( const QString& encoding )
     m_encoding = encoding;
     QString text = m_fileSession.decodeWithEncoding( encoding );
     m_document.setLineEnding( toDocumentLineEnding( detectLineEnding( text ) ) );
+    m_applyingFileContent = true;
     m_editor->setText( text );
+    m_applyingFileContent = false;
     m_editor->setModified( false );
     m_cachedCurrentLine = 1;
     m_cachedCurrentColumn = 1;
@@ -795,7 +799,9 @@ bool QTextView::openHotExitBackup( const QString& untitledId )
     m_editorSettings = ScintillaEditorSettings::standard();
     applyPersistedEditorPreferences( m_editorSettings );
     applyEditorSettings();
+    m_applyingFileContent = true;
     m_editor->setText( snapshot.text );
+    m_applyingFileContent = false;
     m_editor->setModified( true );
     m_editor->restoreViewState( snapshot.caretPosition, snapshot.firstVisibleLine );
     m_hotExitDirty = true;
@@ -1564,6 +1570,10 @@ bool QTextView::ensureEditorBackend()
         updateMetrics();
         scheduleHotExitBackup();
         emit statusChanged();
+
+        // 파일을 채우는 중이면 사용자의 편집이 아니다.
+        if( m_applyingFileContent )
+            return;
 
         // 진단은 편집 즉시 낡은 정보가 되므로 다음 publish 까지 표시를 지운다.
         if( !m_diagnostics.isEmpty() )

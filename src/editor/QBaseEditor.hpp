@@ -239,6 +239,9 @@ private:
     static constexpr int kDiagnosticHintIndicatorId = 15;
     QVector< mrst::DiagnosticEntry > m_diagnostics;
     bool                m_diagnosticIndicatorsReady = false;
+    /// 파일 로드/복원으로 본문을 채우는 동안은 사용자의 편집이 아니다.
+    /// 이 플래그가 켜져 있으면 sigTextEdited 를 내보내지 않는다.
+    bool                m_applyingFileContent = false;
 
     void configureDiagnosticIndicators();
     [[nodiscard]] static int diagnosticIndicatorFor( int severity );
