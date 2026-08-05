@@ -981,14 +981,18 @@ int QTextView::firstVisibleLine() const
 
 void QTextView::scrollToLine( int line, double viewportRatio )
 {
-    if( !m_editor )
-        return;
+    scrollLineToViewportRatio( line, viewportRatio );
+}
 
-    const int visibleLines = qMax( 1, m_editor->linesOnScreen() );
-    const double ratio = qBound( 0.0, viewportRatio, 1.0 );
-    const int targetLine = qBound( 1, line, qMax( 1, lineCount() ) ) - 1;
-    const int offset = static_cast< int >( visibleLines * ratio );
-    m_editor->setFirstVisibleLine( qMax( 0, targetLine - offset ) );
+int QTextView::lineAtViewportRatio( const double ratio ) const
+{
+    return m_editor ? m_editor->lineAtViewportRatio( ratio ) : 1;
+}
+
+void QTextView::scrollLineToViewportRatio( const int line, const double ratio )
+{
+    if( m_editor )
+        m_editor->scrollLineToViewportRatio( qBound( 1, line, qMax( 1, lineCount() ) ), ratio );
 }
 
 QPoint QTextView::caretGlobalPos() const
@@ -1560,6 +1564,7 @@ bool QTextView::ensureEditorBackend()
                 emit sigCursorMoved( m_cachedCurrentLine, m_cachedCurrentColumn );
             } );
     connect( m_editor, &ScintillaQtDirectBackend::charAdded, this, &QTextView::sigCharAdded );
+    connect( m_editor, &ScintillaQtDirectBackend::viewportScrolled, this, &QTextView::sigViewportScrolled );
     connect( m_editor, &ScintillaQtDirectBackend::linesChanged, this, [this] {
         m_cachedLineCount = qMax( 1, m_editor ? m_editor->lineCount() : 1 );
         if( m_ruler && m_editor )

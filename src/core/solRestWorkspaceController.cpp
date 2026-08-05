@@ -2,17 +2,27 @@
 #include "solRestWorkspaceController.hpp"
 
 #include "solAppSettings.hpp"
+#include "solPreviewBridge.hpp"
 #include "solPythonEnvMgr.hpp"
 #include "solSphinxPreviewController.hpp"
 #include "solSphinxProjectRegistry.hpp"
 #include "editor/QBaseEditor.hpp"
 
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QUrl>
 #include <QWebEngineView>
+
+namespace {
+/// 한쪽 스크롤이 상대를 움직이고, 그 움직임이 다시 되돌아오는 것을 막는 창.
+constexpr qint64 kSyncGuardMs = 250;
+/// 스크롤 동기화의 기준점. 0.5 = 창의 정중앙.
+/// 에디터 정중앙에 있는 줄이 프리뷰에서도 정중앙에 오게 한다.
+constexpr double kAnchorRatio = 0.5;
+}  // namespace
 
 namespace mrst {
 
@@ -70,12 +80,107 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
     if( previewView_ == nullptr )
         return;
 
+    previewBridge_ = new PreviewBridge( this );
+    previewBridge_->attachTo( previewView_ );
+
     connect( previewView_, &QWebEngineView::loadFinished, this, [this]( const bool ok ) {
         if( !ok )
+        {
             emit logMessage( tr( "프리뷰 HTML 로드 실패" ) );
-        else
-            emit logMessage( tr( "프리뷰 표시: %1" ).arg( previewView_->url().fileName() ) );
+            return;
+        }
+        emit logMessage( tr( "프리뷰 표시: %1" ).arg( previewView_->url().fileName() ) );
     } );
+
+    // 페이지가 준비되면 현재 에디터 위치로 맞춘다.
+    connect( previewBridge_, &PreviewBridge::bridgeReady, this, [this] {
+        emit logMessage( tr( "프리뷰 동기화 준비됨" ) );
+        // 페이지가 다시 로드된 직후이므로, 여기서 맞춰주면 재빌드 후에도
+        // 스크롤 위치가 에디터와 어긋나지 않는다.
+        syncPreviewFromEditor();
+    } );
+
+    // 프리뷰 -> 에디터
+    connect( previewBridge_, &PreviewBridge::previewScrollChanged, this,
+            [this]( const int sourceIndex, const int line, const double ratio ) {
+                syncEditorFromPreview( sourceIndex, line, ratio );
+            } );
+
+    // 프리뷰 클릭 -> 에디터 이동 (클릭 지점 비율을 그대로 유지)
+    connect( previewBridge_, &PreviewBridge::editorNavigationRequested, this,
+            [this]( const int sourceIndex, const int line, const double ratio ) {
+                syncEditorFromPreview( sourceIndex, line, ratio );
+                const QString path = pathForSourceIndex( sourceIndex );
+                if( !path.isEmpty() )
+                    emit navigateRequested( path, line, 1 );
+            } );
+}
+
+int WorkspaceController::sourceIndexForPath( const QString& path ) const
+{
+    if( path.isEmpty() )
+        return -1;
+
+    const QString normalized = QFileInfo( path ).absoluteFilePath();
+    for( int index = 0; index < previewSources_.size(); ++index )
+    {
+        if( QFileInfo( previewSources_.at( index ) ).absoluteFilePath().compare(
+                normalized, Qt::CaseInsensitive ) == 0 )
+            return index;
+    }
+    return -1;
+}
+
+QString WorkspaceController::pathForSourceIndex( const int sourceIndex ) const
+{
+    if( sourceIndex < 0 || sourceIndex >= previewSources_.size() )
+        return {};
+    return previewSources_.at( sourceIndex );
+}
+
+void WorkspaceController::syncPreviewFromEditor()
+{
+    if( previewBridge_ == nullptr || activeView_.isNull() )
+        return;
+    if( QDateTime::currentMSecsSinceEpoch() < suppressSyncUntilMs_ )
+        return;
+
+    DocumentContext* context = contextFor( activeView_ );
+    if( context == nullptr || context->path.isEmpty() )
+        return;
+
+    const int sourceIndex = sourceIndexForPath( context->path );
+    if( sourceIndex < 0 )
+        return;   // 이 문서가 아직 프리뷰에 포함되지 않았다.
+
+    // 에디터 창의 kAnchorRatio 높이에 실제로 보이는 줄을 기준으로 삼는다.
+    const int anchorLine = activeView_->lineAtViewportRatio( kAnchorRatio );
+
+    // 프리뷰가 우리 때문에 움직인 것을 다시 우리에게 보고하지 않도록 막는다.
+    previewBridge_->suppressScrollFeedback( static_cast< int >( kSyncGuardMs ) );
+    previewBridge_->requestScrollToLine( sourceIndex, anchorLine, kAnchorRatio );
+}
+
+void WorkspaceController::syncEditorFromPreview( const int sourceIndex, const int line, const double ratio )
+{
+    if( activeView_.isNull() )
+        return;
+
+    const QString path = pathForSourceIndex( sourceIndex );
+    DocumentContext* context = contextFor( activeView_ );
+    if( context == nullptr )
+        return;
+
+    // 프리뷰가 가리키는 파일이 지금 편집 중인 파일이 아니면(include 된 조각 등)
+    // 에디터를 흔들지 않는다. 이동은 클릭 경로에서 별도로 처리한다.
+    if( !path.isEmpty() && QFileInfo( path ).absoluteFilePath().compare(
+                               context->path, Qt::CaseInsensitive ) != 0 )
+        return;
+
+    // 에디터를 움직이면 viewportScrolled 가 나오고, 그게 다시 프리뷰를
+    // 스크롤시킨다. 그 왕복을 여기서 끊는다.
+    suppressSyncUntilMs_ = QDateTime::currentMSecsSinceEpoch() + kSyncGuardMs;
+    activeView_->scrollLineToViewportRatio( line, ratio );
 }
 
 void WorkspaceController::setPythonEnvironment( PythonEnvManager* manager )
@@ -147,6 +252,12 @@ void WorkspaceController::onPreviewFinished( const PreviewBuildResult& result )
 
     if( !result.ok || result.htmlPath.isEmpty() )
         return;
+
+    // data-mrr-src 인덱스를 실제 경로로 되돌리려면 빌더가 준 순서를 그대로 쓴다.
+    previewSources_ = result.sources;
+
+    if( previewBridge_ != nullptr )
+        previewBridge_->resetReady();
 
     previewView_->load( QUrl::fromLocalFile( result.htmlPath ) );
 }
@@ -223,6 +334,12 @@ void WorkspaceController::attachDocument( QTextView* view )
     connect( view, &QTextView::sigTextEdited, this, [this, view] {
         if( activeView_ == view )
             requestPreviewBuild( false );
+    } );
+
+    // 에디터 -> 프리뷰 스크롤 동기화.
+    connect( view, &QTextView::sigViewportScrolled, this, [this, view] {
+        if( activeView_ == view )
+            syncPreviewFromEditor();
     } );
 }
 

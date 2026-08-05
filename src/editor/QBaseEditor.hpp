@@ -148,6 +148,10 @@ public:
     [[nodiscard]] int     currentPosition() const;
     [[nodiscard]] int     firstVisibleLine() const;
     void                  scrollToLine( int line, double viewportRatio = 0.35 );
+    /// 창 세로 ratio 위치에 실제로 보이는 줄 (1-based).
+    [[nodiscard]] int     lineAtViewportRatio( double ratio ) const;
+    /// 해당 줄이 창 세로 ratio 위치에 오도록 스크롤한다.
+    void                  scrollLineToViewportRatio( int line, double ratio );
     /// 캐럿의 전역 화면 좌표. 자동완성 팝업 위치 기준점.
     [[nodiscard]] QPoint  caretGlobalPos() const;
     /// 커서 바로 앞 backspaceCount 글자를 지우고 insertText 를 넣는다.
@@ -171,6 +175,8 @@ signals:
     void sigCursorMoved( int line, int column );
     /// 사용자가 문자를 입력했다. 자동완성 트리거 문자 감지용.
     void sigCharAdded( int ch );
+    /// 세로 스크롤이 변했다. 프리뷰 동기화용.
+    void sigViewportScrolled();
 
 private:
     struct SearchOptions

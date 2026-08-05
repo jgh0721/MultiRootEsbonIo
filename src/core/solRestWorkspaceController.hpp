@@ -15,6 +15,7 @@ class QWebEngineView;
 
 namespace mrst {
 
+class PreviewBridge;
 class ProjectRegistry;
 class PythonEnvManager;
 class SphinxPreviewController;
@@ -88,10 +89,22 @@ private:
     void                                onPreviewFinished( const PreviewBuildResult& result );
     [[nodiscard]] QString               writeShadowCopy( QTextView* view, const QString& path ) const;
 
+    // ── 스크롤 동기화 ──
+    // 에디터 -> 프리뷰, 프리뷰 -> 에디터 양방향. 어느 쪽이든 "기준 비율 위치에
+    // 있는 줄" 을 상대편의 같은 비율 위치로 보낸다.
+    void                                syncPreviewFromEditor();
+    void                                syncEditorFromPreview( int sourceIndex, int line, double ratio );
+    [[nodiscard]] int                   sourceIndexForPath( const QString& path ) const;
+    [[nodiscard]] QString               pathForSourceIndex( int sourceIndex ) const;
+
     ProjectRegistry*                    registry_ = nullptr;
     PythonEnvManager*                   pythonEnv_ = nullptr;
     QWebEngineView*                     previewView_ = nullptr;
     SphinxPreviewController*            previewController_ = nullptr;
+    PreviewBridge*                      previewBridge_ = nullptr;
+    QStringList                         previewSources_;      ///< data-mrr-src 인덱스 -> 원본 경로
+    /// 한쪽이 유발한 스크롤이 되돌아와 무한 왕복하는 것을 막는다.
+    qint64                              suppressSyncUntilMs_ = 0;
 
     QHash< QTextView*, DocumentContext > documents_;
     QPointer< QTextView >               activeView_;

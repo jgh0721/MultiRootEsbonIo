@@ -58,6 +58,8 @@ add_executable(${PROJECT_NAME}
         src/core/solSphinxDiagnostics.hpp
         src/core/solSphinxPreviewController.cpp
         src/core/solSphinxPreviewController.hpp
+        src/core/solPreviewBridge.cpp
+        src/core/solPreviewBridge.hpp
         src/core/solRestWorkspaceController.cpp
         src/core/solRestWorkspaceController.hpp
         src/core/solSphinxProjectRegistry.cpp

@@ -182,9 +182,11 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 				emit textChanged();
 			});
 	connect(m_editor, &ScintillaEditBase::updateUi,
-			this, [this](Scintilla::Update) {
+			this, [this](Scintilla::Update updated) {
 				updateBraceHighlight();
 				emitCursorAndSelectionState();
+				if ((static_cast<int>(updated) & static_cast<int>(Scintilla::Update::VScroll)) != 0)
+					emit viewportScrolled();
 			});
 	connect(m_editor, &ScintillaEditBase::styleNeeded,
 			this, [this](Scintilla::Position position) {
@@ -690,6 +692,36 @@ void ScintillaQtDirectBackend::setFirstVisibleLine(int line)
 int ScintillaQtDirectBackend::linesOnScreen() const
 {
 	return m_editor ? static_cast<int>(m_editor->send(sciMessage(SCI_LINESONSCREEN))) : 0;
+}
+
+int ScintillaQtDirectBackend::lineAtViewportRatio(const double ratio) const
+{
+	if (!m_editor)
+		return 1;
+
+	// SCI_POSITIONFROMPOINT 는 픽셀 좌표를 그대로 받으므로 줄바꿈/접기가 있어도
+	// "화면 이 높이에 실제로 보이는 줄" 을 정확히 돌려준다.
+	const int height = qMax(1, m_editor->height());
+	const sptr_t y = static_cast<sptr_t>(height * qBound(0.0, ratio, 1.0));
+	const sptr_t position = m_editor->send(sciMessage(SCI_POSITIONFROMPOINT), 0, y);
+	if (position < 0)
+		return qMax(1, firstVisibleLine() + 1);
+
+	return lineFromPosition(static_cast<int>(position)) + 1;   // 밖에서는 1-based
+}
+
+void ScintillaQtDirectBackend::scrollLineToViewportRatio(const int line, const double ratio)
+{
+	if (!m_editor)
+		return;
+
+	const sptr_t docLine = qBound(sptr_t(0), static_cast<sptr_t>(line - 1),
+								  static_cast<sptr_t>(qMax(0, lineCount() - 1)));
+	// 접힌 줄이 있으면 문서 줄 번호와 화면 줄 번호가 다르다.
+	const sptr_t visibleLine = m_editor->send(sciMessage(SCI_VISIBLEFROMDOCLINE), docLine);
+	const int onScreen = qMax(1, linesOnScreen());
+	const sptr_t offset = static_cast<sptr_t>(onScreen * qBound(0.0, ratio, 1.0));
+	m_editor->send(sciMessage(SCI_SETFIRSTVISIBLELINE), qMax(sptr_t(0), visibleLine - offset));
 }
 
 // ── 위치 변환 ──────────────────────────────────────────────

@@ -88,6 +88,12 @@ public:
 	int firstVisibleLine() const;
 	void setFirstVisibleLine(int line);
 	int linesOnScreen() const;
+
+	// ── 뷰포트 비율 기준 스크롤 ──
+	// "화면 세로 ratio 위치에 있는 줄" 과 "그 줄을 ratio 위치로 보내기".
+	// 줄바꿈/코드 접기가 있어도 맞도록 visible line 좌표계를 쓴다.
+	int lineAtViewportRatio(double ratio) const;
+	void scrollLineToViewportRatio(int line, double ratio);
 	void restoreViewState(int caretPosition, int firstVisibleLine);
 
 	// ── 위치 변환 ──
@@ -136,6 +142,8 @@ signals:
 	void styleNeeded(int endPosition);
 	/// 사용자가 문자를 입력했다. 자동완성 트리거 감지에 쓴다.
 	void charAdded(int ch);
+	/// 세로 스크롤이 변했다. 프리뷰 동기화에 쓴다.
+	void viewportScrolled();
 
 private:
 	void configureCodeFolding(bool enabled);
