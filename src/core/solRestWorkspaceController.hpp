@@ -18,6 +18,7 @@ namespace mrst {
 
 class DiagnosticsStore;
 class LspClient;
+class LspServerPool;
 class PreviewBridge;
 class ProjectRegistry;
 class PythonEnvManager;
@@ -105,7 +106,11 @@ private:
     void                                ensureLspForActiveDocument();
     void                                syncDocumentToServer( DocumentContext& context, bool forceOpen );
     void                                setLspStatus( const QString& state );
-    void                                nudgeInitialBuild();
+    void                                nudgeInitialBuild( const QString& projectId );
+    /// 서버가 새로 떴을 때 그 프로젝트의 **모든** 열린 탭을 다시 didOpen 한다.
+    /// 축출 후 재기동하면 서버에 문서 상태가 전혀 없으므로, 활성 탭 하나만
+    /// 열면 나머지 탭의 진단이 조용히 사라진다.
+    void                                reopenDocumentsForProject( const QString& projectId );
 
     // ── 스크롤 동기화 ──
     // 에디터 -> 프리뷰, 프리뷰 -> 에디터 양방향. 어느 쪽이든 "기준 비율 위치에
@@ -121,7 +126,7 @@ private:
     SphinxPreviewController*            previewController_ = nullptr;
     PreviewBridge*                      previewBridge_ = nullptr;
     DiagnosticsStore*                   diagnosticsStore_ = nullptr;
-    LspClient*                          lspClient_ = nullptr;
+    LspServerPool*                      lspPool_ = nullptr;
     QString                             lspState_;
     QStringList                         previewSources_;      ///< data-mrr-src 인덱스 -> 원본 경로
     QStringList                         previewProcessedSources_;  ///< 이번 빌드가 다시 읽은 파일들

@@ -1621,6 +1621,9 @@ void MainWindow::onSettings()
         QSettingsDialog::ApplyShortcutsToActions( shortcuts, this );
         // 열려있는 뷰어에 변경된 설정 적용
         applySettingsToAllViews();
+        // 스캐너 제외 목록 / 최대 Esbonio 프로세스 수 등도 즉시 반영한다.
+        if( controller_ != nullptr )
+            controller_->reloadSettings();
     } );
     dlg.exec();
 }
@@ -2432,19 +2435,22 @@ void MainWindow::updateEnvStatusChip()
                                     : pythonEnv_->lastError() );
 }
 
-void MainWindow::openStartupPath( const QString& path )
+void MainWindow::openStartupPaths( const QStringList& paths )
 {
-    const QFileInfo info( path );
-    if( !info.exists() )
+    if( paths.isEmpty() )
         return;
 
-    if( info.isDir() )
+    const QFileInfo first( paths.first() );
+    if( !first.exists() )
+        return;
+
+    // 파일이 첫 인자면 상위 폴더를 워크스페이스로 삼아야 프로젝트 스캔이 동작한다.
+    setWorkspace( first.isDir() ? first.absoluteFilePath() : first.absolutePath() );
+
+    for( const QString& path : paths )
     {
-        setWorkspace( info.absoluteFilePath() );
-        return;
+        const QFileInfo info( path );
+        if( info.exists() && info.isFile() )
+            openFile( info.absoluteFilePath() );
     }
-
-    // 파일이면 상위 폴더를 워크스페이스로 삼아야 프로젝트 스캔이 동작한다.
-    setWorkspace( info.absolutePath() );
-    openFile( info.absoluteFilePath() );
 }

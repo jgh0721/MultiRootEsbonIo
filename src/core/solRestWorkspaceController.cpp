@@ -3,6 +3,7 @@
 
 #include "solAppSettings.hpp"
 #include "solEsbonioLspClient.hpp"
+#include "solEsbonioLspPool.hpp"
 #include "solPreviewBridge.hpp"
 #include "solPythonEnvMgr.hpp"
 #include "solSphinxPreviewController.hpp"
@@ -74,11 +75,12 @@ WorkspaceController::WorkspaceController( QObject* parent )
     , registry_( new ProjectRegistry( this ) )
     , previewController_( new SphinxPreviewController( this ) )
     , diagnosticsStore_( new DiagnosticsStore( this ) )
-    , lspClient_( new LspClient( this ) )
+    , lspPool_( new LspServerPool( this ) )
 {
-    connect( lspClient_, &LspClient::logMessage, this, &WorkspaceController::logMessage );
-    connect( lspClient_, &LspClient::diagnosticsReady, this,
-            [this]( const QString& source, const QVector< DiagnosticEntry >& entries ) {
+    connect( lspPool_, &LspServerPool::logMessage, this,
+            [this]( const QString&, const QString& text ) { emit logMessage( text ); } );
+    connect( lspPool_, &LspServerPool::diagnosticsReady, this,
+            [this]( const QString&, const QString& source, const QVector< DiagnosticEntry >& entries ) {
                 // publishDiagnostics 는 파일 단위로 온다. 그 파일 것만 교체해야
                 // 다른 파일 진단이 날아가지 않는다.
                 const QString path = entries.isEmpty() ? QString{} : entries.first().path;
@@ -87,18 +89,38 @@ WorkspaceController::WorkspaceController( QObject* parent )
                 diagnosticsStore_->replaceSourceForPath( source, path, entries );
                 emit diagnosticsChanged( source, entries );
             } );
-    connect( lspClient_, &LspClient::serverNotification, this,
-            [this]( const QString& method, const QJsonObject& ) {
-                if( method == QStringLiteral( "sphinx/clientCreated" ) )
+    connect( lspPool_, &LspServerPool::serverNotification, this,
+            [this]( const QString& projectId, const QString& method, const QJsonObject& ) {
+                // 상태 표시는 지금 보고 있는 프로젝트 것만 반영한다.
+                const bool isActive = ( projectId == activeProjectId_ );
+                if( method == QStringLiteral( "sphinx/clientCreated" ) && isActive )
                     setLspStatus( tr( "클라이언트 생성됨" ) );
                 else if( method == QStringLiteral( "sphinx/appCreated" ) )
                 {
-                    setLspStatus( tr( "Sphinx 앱 생성됨" ) );
-                    nudgeInitialBuild();
+                    if( isActive )
+                        setLspStatus( tr( "Sphinx 앱 생성됨" ) );
+                    // 초기 빌드는 활성 여부와 무관하게 유발해야 한다.
+                    // 백그라운드 프로젝트의 진단도 테이블에 모이기 때문이다.
+                    nudgeInitialBuild( projectId );
                 }
-                else if( method == QStringLiteral( "sphinx/clientErrored" ) )
+                else if( method == QStringLiteral( "sphinx/clientErrored" ) && isActive )
                     setLspStatus( tr( "오류" ) );
             } );
+    connect( lspPool_, &LspServerPool::projectSpawned, this,
+            &WorkspaceController::reopenDocumentsForProject );
+    connect( lspPool_, &LspServerPool::projectEvicted, this, [this]( const QString& projectId ) {
+        // 서버가 사라졌으니 그 프로젝트 문서들의 서버 상태도 없어진 것으로 본다.
+        for( DocumentContext& context : documents_ )
+        {
+            if( context.projectId != projectId )
+                continue;
+            context.syncedToServer = false;
+            context.nudgedInitialBuild = false;
+            // esbonio 진단만 지운다. sphinx-build 것은 여전히 유효하다.
+            diagnosticsStore_->replaceSourceForPath( QStringLiteral( "esbonio" ), context.path, {} );
+        }
+        emit logMessage( tr( "Esbonio 서버 종료(LRU): %1" ).arg( projectId ) );
+    } );
 
     connect( previewController_, &SphinxPreviewController::logMessage, this, &WorkspaceController::logMessage );
     connect( previewController_, &SphinxPreviewController::processedSourcesKnown, this,
@@ -419,9 +441,10 @@ void WorkspaceController::setLspStatus( const QString& state )
     emit logMessage( tr( "LSP: %1 (%2)" ).arg( state, activeProjectId_ ) );
 }
 
-void WorkspaceController::nudgeInitialBuild()
+void WorkspaceController::nudgeInitialBuild( const QString& projectId )
 {
-    if( lspClient_ == nullptr || !lspClient_->isRunning() )
+    LspClient* client = lspPool_->clientFor( projectId );
+    if( client == nullptr || !client->isRunning() )
         return;
 
     // Esbonio 는 didOpen 으로는 Sphinx 앱만 만들고 빌드는 돌리지 않는다
@@ -430,24 +453,41 @@ void WorkspaceController::nudgeInitialBuild()
     // 영원히 진단이 오지 않는다.
     //
     // 그래서 디스크에 쓰지 않고 didSave 알림만 보내 첫 빌드를 유발한다.
-    // (파이썬 원본도 같은 수법을 쓴다.) 프로젝트당 문서당 한 번만 보낸다 —
-    // 빌드 완료가 다시 이 경로를 타면 무한 반복이 된다.
+    // (파이썬 원본도 같은 수법을 쓴다.) 문서당 한 번만 보낸다 — 빌드 완료가
+    // 다시 이 경로를 타면 무한 반복이 된다.
     for( DocumentContext& context : documents_ )
     {
-        if( context.projectId != activeProjectId_ || context.nudgedInitialBuild )
+        if( context.projectId != projectId || context.nudgedInitialBuild )
             continue;
         if( !context.syncedToServer || context.view.isNull() || context.path.isEmpty() )
             continue;
 
         context.nudgedInitialBuild = true;
-        lspClient_->didSave( context.path, context.view->text() );
-        emit logMessage( tr( "Esbonio 초기 빌드 요청: %1" ).arg( QFileInfo( context.path ).fileName() ) );
+        client->didSave( context.path, context.view->text() );
+        emit logMessage( tr( "Esbonio 초기 빌드 요청: %1 (%2)" )
+                            .arg( QFileInfo( context.path ).fileName(), projectId ) );
+    }
+}
+
+void WorkspaceController::reopenDocumentsForProject( const QString& projectId )
+{
+    LspClient* client = lspPool_->clientFor( projectId );
+    if( client == nullptr )
+        return;
+
+    for( DocumentContext& context : documents_ )
+    {
+        if( context.projectId != projectId )
+            continue;
+        context.syncedToServer = false;
+        context.nudgedInitialBuild = false;
+        syncDocumentToServer( context, true );
     }
 }
 
 void WorkspaceController::ensureLspForActiveDocument()
 {
-    if( shuttingDown_ || lspClient_ == nullptr || pythonEnv_ == nullptr || !pythonEnv_->isReady() )
+    if( shuttingDown_ || lspPool_ == nullptr || pythonEnv_ == nullptr || !pythonEnv_->isReady() )
         return;
 
     QTextView* view = activeView_;
@@ -460,24 +500,21 @@ void WorkspaceController::ensureLspForActiveDocument()
         return;   // 가상 프로젝트는 다음 단계에서 다룬다.
 
     const QString projectId = QString::fromStdWString( project->projectId );
-    const bool needsRestart = ( !lspClient_->isRunning() || lspClient_->activeProjectId() != projectId );
-    if( needsRestart )
-    {
-        // 프로젝트가 바뀌면 이전 서버의 진단은 더 이상 유효하지 않다.
-        diagnosticsStore_->clearSource( QStringLiteral( "esbonio" ) );
-        lspClient_->setHtmlStyleOverride( confDeclaresEmptyHtmlStyle( project->confPath ) );
-        lspClient_->start( *project, pythonEnv_->pythonExe(), pythonEnv_->sphinxBuildExe() );
-        setLspStatus( tr( "초기화됨" ) );
 
-        // 서버가 새로 떴으므로 이 프로젝트의 열린 문서를 모두 다시 열어 준다.
-        for( DocumentContext& other : documents_ )
-        {
-            other.syncedToServer = false;
-            other.nudgedInitialBuild = false;   // 새 서버에는 다시 유발해야 한다
-            if( other.projectId == projectId )
-                syncDocumentToServer( other, true );
-        }
+    lspPool_->setPythonPaths( pythonEnv_->pythonExe(), pythonEnv_->sphinxBuildExe() );
+    // activate() 보다 먼저 pin 해야, 자리가 부족할 때 지금 전환 중인 프로젝트를
+    // 밀어내는 일이 없다.
+    lspPool_->setPinnedProject( projectId );
+
+    const bool wasRunning = ( lspPool_->clientFor( projectId ) != nullptr );
+    LspClient* client = lspPool_->activate( *project );
+    if( client == nullptr )
         return;
+
+    if( !wasRunning )
+    {
+        setLspStatus( tr( "초기화됨" ) );
+        return;   // projectSpawned 가 문서 재열기를 처리한다.
     }
 
     syncDocumentToServer( *context, false );
@@ -485,7 +522,11 @@ void WorkspaceController::ensureLspForActiveDocument()
 
 void WorkspaceController::syncDocumentToServer( DocumentContext& context, const bool forceOpen )
 {
-    if( lspClient_ == nullptr || !lspClient_->isRunning() || context.view.isNull() || context.path.isEmpty() )
+    if( context.view.isNull() || context.path.isEmpty() )
+        return;
+
+    LspClient* client = lspPool_->clientFor( context.projectId );
+    if( client == nullptr || !client->isRunning() )
         return;
 
     const QString languageId = context.path.endsWith( QStringLiteral( ".md" ), Qt::CaseInsensitive )
@@ -494,13 +535,13 @@ void WorkspaceController::syncDocumentToServer( DocumentContext& context, const 
 
     if( forceOpen || !context.syncedToServer )
     {
-        lspClient_->didOpen( context.path, context.view->text(), languageId );
+        client->didOpen( context.path, context.view->text(), languageId );
         context.syncedToServer = true;
-        lspClient_->documentSymbols( context.path );
+        client->documentSymbols( context.path );
         return;
     }
 
-    lspClient_->didChange( context.path, context.view->text() );
+    client->didChange( context.path, context.view->text() );
 }
 
 void WorkspaceController::refreshDiagnosticMarks( const QString& normalizedPath )
@@ -570,6 +611,13 @@ void WorkspaceController::reloadSettings()
                               .toString()
                               .toStdString();
     registry_->setScannerSettings( std::move( scanner ) );
+
+    if( lspPool_ != nullptr )
+    {
+        // 값을 줄이면 풀이 즉시 초과분을 축출한다.
+        lspPool_->setMaxProcesses(
+            settings.value( QStringLiteral( "esbonio/maxLspProcesses" ), 3 ).toInt() );
+    }
 }
 
 void WorkspaceController::shutdown()
@@ -578,8 +626,8 @@ void WorkspaceController::shutdown()
     if( previewController_ != nullptr )
         previewController_->cancel();
     // LSP 프로세스는 위젯 파괴 전에 정리해야 고아로 남지 않는다.
-    if( lspClient_ != nullptr )
-        lspClient_->stop();
+    if( lspPool_ != nullptr )
+        lspPool_->stopAll();
     documents_.clear();
     activeView_ = nullptr;
     activeProjectId_.clear();
@@ -619,8 +667,14 @@ void WorkspaceController::detachDocument( QTextView* view )
 
     if( DocumentContext* context = contextFor( view ) )
     {
-        if( context->syncedToServer && lspClient_ != nullptr && lspClient_->isRunning() )
-            lspClient_->didClose( context->path );
+        if( context->syncedToServer )
+        {
+            if( LspClient* client = lspPool_->clientFor( context->projectId );
+                client != nullptr && client->isRunning() )
+            {
+                client->didClose( context->path );
+            }
+        }
     }
 
     documents_.remove( view );
@@ -688,8 +742,11 @@ void WorkspaceController::notifyDocumentSaved( QTextView* view )
     // Esbonio 는 저장 시점에 내부 Sphinx 빌드를 돌린다. 이게 있어야 진단이 갱신된다.
     if( DocumentContext* context = contextFor( view ); context != nullptr && context->syncedToServer )
     {
-        if( lspClient_ != nullptr && lspClient_->isRunning() )
-            lspClient_->didSave( context->path, view->text() );
+        if( LspClient* client = lspPool_->clientFor( context->projectId );
+            client != nullptr && client->isRunning() )
+        {
+            client->didSave( context->path, view->text() );
+        }
     }
 }
 

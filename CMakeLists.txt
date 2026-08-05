@@ -44,6 +44,8 @@ add_executable(${PROJECT_NAME}
         src/core/solBaseView.hpp
         src/core/solEsbonioLspClient.cpp
         src/core/solEsbonioLspClient.hpp
+        src/core/solEsbonioLspPool.cpp
+        src/core/solEsbonioLspPool.hpp
         src/core/solPythonEnvMgr.cpp
         src/core/solPythonEnvMgr.hpp
         src/core/solUvTaskRunner.cpp

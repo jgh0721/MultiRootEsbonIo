@@ -98,6 +98,7 @@ private:
     QLabel*                             m_pythonExeLabel = nullptr;
     QLabel*                             m_sphinxBuildExeLabel = nullptr;
     QLabel*                             m_esbonioExeLabel = nullptr;
+    class QSpinBox*                     m_maxLspProcessesSpin = nullptr;
     QPushButton*                        m_configurePythonButton = nullptr;
     QPushButton*                        m_cancelPythonButton = nullptr;
     class QProgressBar*                 m_pythonEnvProgress = nullptr;

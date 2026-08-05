@@ -620,6 +620,21 @@ QWidget* QSettingsDialog::createEsbonioPage()
     m_esbonioExeLabel = createValueLabel( uvGroup );
     formLayout->addRow( tr( "Esbonio:" ), m_esbonioExeLabel );
 
+    // 멀티루트에서는 프로젝트마다 Esbonio 서버가 하나씩 뜬다. 동시에 몇 개까지
+    // 유지할지 정한다. 초과분은 가장 오래 쓰지 않은 것부터 종료된다.
+    m_maxLspProcessesSpin = new QSpinBox( uvGroup );
+    m_maxLspProcessesSpin->setRange( 1, 8 );
+    m_maxLspProcessesSpin->setValue( AppSettings().value(
+                                         QStringLiteral( "esbonio/maxLspProcesses" ), 3 ).toInt() );
+    m_maxLspProcessesSpin->setToolTip( tr( "동시에 유지할 Esbonio 서버 수입니다.\n"
+                                          "초과하면 가장 오래 사용하지 않은 프로젝트의 서버를 종료합니다." ) );
+    formLayout->addRow( tr( "최대 Esbonio 프로세스:" ), m_maxLspProcessesSpin );
+
+    connect( m_maxLspProcessesSpin, &QSpinBox::valueChanged, this, [this]( const int value ) {
+        AppSettings().setValue( QStringLiteral( "esbonio/maxLspProcesses" ), value );
+        emit settingsApplied();
+    } );
+
     uvLayout->addLayout( formLayout );
 
     auto* actionLayout      = new QHBoxLayout;
