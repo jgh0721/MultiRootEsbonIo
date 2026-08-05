@@ -451,8 +451,7 @@ MainWindow::MainWindow( QWidget* parent )
     if( auto* app = QCoreApplication::instance() )
         app->installEventFilter( this );
 
-    centralWidget()->setAcceptDrops( true );
-    centralWidget()->setAttribute( Qt::WA_OpaquePaintEvent );
+    setupCentralContainer();
 
     treLeftFolderTreeModel_ = new QFileSystemModel( this );
     treLeftFolderTreeModel_->setRootPath( "" );
@@ -675,6 +674,48 @@ void MainWindow::createMenus()
 }
 
 // ═══════════════════════════════════════════════════════════
+// 중앙 컨테이너 구성
+//
+// 메뉴 바 바로 아래에 뷰어 도구모음 슬롯을 두고, 그 밑에 .ui 로 만든
+// 원래 중앙 위젯을 배치한다. 이 슬롯이 없으면 updateViewerToolBar() 가
+// 도구모음을 부모 없는 최상위 위젯으로 만들어 별도 창으로 떠 버린다.
+// ═══════════════════════════════════════════════════════════
+void MainWindow::setupCentralContainer()
+{
+    // takeCentralWidget() 은 소유권만 넘기고 삭제하지 않는다.
+    // setCentralWidget() 은 기존 중앙 위젯을 삭제하므로 반드시 먼저 떼어낸다.
+    QWidget* uiCentralWidget = takeCentralWidget();
+
+    m_centralContainer = new QWidget( this );
+    m_centralContainer->setObjectName( QStringLiteral( "centralContainer" ) );
+    m_centralContainer->setAcceptDrops( true );
+
+    auto* containerLayout = new QVBoxLayout( m_centralContainer );
+    containerLayout->setContentsMargins( 0, 0, 0, 0 );
+    containerLayout->setSpacing( 0 );
+
+    m_viewerToolBarHost = new QWidget( m_centralContainer );
+    m_viewerToolBarHost->setObjectName( QStringLiteral( "viewerToolBarHost" ) );
+    m_viewerToolBarHost->setSizePolicy( QSizePolicy::Preferred, QSizePolicy::Fixed );
+    m_viewerToolBarHost->setVisible( false );   // 도구모음이 붙을 때만 보인다
+
+    m_viewerToolBarLayout = new QVBoxLayout( m_viewerToolBarHost );
+    m_viewerToolBarLayout->setContentsMargins( 0, 0, 0, 0 );
+    m_viewerToolBarLayout->setSpacing( 0 );
+
+    containerLayout->addWidget( m_viewerToolBarHost );
+
+    if( uiCentralWidget )
+    {
+        uiCentralWidget->setAcceptDrops( true );
+        uiCentralWidget->setAttribute( Qt::WA_OpaquePaintEvent );
+        containerLayout->addWidget( uiCentralWidget, 1 );
+    }
+
+    setCentralWidget( m_centralContainer );
+}
+
+// ═══════════════════════════════════════════════════════════
 // 뷰어별 도구모음 교체
 // ═══════════════════════════════════════════════════════════
 void MainWindow::updateViewerToolBar()
@@ -701,6 +742,10 @@ void MainWindow::updateViewerToolBar()
         refreshViewerToolBarSlot( m_viewerToolBarHost );
         return;
     }
+
+    // 도구모음 슬롯이 없으면 부모 없는 최상위 위젯이 되어 별도 창으로 떠 버린다.
+    if( !m_viewerToolBarHost || !m_viewerToolBarLayout )
+        return;
 
     m_viewerToolBar = view->createToolBar();
     if( m_viewerToolBar )

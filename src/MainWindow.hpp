@@ -104,6 +104,7 @@ private:
     };
 
     void createMenus();
+    void                                setupCentralContainer();
     QString normalizeFilePath( const QString& filePath ) const;
     void                                applyThemeToView( QBaseView* view ) const;
     void                                applyCurrentTheme();
