@@ -125,6 +125,36 @@ if(WIN32)
 endif()
 
 
+# ── 유닛 테스트 ───────────────────────────────────────────
+# 위젯도 프로세스도 띄우지 않는 순수 로직만 검증한다.
+# esbonio/sphinx-build 를 실제로 돌리는 테스트는 두지 않는다 (느리고 환경 의존적).
+option(MRST_BUILD_TESTS "Build unit tests" OFF)
+if(MRST_BUILD_TESTS)
+    enable_testing()
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+
+    add_executable(mrst_tests
+            tests/main.cpp
+            tests/TestRunner.hpp
+            tests/tst_RstContainerLexer.cpp
+            # 테스트 대상 프로덕션 소스는 OBJECT 라이브러리로 빼지 않고 명시 나열한다
+            # (globbing 금지 + 단일 타깃이라는 이 프로젝트의 규칙을 따른다).
+            src/editor/RstContainerLexer.cpp
+    )
+    target_include_directories(mrst_tests PRIVATE
+            "${CMAKE_SOURCE_DIR}"
+            "${CMAKE_SOURCE_DIR}/src"
+            "${CMAKE_SOURCE_DIR}/tests"
+            "${CMAKE_SOURCE_DIR}/uniqueLibs"
+    )
+    target_link_libraries(mrst_tests PRIVATE Qt6::Core Qt6::Test)
+    if(MSVC)
+        target_compile_options(mrst_tests PRIVATE /utf-8 /permissive- /Zc:__cplusplus)
+    endif()
+
+    add_test(NAME mrst_tests COMMAND mrst_tests)
+endif()
+
 # ── DLL 배포 (Windows) ────────────────────────────────────
 if(WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     set(QT_INSTALL_PATH "${CMAKE_PREFIX_PATH}")
