@@ -51,7 +51,14 @@ public:
     [[nodiscard]] QString               sphinxBuildExe() const;
     [[nodiscard]] QString               esbonioExe() const;
     [[nodiscard]] QString               scriptsDir() const;       ///< <runtimeRoot>/scripts
+    [[nodiscard]] QString               previewBuilderScript() const;
+    [[nodiscard]] QString               shadowDir() const;        ///< 미저장 버퍼 임시 사본
     [[nodiscard]] QString               cacheDir() const;
+
+    /// qrc 의 헬퍼 스크립트를 scripts/ 로 추출한다. 내용이 같으면 건너뛴다.
+    /// 환경이 이미 준비된 상태에서 앱만 업데이트된 경우에도 최신화되도록
+    /// 부트스트랩과 별개로 호출한다. (작은 텍스트 파일이라 동기로 충분)
+    void                                ensureHelperScripts();
     [[nodiscard]] QString               embeddedUvTarget() const;
     [[nodiscard]] QString               readyMarker() const;
     [[nodiscard]] QString               uvExecutable() const;

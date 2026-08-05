@@ -3,5 +3,6 @@
         <file alias="uv.exe">../tools/uv.exe</file>
         <file alias="pyproject.toml">../tools/pyproject.toml</file>
         <file alias="uv.lock">../tools/uv.lock</file>
+        <file alias="mrr_sphinx_preview_build.py">../tools/py/mrr_sphinx_preview_build.py</file>
     </qresource>
 </RCC>

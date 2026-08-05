@@ -146,6 +146,7 @@ PythonEnvManager::PythonEnvManager( QObject* parent )
     extraPackages_ = settings.value( kSettingsExtraPackages ).toStringList();
 
     refreshState();
+    ensureHelperScripts();
 }
 
 PythonEnvManager::~PythonEnvManager() = default;
@@ -191,9 +192,29 @@ QString PythonEnvManager::scriptsDir() const
     return QDir( runtimeRoot() ).filePath( QStringLiteral( "scripts" ) );
 }
 
+QString PythonEnvManager::previewBuilderScript() const
+{
+    return QDir( scriptsDir() ).filePath( QStringLiteral( "mrr_sphinx_preview_build.py" ) );
+}
+
+QString PythonEnvManager::shadowDir() const
+{
+    return QDir( runtimeRoot() ).filePath( QStringLiteral( "shadow" ) );
+}
+
 QString PythonEnvManager::cacheDir() const
 {
     return QDir( runtimeRoot() ).filePath( QStringLiteral( "cache" ) );
+}
+
+void PythonEnvManager::ensureHelperScripts()
+{
+    QString errorMessage;
+    if( !copyResourceFile( QStringLiteral( ":/python/mrr_sphinx_preview_build.py" ),
+                          previewBuilderScript(), false, &errorMessage ) )
+    {
+        emit bootstrapLog( errorMessage );
+    }
 }
 
 QString PythonEnvManager::embeddedUvTarget() const
@@ -606,6 +627,7 @@ void PythonEnvManager::startVerifyTask()
         }
 
         // 검증까지 통과한 뒤에야 준비 표식을 남긴다.
+        ensureHelperScripts();
         writeReadyMarker();
         emit progressChanged( 100, tr( "완료" ) );
         emit bootstrapLog( tr( "환경 구성 완료: %1" ).arg( nativePath( pythonExe() ) ) );
