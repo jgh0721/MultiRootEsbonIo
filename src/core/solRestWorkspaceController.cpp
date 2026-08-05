@@ -92,7 +92,10 @@ WorkspaceController::WorkspaceController( QObject* parent )
                 if( method == QStringLiteral( "sphinx/clientCreated" ) )
                     setLspStatus( tr( "클라이언트 생성됨" ) );
                 else if( method == QStringLiteral( "sphinx/appCreated" ) )
+                {
                     setLspStatus( tr( "Sphinx 앱 생성됨" ) );
+                    nudgeInitialBuild();
+                }
                 else if( method == QStringLiteral( "sphinx/clientErrored" ) )
                     setLspStatus( tr( "오류" ) );
             } );
@@ -416,6 +419,32 @@ void WorkspaceController::setLspStatus( const QString& state )
     emit logMessage( tr( "LSP: %1 (%2)" ).arg( state, activeProjectId_ ) );
 }
 
+void WorkspaceController::nudgeInitialBuild()
+{
+    if( lspClient_ == nullptr || !lspClient_->isRunning() )
+        return;
+
+    // Esbonio 는 didOpen 으로는 Sphinx 앱만 만들고 빌드는 돌리지 않는다
+    // (sphinx_manager/manager.py 의 document_open vs document_save).
+    // 그런데 진단은 빌드가 채우는 DB 에서만 나오므로, 파일을 연 것만으로는
+    // 영원히 진단이 오지 않는다.
+    //
+    // 그래서 디스크에 쓰지 않고 didSave 알림만 보내 첫 빌드를 유발한다.
+    // (파이썬 원본도 같은 수법을 쓴다.) 프로젝트당 문서당 한 번만 보낸다 —
+    // 빌드 완료가 다시 이 경로를 타면 무한 반복이 된다.
+    for( DocumentContext& context : documents_ )
+    {
+        if( context.projectId != activeProjectId_ || context.nudgedInitialBuild )
+            continue;
+        if( !context.syncedToServer || context.view.isNull() || context.path.isEmpty() )
+            continue;
+
+        context.nudgedInitialBuild = true;
+        lspClient_->didSave( context.path, context.view->text() );
+        emit logMessage( tr( "Esbonio 초기 빌드 요청: %1" ).arg( QFileInfo( context.path ).fileName() ) );
+    }
+}
+
 void WorkspaceController::ensureLspForActiveDocument()
 {
     if( shuttingDown_ || lspClient_ == nullptr || pythonEnv_ == nullptr || !pythonEnv_->isReady() )
@@ -444,6 +473,7 @@ void WorkspaceController::ensureLspForActiveDocument()
         for( DocumentContext& other : documents_ )
         {
             other.syncedToServer = false;
+            other.nudgedInitialBuild = false;   // 새 서버에는 다시 유발해야 한다
             if( other.projectId == projectId )
                 syncDocumentToServer( other, true );
         }

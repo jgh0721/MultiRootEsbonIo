@@ -2372,7 +2372,19 @@ void MainWindow::refreshDiagnosticsTable()
         table->item( row, 1 )->setToolTip( QDir::toNativeSeparators( entry.path ) );
     }
 
-    appendLog( tr( "진단 %1건" ).arg( entries.size() ) );
+    // 출처별 내역까지 남긴다. 같은 위치면 esbonio 가 sphinx-build 를 대체하므로,
+    // 내역을 봐야 어느 쪽이 실제로 표시되고 있는지 알 수 있다.
+    QMap< QString, int > bySource;
+    for( const mrst::DiagnosticEntry& entry : entries )
+        ++bySource[ entry.source ];
+
+    QStringList breakdown;
+    for( auto it = bySource.constBegin(); it != bySource.constEnd(); ++it )
+        breakdown << QStringLiteral( "%1 %2" ).arg( it.key() ).arg( it.value() );
+
+    appendLog( breakdown.isEmpty()
+                  ? tr( "진단 0건" )
+                  : tr( "진단 %1건 (%2)" ).arg( entries.size() ).arg( breakdown.join( QStringLiteral( ", " ) ) ) );
 }
 
 void MainWindow::setupPythonEnvironment()

@@ -35,6 +35,9 @@ struct DocumentContext
     QString                             projectId;               ///< 해석 전에는 빈 문자열
     bool                                isVirtual = false;
     bool                                syncedToServer = false;
+    /// 초기 빌드를 유발하는 synthetic didSave 를 이미 보냈는가.
+    /// Esbonio 는 didOpen 만으로는 빌드하지 않아 진단이 나오지 않는다.
+    bool                                nudgedInitialBuild = false;
 };
 
 /// MainWindow 와 Sphinx/Esbonio 서비스 계층 사이의 조율자.
@@ -102,6 +105,7 @@ private:
     void                                ensureLspForActiveDocument();
     void                                syncDocumentToServer( DocumentContext& context, bool forceOpen );
     void                                setLspStatus( const QString& state );
+    void                                nudgeInitialBuild();
 
     // ── 스크롤 동기화 ──
     // 에디터 -> 프리뷰, 프리뷰 -> 에디터 양방향. 어느 쪽이든 "기준 비율 위치에
