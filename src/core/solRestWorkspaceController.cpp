@@ -8,11 +8,14 @@
 #include "solSphinxProjectRegistry.hpp"
 #include "editor/QBaseEditor.hpp"
 
+#include "solSphinxDiagnosticsStore.hpp"
+
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QUrl>
 #include <QWebEngineView>
 
@@ -22,6 +25,35 @@ constexpr qint64 kSyncGuardMs = 250;
 /// 스크롤 동기화의 기준점. 0.5 = 창의 정중앙.
 /// 에디터 정중앙에 있는 줄이 프리뷰에서도 정중앙에 오게 한다.
 constexpr double kAnchorRatio = 0.5;
+/// 이보다 큰 HTML 은 핫스왑 이득이 없다. 그냥 다시 로드한다.
+constexpr qsizetype kHotSwapMaxBytes = 4 * 1024 * 1024;
+
+/// <head> 의 내용 서명. 스타일시트 구성이 그대로인지 판단하는 데 쓴다.
+/// 빌드마다 달라지는 <title>/<base> 는 빼고 공백을 접어서 비교한다.
+QString previewHeadSignature( const QString& html )
+{
+    static const QRegularExpression headRe(
+        QStringLiteral( "<head[^>]*>(.*?)</head>" ),
+        QRegularExpression::DotMatchesEverythingOption | QRegularExpression::CaseInsensitiveOption );
+    static const QRegularExpression titleRe(
+        QStringLiteral( "<title[^>]*>.*?</title>" ),
+        QRegularExpression::DotMatchesEverythingOption | QRegularExpression::CaseInsensitiveOption );
+    static const QRegularExpression baseRe(
+        QStringLiteral( "<base[^>]*>" ), QRegularExpression::CaseInsensitiveOption );
+    static const QRegularExpression spaceRe( QStringLiteral( "\\s+" ) );
+
+    const QRegularExpressionMatch match = headRe.match( html );
+    if( !match.hasMatch() )
+        return {};
+
+    QString head = match.captured( 1 );
+    head.remove( titleRe );
+    head.remove( baseRe );
+    head.replace( spaceRe, QStringLiteral( " " ) );
+
+    return QString::fromLatin1(
+        QCryptographicHash::hash( head.trimmed().toUtf8(), QCryptographicHash::Sha1 ).toHex() );
+}
 }  // namespace
 
 namespace mrst {
@@ -40,12 +72,18 @@ WorkspaceController::WorkspaceController( QObject* parent )
     : QObject( parent )
     , registry_( new ProjectRegistry( this ) )
     , previewController_( new SphinxPreviewController( this ) )
+    , diagnosticsStore_( new DiagnosticsStore( this ) )
 {
     connect( previewController_, &SphinxPreviewController::logMessage, this, &WorkspaceController::logMessage );
     connect( previewController_, &SphinxPreviewController::diagnosticsReady, this,
             [this]( const QString& source, const QVector< DiagnosticEntry >& entries ) {
+                // sphinx-build 는 빌드 한 번에 전체를 주므로 그 출처만 통째로 교체한다.
+                // Esbonio 진단은 건드리지 않는다.
+                diagnosticsStore_->replaceSource( source, entries );
                 emit diagnosticsChanged( source, entries );
             } );
+    connect( diagnosticsStore_, &DiagnosticsStore::pathChanged, this,
+            &WorkspaceController::refreshDiagnosticMarks );
     connect( previewController_, &SphinxPreviewController::missingDependenciesDetected, this,
             &WorkspaceController::missingDependenciesDetected );
     connect( previewController_, &SphinxPreviewController::buildFinished, this,
@@ -84,13 +122,38 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
     previewBridge_->attachTo( previewView_ );
 
     connect( previewView_, &QWebEngineView::loadFinished, this, [this]( const bool ok ) {
+        previewLoadedOk_ = ok;
         if( !ok )
         {
             emit logMessage( tr( "프리뷰 HTML 로드 실패" ) );
             return;
         }
-        emit logMessage( tr( "프리뷰 표시: %1" ).arg( previewView_->url().fileName() ) );
+        previewUrl_ = previewView_->url();
+        emit logMessage( tr( "프리뷰 표시: %1" ).arg( previewUrl_.fileName() ) );
     } );
+
+    // 핫스왑 실패는 조용히 넘어가면 안 된다. 화면이 낡은 채로 남기 때문에
+    // 곧바로 전체 리로드로 되돌린다.
+    connect( previewBridge_, &PreviewBridge::hotSwapCompleted, this,
+            [this]( const int token, const bool ok, const QString& message ) {
+                if( token != hotSwapToken_ )
+                    return;
+
+                if( ok )
+                {
+                    syncPreviewFromEditor();
+                    return;
+                }
+
+                emit logMessage( tr( "프리뷰 부분 교체 실패, 전체 다시 로드: %1" ).arg( message ) );
+                if( !pendingFullLoadPath_.isEmpty() )
+                {
+                    previewUrl_ = QUrl::fromLocalFile( pendingFullLoadPath_ );
+                    previewLoadedOk_ = false;
+                    previewBridge_->resetReady();
+                    previewView_->load( previewUrl_ );
+                }
+            } );
 
     // 페이지가 준비되면 현재 에디터 위치로 맞춘다.
     connect( previewBridge_, &PreviewBridge::bridgeReady, this, [this] {
@@ -257,10 +320,66 @@ void WorkspaceController::onPreviewFinished( const PreviewBuildResult& result )
     // data-mrr-src 인덱스를 실제 경로로 되돌리려면 빌더가 준 순서를 그대로 쓴다.
     previewSources_ = result.sources;
 
+    showPreviewHtml( result.htmlPath, result.projectId + QLatin1Char( '\x1f' ) + result.primaryDocname );
+}
+
+void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QString& documentKey )
+{
+    QFile file( htmlPath );
+    if( !file.open( QIODevice::ReadOnly ) )
+        return;
+
+    const QByteArray raw = file.readAll();
+    file.close();
+
+    const QString html = QString::fromUtf8( raw );
+    const QString headSignature = previewHeadSignature( html );
+    const QUrl url = QUrl::fromLocalFile( htmlPath );
+
+    // 핫스왑은 아래 조건이 전부 맞을 때만 한다. 하나라도 어긋나면 전체 리로드가
+    // 맞다 — 스타일이 바뀌었는데 body 만 갈면 깨진 화면이 남는다.
+    const bool sameDocument = ( documentKey == previewDocumentKey_ );
+    const bool sameHead = ( !headSignature.isEmpty() && headSignature == previewHeadSignature_ );
+    const bool bridgeUsable = ( previewBridge_ != nullptr && previewBridge_->isReady() );
+    const bool userStayedOnPage = ( previewView_->url() == previewUrl_ );
+    const bool sizeOk = ( raw.size() <= kHotSwapMaxBytes );
+
+    previewDocumentKey_ = documentKey;
+    previewHeadSignature_ = headSignature;
+
+    if( sameDocument && sameHead && bridgeUsable && userStayedOnPage && previewLoadedOk_ && sizeOk )
+    {
+        emit logMessage( tr( "프리뷰 부분 교체(핫스왑)" ) );
+        // 상대 경로(_static, 이미지)가 새 출력 디렉터리를 가리키게 해야 한다.
+        const QString baseUrl = QUrl::fromLocalFile( QFileInfo( htmlPath ).absolutePath()
+                                                     + QLatin1Char( '/' ) ).toString();
+        pendingFullLoadPath_ = htmlPath;
+        previewBridge_->requestHotSwap( html, baseUrl, ++hotSwapToken_ );
+        return;
+    }
+
+    previewUrl_ = url;
+    previewLoadedOk_ = false;
     if( previewBridge_ != nullptr )
         previewBridge_->resetReady();
+    previewView_->load( url );
+}
 
-    previewView_->load( QUrl::fromLocalFile( result.htmlPath ) );
+void WorkspaceController::refreshDiagnosticMarks( const QString& normalizedPath )
+{
+    if( diagnosticsStore_ == nullptr )
+        return;
+
+    for( auto it = documents_.begin(); it != documents_.end(); ++it )
+    {
+        DocumentContext& context = it.value();
+        if( context.view.isNull() || context.path.isEmpty() )
+            continue;
+        if( context.path.toCaseFolded() != normalizedPath )
+            continue;
+
+        context.view->setDiagnosticMarks( diagnosticsStore_->forPath( context.path ) );
+    }
 }
 
 ProjectRegistry* WorkspaceController::projectRegistry() const
@@ -276,6 +395,11 @@ QString WorkspaceController::workspaceRoot() const
 QString WorkspaceController::activeProjectId() const
 {
     return activeProjectId_;
+}
+
+DiagnosticsStore* WorkspaceController::diagnostics() const
+{
+    return diagnosticsStore_;
 }
 
 void WorkspaceController::setWorkspaceRoot( const QString& root )

@@ -56,6 +56,8 @@ add_executable(${PROJECT_NAME}
         src/core/solSphinxScanner.hpp
         src/core/solSphinxDiagnostics.cpp
         src/core/solSphinxDiagnostics.hpp
+        src/core/solSphinxDiagnosticsStore.cpp
+        src/core/solSphinxDiagnosticsStore.hpp
         src/core/solSphinxPreviewController.cpp
         src/core/solSphinxPreviewController.hpp
         src/core/solPreviewBridge.cpp

@@ -8,6 +8,7 @@
 #include <QPointer>
 #include <QString>
 #include <QStringList>
+#include <QUrl>
 #include <QVector>
 
 class QTextView;
@@ -15,6 +16,7 @@ class QWebEngineView;
 
 namespace mrst {
 
+class DiagnosticsStore;
 class PreviewBridge;
 class ProjectRegistry;
 class PythonEnvManager;
@@ -66,6 +68,7 @@ public:
     void                                notifyDocumentSaved( QTextView* view );
 
     [[nodiscard]] QString               activeProjectId() const;
+    [[nodiscard]] DiagnosticsStore*     diagnostics() const;
 
     /// 활성 문서의 프리뷰를 다시 빌드한다.
     /// immediate=false 면 디바운스(편집 중), true 면 즉시(저장/탭 전환).
@@ -88,6 +91,8 @@ private:
     void                                logProjectList();
     void                                onPreviewFinished( const PreviewBuildResult& result );
     [[nodiscard]] QString               writeShadowCopy( QTextView* view, const QString& path ) const;
+    void                                showPreviewHtml( const QString& htmlPath, const QString& documentKey );
+    void                                refreshDiagnosticMarks( const QString& normalizedPath );
 
     // ── 스크롤 동기화 ──
     // 에디터 -> 프리뷰, 프리뷰 -> 에디터 양방향. 어느 쪽이든 "기준 비율 위치에
@@ -102,9 +107,20 @@ private:
     QWebEngineView*                     previewView_ = nullptr;
     SphinxPreviewController*            previewController_ = nullptr;
     PreviewBridge*                      previewBridge_ = nullptr;
+    DiagnosticsStore*                   diagnosticsStore_ = nullptr;
     QStringList                         previewSources_;      ///< data-mrr-src 인덱스 -> 원본 경로
     /// 한쪽이 유발한 스크롤이 되돌아와 무한 왕복하는 것을 막는다.
     qint64                              suppressSyncUntilMs_ = 0;
+
+    // ── 프리뷰 핫스왑 상태 ──
+    // 같은 문서를 다시 빌드했고 <head> 가 그대로면 전체 리로드 대신 body 만
+    // 갈아끼워 깜빡임을 없앤다.
+    QString                             previewDocumentKey_;
+    QString                             previewHeadSignature_;
+    QUrl                                previewUrl_;
+    bool                                previewLoadedOk_ = false;
+    int                                 hotSwapToken_ = 0;
+    QString                             pendingFullLoadPath_;
 
     QHash< QTextView*, DocumentContext > documents_;
     QPointer< QTextView >               activeView_;

@@ -33,20 +33,27 @@ public:
     void                                requestRebind();
     /// milliseconds 동안 프리뷰의 스크롤 보고를 무시한다 (피드백 루프 차단).
     void                                suppressScrollFeedback( int milliseconds );
+    /// 전체 리로드 없이 body 만 교체한다 (재빌드 깜빡임 제거).
+    void                                requestHotSwap( const QString& documentHtml, const QString& baseUrl,
+                                                        int token );
 
 public slots:   // JS 에서 호출한다
     void                                ready( int protocolVersion );
     void                                sourceLocationClicked( int sourceIndex, double line, double viewportRatio );
     void                                previewScrolled( int sourceIndex, double line, double viewportRatio );
+    void                                hotSwapResult( int token, bool ok, const QString& message );
 
 signals:
     // → JS
     void                                scrollToLineRequested( int sourceIndex, double line, double ratio );
     void                                rebindRequested();
     void                                scrollFeedbackSuppressed( int milliseconds );
+    void                                hotSwapRequested( const QString& documentHtml, const QString& baseUrl,
+                                                          int token );
 
     // → C++ 내부
     void                                bridgeReady();
+    void                                hotSwapCompleted( int token, bool ok, const QString& message );
     void                                editorNavigationRequested( int sourceIndex, double line, double viewportRatio );
     void                                previewScrollChanged( int sourceIndex, double line, double viewportRatio );
 

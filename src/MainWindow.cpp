@@ -5,6 +5,7 @@
 #include "core/solBaseView.hpp"
 #include "core/solPythonEnvMgr.hpp"
 #include "core/solRestWorkspaceController.hpp"
+#include "core/solSphinxDiagnosticsStore.hpp"
 #include "core/solThemeManager.hpp"
 #include "core/solShadowBackupStore.hpp"
 #include "editor/QBaseEditor.hpp"
@@ -540,7 +541,14 @@ MainWindow::MainWindow( QWidget* parent )
     controller_ = new mrst::WorkspaceController( this );
     controller_->setPreviewView( Ui.webEngineView );
     connect( controller_, &mrst::WorkspaceController::logMessage, this, &MainWindow::appendLog );
+    connect( controller_, &mrst::WorkspaceController::navigateRequested, this,
+            [this]( const QString& path, const int line, const int column ) {
+                openFile( path );
+                if( QTextView* view = textViewOf( currentView() ) )
+                    view->goToPosition( line, column );
+            } );
 
+    setupDiagnosticsTable();
     setupPythonEnvironment();
 
     if( settings.value( "textView/hotExitEnabled", true ).toBool() )
@@ -2282,6 +2290,89 @@ void MainWindow::refreshProjectList()
 QTextView* MainWindow::textViewOf( QBaseView* view ) const
 {
     return qobject_cast< QTextView* >( view );
+}
+
+void MainWindow::setupDiagnosticsTable()
+{
+    QTableWidget* table = Ui.tblDiagnostics;
+    if( table == nullptr || controller_ == nullptr )
+        return;
+
+    table->setColumnCount( 5 );
+    table->setHorizontalHeaderLabels( { tr( "심각도" ), tr( "파일" ), tr( "줄" ),
+                                       tr( "메시지" ), tr( "출처" ) } );
+    table->setEditTriggers( QAbstractItemView::NoEditTriggers );
+    table->setSelectionBehavior( QAbstractItemView::SelectRows );
+    table->setSelectionMode( QAbstractItemView::SingleSelection );
+    table->verticalHeader()->setVisible( false );
+    table->horizontalHeader()->setStretchLastSection( false );
+    table->horizontalHeader()->setSectionResizeMode( 3, QHeaderView::Stretch );   // 메시지
+    table->setColumnWidth( 0, 70 );
+    table->setColumnWidth( 1, 180 );
+    table->setColumnWidth( 2, 50 );
+    table->setColumnWidth( 4, 100 );
+
+    connect( table, &QTableWidget::itemDoubleClicked, this, [this]( QTableWidgetItem* item ) {
+        if( item == nullptr )
+            return;
+
+        // 경로/줄은 0번 열 아이템에 통째로 붙여 둔다 (열마다 중복 저장하지 않도록).
+        QTableWidgetItem* anchor = Ui.tblDiagnostics->item( item->row(), 0 );
+        if( anchor == nullptr )
+            return;
+
+        const QString path = anchor->data( Qt::UserRole ).toString();
+        const int line = anchor->data( Qt::UserRole + 1 ).toInt();
+        if( path.isEmpty() )
+            return;
+
+        openFile( path );
+        if( QTextView* view = textViewOf( currentView() ) )
+            view->goToPosition( line, 1 );
+    } );
+
+    if( mrst::DiagnosticsStore* store = controller_->diagnostics() )
+    {
+        connect( store, &mrst::DiagnosticsStore::changed, this, &MainWindow::refreshDiagnosticsTable );
+    }
+}
+
+void MainWindow::refreshDiagnosticsTable()
+{
+    QTableWidget* table = Ui.tblDiagnostics;
+    if( table == nullptr || controller_ == nullptr || controller_->diagnostics() == nullptr )
+        return;
+
+    const QVector< mrst::DiagnosticEntry > entries = controller_->diagnostics()->all();
+
+    const QSignalBlocker blocker( table );
+    table->setRowCount( static_cast< int >( entries.size() ) );
+
+    for( int row = 0; row < entries.size(); ++row )
+    {
+        const mrst::DiagnosticEntry& entry = entries.at( row );
+
+        auto* severityItem = new QTableWidgetItem( mrst::severityLabel( entry.severity ) );
+        severityItem->setData( Qt::UserRole, entry.path );
+        severityItem->setData( Qt::UserRole + 1, entry.line );
+        if( entry.severity == 1 )
+            severityItem->setForeground( QColor( 0xD1, 0x34, 0x38 ) );
+
+        table->setItem( row, 0, severityItem );
+        table->setItem( row, 1, new QTableWidgetItem( QFileInfo( entry.path ).fileName() ) );
+
+        auto* lineItem = new QTableWidgetItem( QString::number( entry.line ) );
+        lineItem->setTextAlignment( Qt::AlignRight | Qt::AlignVCenter );
+        table->setItem( row, 2, lineItem );
+
+        table->setItem( row, 3, new QTableWidgetItem( entry.message ) );
+        table->setItem( row, 4, new QTableWidgetItem( entry.source ) );
+
+        // 전체 경로는 툴팁으로 (파일명만으로는 멀티루트에서 구분이 안 된다).
+        table->item( row, 1 )->setToolTip( QDir::toNativeSeparators( entry.path ) );
+    }
+
+    appendLog( tr( "진단 %1건" ).arg( entries.size() ) );
 }
 
 void MainWindow::setupPythonEnvironment()

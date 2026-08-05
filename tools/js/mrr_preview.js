@@ -295,7 +295,55 @@
         bridge.scrollFeedbackSuppressed.connect(function (milliseconds) {
             suppressUntil = now() + milliseconds;
         });
+        bridge.hotSwapRequested.connect(function (documentHtml, baseUrl, token) {
+            hotSwap(documentHtml, baseUrl, token);
+        });
         bridge.ready(PROTOCOL_VERSION);
+    }
+
+    /// 전체 리로드 없이 body 만 교체한다.
+    ///
+    /// 재빌드마다 페이지를 새로 로드하면 흰 화면이 한 번 깜빡이고 스크롤이
+    /// 튄다. <head> 가 그대로일 때만 C++ 이 이 경로를 고르므로, 이미 적용된
+    /// 스타일시트는 그대로 두고 본문만 바꾸면 된다.
+    function hotSwap(documentHtml, baseUrl, token) {
+        try {
+            var parsed = new DOMParser().parseFromString(documentHtml, "text/html");
+            if (!parsed || !parsed.body) {
+                throw new Error("parse failed");
+            }
+
+            // 출력 디렉터리가 빌드마다 바뀌므로 상대 경로(_static/, 이미지)가
+            // 새 디렉터리를 가리키도록 <base> 를 갱신한다.
+            if (baseUrl) {
+                var base = document.querySelector("base[data-mrr-preview-base]");
+                if (!base) {
+                    base = document.createElement("base");
+                    base.setAttribute("data-mrr-preview-base", "");
+                    document.head.insertBefore(base, document.head.firstChild);
+                }
+                base.setAttribute("href", baseUrl);
+            }
+
+            var keepX = window.scrollX;
+            var keepY = window.scrollY;
+
+            // 교체 도중 문서 높이가 줄면 브라우저가 스크롤을 잘라버린다.
+            var previousMinHeight = document.body.style.minHeight;
+            document.body.style.minHeight = document.body.scrollHeight + "px";
+
+            document.body.innerHTML = parsed.body.innerHTML;
+            invalidateCache();
+
+            window.scrollTo(keepX, keepY);
+            document.body.style.minHeight = previousMinHeight;
+
+            suppressUntil = now() + FEEDBACK_GUARD_MS;
+            bridge.hotSwapResult(token, true, "");
+        } catch (error) {
+            // 실패하면 C++ 이 전체 리로드로 되돌린다.
+            bridge.hotSwapResult(token, false, String(error));
+        }
     }
 
     // 매핑 함수 검증용 훅. 스크롤 동기화 정확도는 눈으로 보기 어려워서

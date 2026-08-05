@@ -126,4 +126,17 @@ void PreviewBridge::previewScrolled( const int sourceIndex, const double line, c
     emit previewScrollChanged( sourceIndex, line, viewportRatio );
 }
 
+void PreviewBridge::requestHotSwap( const QString& documentHtml, const QString& baseUrl, const int token )
+{
+    if( !ready_ )
+        return;
+
+    emit hotSwapRequested( documentHtml, baseUrl, token );
+}
+
+void PreviewBridge::hotSwapResult( const int token, const bool ok, const QString& message )
+{
+    emit hotSwapCompleted( token, ok, message );
+}
+
 }  // namespace mrst

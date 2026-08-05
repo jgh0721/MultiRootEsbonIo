@@ -191,6 +191,8 @@ private:
 
     void                                setupPythonEnvironment();
     void                                updateEnvStatusChip();
+    void                                setupDiagnosticsTable();
+    void                                refreshDiagnosticsTable();
 
     mrst::WorkspaceController*          controller_ = nullptr;
     mrst::PythonEnvManager*             pythonEnv_ = nullptr;
