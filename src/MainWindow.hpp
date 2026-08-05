@@ -29,6 +29,7 @@ class QTimer;
 class QVBoxLayout;
 
 namespace mrst {
+class PythonEnvManager;
 class WorkspaceController;
 }
 
@@ -188,6 +189,11 @@ private:
     void                                refreshProjectList();
     [[nodiscard]] QTextView*            textViewOf( QBaseView* view ) const;
 
+    void                                setupPythonEnvironment();
+    void                                updateEnvStatusChip();
+
     mrst::WorkspaceController*          controller_ = nullptr;
+    mrst::PythonEnvManager*             pythonEnv_ = nullptr;
+    QLabel*                             envStatusLabel_ = nullptr;   // 상태 표시줄 환경 칩
 
 };

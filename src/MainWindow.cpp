@@ -3,6 +3,7 @@
 
 #include "core/solAppSettings.hpp"
 #include "core/solBaseView.hpp"
+#include "core/solPythonEnvMgr.hpp"
 #include "core/solRestWorkspaceController.hpp"
 #include "core/solThemeManager.hpp"
 #include "core/solShadowBackupStore.hpp"
@@ -539,6 +540,8 @@ MainWindow::MainWindow( QWidget* parent )
     controller_ = new mrst::WorkspaceController( this );
     controller_->setPreviewView( Ui.webEngineView );
     connect( controller_, &mrst::WorkspaceController::logMessage, this, &MainWindow::appendLog );
+
+    setupPythonEnvironment();
 
     if( settings.value( "textView/hotExitEnabled", true ).toBool() )
     {
@@ -2264,6 +2267,44 @@ void MainWindow::refreshProjectList()
 QTextView* MainWindow::textViewOf( QBaseView* view ) const
 {
     return qobject_cast< QTextView* >( view );
+}
+
+void MainWindow::setupPythonEnvironment()
+{
+    pythonEnv_ = new mrst::PythonEnvManager( this );
+
+    envStatusLabel_ = new QLabel( this );
+    envStatusLabel_->setContentsMargins( 8, 0, 8, 0 );
+    statusBar()->addPermanentWidget( envStatusLabel_ );
+
+    connect( pythonEnv_, &mrst::PythonEnvManager::bootstrapLog, this, &MainWindow::appendLog );
+    connect( pythonEnv_, &mrst::PythonEnvManager::stateChanged, this,
+            [this]( mrst::EnvState ) { updateEnvStatusChip(); } );
+    connect( pythonEnv_, &mrst::PythonEnvManager::progressChanged, this,
+            [this]( const int percent, const QString& phase ) {
+                if( envStatusLabel_ == nullptr )
+                    return;
+                envStatusLabel_->setText( percent < 0
+                                             ? tr( "환경: %1" ).arg( phase )
+                                             : tr( "환경: %1 (%2%)" ).arg( phase ).arg( percent ) );
+            } );
+
+    updateEnvStatusChip();
+
+    // startup 을 막지 않는다. 창이 뜬 뒤에 백그라운드로 시작한다.
+    if( pythonEnv_->autoBootstrap() && !pythonEnv_->isReady() )
+        QTimer::singleShot( 0, this, [this] { pythonEnv_->ensureEnvironmentAsync(); } );
+}
+
+void MainWindow::updateEnvStatusChip()
+{
+    if( envStatusLabel_ == nullptr || pythonEnv_ == nullptr )
+        return;
+
+    envStatusLabel_->setText( tr( "환경: %1" ).arg( pythonEnv_->stateText() ) );
+    envStatusLabel_->setToolTip( pythonEnv_->isReady()
+                                    ? QDir::toNativeSeparators( pythonEnv_->pythonExe() )
+                                    : pythonEnv_->lastError() );
 }
 
 void MainWindow::openStartupPath( const QString& path )
