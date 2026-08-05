@@ -1,9 +1,12 @@
 ﻿#pragma once
 
 #include "ScintillaDocument.hpp"
+#include "RstContainerLexer.hpp"
 
 #include <QFont>
 #include <QPointer>
+
+#include <memory>
 
 class ScintillaEditBase;
 
@@ -116,6 +119,12 @@ public:
 	bool applyLanguage(const QString& displayName);
 	void applyThemeColors(bool dark);
 
+	/// reST 컨테이너 렉서의 메타데이터 캐시. Esbonio 자동완성 결과를 여기에
+	/// 넣으면 directive/role 이 UNKNOWN -> VALID/INVALID 로 바뀐다.
+	/// 컨테이너 렉싱 중이 아니면 nullptr.
+	[[nodiscard]] mrst::rst::RstMetadataCache* rstMetadataCache() const;
+	void restyleDocument();
+
 signals:
 	void modificationChanged(bool modified);
 	void cursorPositionChanged(int line, int index);
@@ -137,9 +146,12 @@ private:
 	void updateBraceHighlight();
 	void clearLexer();
 	void applySyntaxStyles(bool dark);
+	void applyRstSyntaxStyles();
 	void setKeywordsForLexer(const QString& lexerKey);
+	void handleStyleNeeded(int endPosition);
 
 	QPointer<ScintillaEditBase> m_editor;
+	std::unique_ptr<mrst::rst::RstContainerLexer> m_rstLexer;   // 컨테이너 렉싱 중에만 유효
 	Scintilla::ILexer5*         m_currentLexer = nullptr; // Non-owning after SCI_SETILEXER while the editor is alive; cleared when the editor dies.
 	QFont               m_editorFont;
 	QString             m_currentLexerKey;

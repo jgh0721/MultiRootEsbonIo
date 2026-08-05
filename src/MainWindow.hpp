@@ -41,6 +41,9 @@ public:
     ~MainWindow() override;
 
     void openFile( const QString& filePath );
+    /// 명령줄 인자로 받은 경로를 연다. 폴더면 워크스페이스로, 파일이면 상위
+    /// 폴더를 워크스페이스로 잡고 파일을 연다.
+    void openStartupPath( const QString& path );
     QBaseView* currentView() const;
 
 public slots:

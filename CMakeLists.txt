@@ -69,6 +69,8 @@ add_executable(${PROJECT_NAME}
         src/editor/ScintillaQtDirectBackend.hpp
         src/editor/QBaseEditor.cpp
         src/editor/QBaseEditor.hpp
+        src/editor/RstContainerLexer.cpp
+        src/editor/RstContainerLexer.hpp
         src/editor/FindReplaceWidget.cpp
         src/editor/FindReplaceWidget.hpp
         src/editor/ColumnRulerWidget.hpp

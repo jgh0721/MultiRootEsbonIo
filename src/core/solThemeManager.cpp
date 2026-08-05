@@ -214,6 +214,27 @@ QList< ThemeManager::ColorEntry > ThemeManager::editableColorEntries()
         { QStringLiteral( "text.lexer.css.preprocessor" ), tr( "CSS 속성" ), tr( "TEXT Lexer 상세" ) },
         { QStringLiteral( "text.lexer.bash.variable" ), tr( "Bash 변수" ), tr( "TEXT Lexer 상세" ) },
         { QStringLiteral( "text.lexer.sql.keyword" ), tr( "SQL 키워드" ), tr( "TEXT Lexer 상세" ) },
+
+        // reStructuredText 는 Lexilla 렉서가 없어 자체 컨테이너 렉서로 칠한다.
+        // directive/role 은 Esbonio 자동완성으로 확인되기 전까지 UNKNOWN 색을 쓴다.
+        { QStringLiteral( "text.lexer.rst.title" ), tr( "reST 제목" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.transition" ), tr( "reST 구분선" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.comment" ), tr( "reST 주석" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.explicitMarkup" ), tr( "reST 명시적 마크업(..)" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.directiveValid" ), tr( "reST directive (확인됨)" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.directiveInvalid" ), tr( "reST directive (알 수 없음)" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.directiveUnknown" ), tr( "reST directive (미확인)" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.roleValid" ), tr( "reST role (확인됨)" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.roleInvalid" ), tr( "reST role (알 수 없음)" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.roleUnknown" ), tr( "reST role (미확인)" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.literal" ), tr( "reST 리터럴 블록" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.inlineLiteral" ), tr( "reST 인라인 리터럴(``)" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.emphasis" ), tr( "reST 강조(*)" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.strong" ), tr( "reST 굵게(**)" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.interpreted" ), tr( "reST 해석 텍스트" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.hyperlink" ), tr( "reST 하이퍼링크" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.substitution" ), tr( "reST 치환(|..|)" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.fieldName" ), tr( "reST 필드명" ), tr( "TEXT Lexer reST" ) },
     };
 }
 
@@ -372,6 +393,52 @@ QHash< QString, QColor > ThemeManager::defaultColors( Theme theme )
                       c.value( QStringLiteral( "text.lexer.%1" ).arg( tokenKey ) ) );
         }
     }
+
+    // reStructuredText: 토큰 구성이 프로그래밍 언어와 달라 일반 lexer 색을
+    // 재활용하지 않고 별도로 지정한다.
+    if( theme == Dark )
+    {
+        c.insert( QStringLiteral( "text.lexer.rst.title" ), QColor( QStringLiteral( "#66D9EF" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.transition" ), QColor( QStringLiteral( "#75715E" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.comment" ), QColor( QStringLiteral( "#75715E" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.explicitMarkup" ), QColor( QStringLiteral( "#9A9581" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.directiveValid" ), QColor( QStringLiteral( "#A6E22E" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.directiveInvalid" ), QColor( QStringLiteral( "#F92672" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.directiveUnknown" ), QColor( QStringLiteral( "#AE81FF" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.roleValid" ), QColor( QStringLiteral( "#66D9EF" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.roleInvalid" ), QColor( QStringLiteral( "#F92672" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.roleUnknown" ), QColor( QStringLiteral( "#AE81FF" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.literal" ), QColor( QStringLiteral( "#E6DB74" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.inlineLiteral" ), QColor( QStringLiteral( "#E6DB74" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.emphasis" ), QColor( QStringLiteral( "#D8CFA0" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.strong" ), QColor( QStringLiteral( "#FD971F" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.interpreted" ), QColor( QStringLiteral( "#66D9EF" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.hyperlink" ), QColor( QStringLiteral( "#66D9EF" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.substitution" ), QColor( QStringLiteral( "#A6E22E" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.fieldName" ), QColor( QStringLiteral( "#F92672" ) ) );
+    }
+    else
+    {
+        c.insert( QStringLiteral( "text.lexer.rst.title" ), QColor( QStringLiteral( "#0078A8" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.transition" ), QColor( QStringLiteral( "#8C8778" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.comment" ), QColor( QStringLiteral( "#75715E" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.explicitMarkup" ), QColor( QStringLiteral( "#8C8778" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.directiveValid" ), QColor( QStringLiteral( "#3B7D00" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.directiveInvalid" ), QColor( QStringLiteral( "#D0005F" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.directiveUnknown" ), QColor( QStringLiteral( "#7C4DFF" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.roleValid" ), QColor( QStringLiteral( "#0078A8" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.roleInvalid" ), QColor( QStringLiteral( "#D0005F" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.roleUnknown" ), QColor( QStringLiteral( "#7C4DFF" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.literal" ), QColor( QStringLiteral( "#8A6D00" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.inlineLiteral" ), QColor( QStringLiteral( "#8A6D00" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.emphasis" ), QColor( QStringLiteral( "#6B5A00" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.strong" ), QColor( QStringLiteral( "#B85C00" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.interpreted" ), QColor( QStringLiteral( "#0078A8" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.hyperlink" ), QColor( QStringLiteral( "#0057B8" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.substitution" ), QColor( QStringLiteral( "#3B7D00" ) ) );
+        c.insert( QStringLiteral( "text.lexer.rst.fieldName" ), QColor( QStringLiteral( "#D0005F" ) ) );
+    }
+
     return c;
 }
 

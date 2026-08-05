@@ -2265,3 +2265,20 @@ QTextView* MainWindow::textViewOf( QBaseView* view ) const
 {
     return qobject_cast< QTextView* >( view );
 }
+
+void MainWindow::openStartupPath( const QString& path )
+{
+    const QFileInfo info( path );
+    if( !info.exists() )
+        return;
+
+    if( info.isDir() )
+    {
+        setWorkspace( info.absoluteFilePath() );
+        return;
+    }
+
+    // 파일이면 상위 폴더를 워크스페이스로 삼아야 프로젝트 스캔이 동작한다.
+    setWorkspace( info.absolutePath() );
+    openFile( info.absoluteFilePath() );
+}

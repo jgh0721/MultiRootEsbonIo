@@ -188,6 +188,7 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 			});
 	connect(m_editor, &ScintillaEditBase::styleNeeded,
 			this, [this](Scintilla::Position position) {
+				handleStyleNeeded(static_cast<int>(position));
 				emit styleNeeded(static_cast<int>(position));
 			});
 	connect(m_editor, &ScintillaEditBase::charAdded,
@@ -908,6 +909,23 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 	clearLexer();
 
 	const QString lexerKey = TextLexerRegistry::instance().lexerKeyForDisplayName(displayName);
+
+	// reStructuredText: Lexilla 에 렉서가 없으므로 컨테이너 렉싱을 쓴다.
+	// ILexer 를 비운 채 SCI_COLOURISE 를 보내면 Scintilla 가 SCN_STYLENEEDED 로
+	// 스타일을 요청하고, handleStyleNeeded() 가 직접 칠한다.
+	if (lexerKey.compare(QStringLiteral("rst-container"), Qt::CaseInsensitive) == 0) {
+		m_rstLexer = std::make_unique<mrst::rst::RstContainerLexer>();
+		m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
+		m_editor->send(sciMessage(SCI_SETPROPERTY),
+			reinterpret_cast<uptr_t>("fold"),
+			reinterpret_cast<sptr_t>("0"));
+		m_currentLexerKey = lexerKey;
+		applySyntaxStyles(m_darkTheme);
+		m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
+		writeLexerTrace(displayName, lexerKey, true);
+		return true;
+	}
+
 	if (lexerKey.compare(QStringLiteral("none"), Qt::CaseInsensitive) == 0) {
 		// ILexer 를 비우면 Scintilla 는 컨테이너 렉싱 모드가 되지만, 여기서는
 		// SCI_COLOURISE 를 보내지 않으므로 styleNeeded 도 발생하지 않아 무채색이 된다.
@@ -1099,6 +1117,110 @@ void ScintillaQtDirectBackend::clearLexer()
 		m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
 	m_currentLexer = nullptr;
 	m_currentLexerKey.clear();
+	m_rstLexer.reset();
+}
+
+mrst::rst::RstMetadataCache* ScintillaQtDirectBackend::rstMetadataCache() const
+{
+	return m_rstLexer ? &m_rstLexer->metadataCache() : nullptr;
+}
+
+void ScintillaQtDirectBackend::restyleDocument()
+{
+	if (!m_editor)
+		return;
+
+	// SCI_STARTSTYLING(0) 으로 endStyled 를 되돌려야 문서 전체가 다시 요청된다.
+	m_editor->send(sciMessage(SCI_STARTSTYLING), 0);
+	m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
+}
+
+void ScintillaQtDirectBackend::handleStyleNeeded(int endPosition)
+{
+	if (!m_editor || !m_rstLexer)
+		return;
+
+	const int documentEnd = documentLength();
+	const int startPosition = endStyled();
+	if (endPosition <= startPosition || startPosition >= documentEnd)
+		return;
+
+	const int totalLines = qMax(1, lineCount());
+	const int firstLine = lineFromPosition(startPosition);
+	const int lastLine = qMin(lineFromPosition(qMin(endPosition, documentEnd)), totalLines - 1);
+
+	// 렉서는 제목/구분선 판정을 위해 앞뒤 한 줄을 문맥으로 요구한다.
+	// 문맥까지 포함해 렉싱한 뒤, 실제로 칠할 구간만 잘라 쓴다.
+	const int contextFirstLine = qMax(0, firstLine - 1);
+	const int contextLastLine = qMin(totalLines - 1, lastLine + 1);
+
+	const int contextStart = positionFromLine(contextFirstLine);
+	const int contextEnd = (contextLastLine + 1 < totalLines)
+		? positionFromLine(contextLastLine + 1)
+		: documentEnd;
+
+	const QByteArray chunk = textRangeUtf8(contextStart, contextEnd);
+	if (chunk.isEmpty())
+		return;
+
+	const std::vector<unsigned char> styles =
+		m_rstLexer->styleBytes(std::string(chunk.constData(), static_cast<std::size_t>(chunk.size())));
+
+	const int paintStart = positionFromLine(firstLine);
+	const int paintEnd = (lastLine + 1 < totalLines) ? positionFromLine(lastLine + 1) : documentEnd;
+	const int offset = paintStart - contextStart;
+	const int length = paintEnd - paintStart;
+	if (offset < 0 || length <= 0 || static_cast<std::size_t>(offset + length) > styles.size())
+		return;
+
+	QByteArray styleBytes(length, Qt::Uninitialized);
+	std::memcpy(styleBytes.data(), styles.data() + offset, static_cast<std::size_t>(length));
+
+	startStyling(paintStart);
+	setStylingEx(styleBytes);
+}
+
+void ScintillaQtDirectBackend::applyRstSyntaxStyles()
+{
+	if (!m_editor)
+		return;
+
+	using namespace mrst::rst;
+	auto& theme = ThemeManager::instance();
+	const auto rstColour = [&theme](const char* token) {
+		return theme.color(QStringLiteral("text.lexer.rst.%1").arg(QLatin1String(token)));
+	};
+
+	setStyleForeground(STYLE_TITLE, rstColour("title"));
+	setStyleBold(STYLE_TITLE, true);
+	setStyleForeground(STYLE_TRANSITION, rstColour("transition"));
+	setStyleForeground(STYLE_COMMENT, rstColour("comment"));
+	setStyleItalic(STYLE_COMMENT, true);
+	setStyleForeground(STYLE_EXPLICIT_MARKUP, rstColour("explicitMarkup"));
+
+	setStyleForeground(STYLE_DIRECTIVE_VALID, rstColour("directiveValid"));
+	setStyleBold(STYLE_DIRECTIVE_VALID, true);
+	setStyleForeground(STYLE_DIRECTIVE_INVALID, rstColour("directiveInvalid"));
+	setStyleBold(STYLE_DIRECTIVE_INVALID, true);
+	setStyleForeground(STYLE_DIRECTIVE_UNKNOWN, rstColour("directiveUnknown"));
+	setStyleBold(STYLE_DIRECTIVE_UNKNOWN, true);
+
+	setStyleForeground(STYLE_ROLE_VALID, rstColour("roleValid"));
+	setStyleForeground(STYLE_ROLE_INVALID, rstColour("roleInvalid"));
+	setStyleForeground(STYLE_ROLE_UNKNOWN, rstColour("roleUnknown"));
+
+	setStyleForeground(STYLE_LITERAL, rstColour("literal"));
+	setStyleForeground(STYLE_INLINE_LITERAL, rstColour("inlineLiteral"));
+	setStyleForeground(STYLE_EMPHASIS, rstColour("emphasis"));
+	setStyleItalic(STYLE_EMPHASIS, true);
+	setStyleForeground(STYLE_STRONG, rstColour("strong"));
+	setStyleBold(STYLE_STRONG, true);
+	setStyleForeground(STYLE_INTERPRETED, rstColour("interpreted"));
+	setStyleForeground(STYLE_HYPERLINK, rstColour("hyperlink"));
+	setStyleUnderline(STYLE_HYPERLINK, true);
+	setStyleForeground(STYLE_SUBSTITUTION, rstColour("substitution"));
+	setStyleForeground(STYLE_FIELD_NAME, rstColour("fieldName"));
+	setStyleBold(STYLE_FIELD_NAME, true);
 }
 
 void ScintillaQtDirectBackend::applyThemeColors(bool dark)
@@ -1152,6 +1274,11 @@ void ScintillaQtDirectBackend::applyThemeColors(bool dark)
 	m_darkTheme = ThemeManager::instance().currentTheme() == ThemeManager::Dark;
 	configureBraceHighlightIndicators();
 	applySyntaxStyles(m_darkTheme);
+
+	// SCI_STYLECLEARALL 이 컨테이너 스타일까지 초기화하므로 다시 칠해야 한다.
+	if (m_rstLexer)
+		restyleDocument();
+
 	m_editor->update();
 }
 
@@ -1159,6 +1286,12 @@ void ScintillaQtDirectBackend::applySyntaxStyles(bool dark)
 {
 	if (!m_editor || m_currentLexerKey.isEmpty())
 		return;
+
+	// reST 는 Lexilla 스타일 번호 체계를 쓰지 않으므로 별도 경로.
+	if (m_currentLexerKey == QStringLiteral("rst-container")) {
+		applyRstSyntaxStyles();
+		return;
+	}
 
 	auto colourToSci = [](unsigned int r, unsigned int g, unsigned int b) -> sptr_t {
 		return static_cast<sptr_t>(r | (g << 8) | (b << 16));

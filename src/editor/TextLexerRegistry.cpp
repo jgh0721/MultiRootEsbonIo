@@ -135,8 +135,13 @@ QVector<TextLexerProfile> TextLexerRegistry::fallbackProfiles()
     return {
         {QStringLiteral("none"), QStringLiteral("None"), QStringLiteral("none"),
             {QStringLiteral("txt"), QStringLiteral("log"), QStringLiteral("ini"), QStringLiteral("cfg"),
-             QStringLiteral("toml"), QStringLiteral("php"), QStringLiteral("rb"), QStringLiteral("go"),
+             QStringLiteral("php"), QStringLiteral("rb"), QStringLiteral("go"),
              QStringLiteral("rs")}},
+        // Lexilla 에 reStructuredText 렉서가 없어 자체 컨테이너 렉서를 쓴다.
+        // lexerKey "rst-container" 는 ScintillaQtDirectBackend 가 특별 취급한다.
+        {QStringLiteral("restructuredtext"), QStringLiteral("reStructuredText"), QStringLiteral("rst-container"),
+            {QStringLiteral("rst"), QStringLiteral("rest")}},
+        {QStringLiteral("toml"), QStringLiteral("TOML"), QStringLiteral("toml"), {QStringLiteral("toml")}},
         {QStringLiteral("cpp"), QStringLiteral("C++"), QStringLiteral("cpp"),
             {QStringLiteral("cpp"), QStringLiteral("c"), QStringLiteral("h"), QStringLiteral("hpp"), QStringLiteral("cxx")}},
         {QStringLiteral("python"), QStringLiteral("Python"), QStringLiteral("python"), {QStringLiteral("py")}},
@@ -150,7 +155,8 @@ QVector<TextLexerProfile> TextLexerRegistry::fallbackProfiles()
         {QStringLiteral("batch"), QStringLiteral("Batch"), QStringLiteral("batch"), {QStringLiteral("bat")}},
         {QStringLiteral("yaml"), QStringLiteral("YAML"), QStringLiteral("yaml"), {QStringLiteral("yaml"), QStringLiteral("yml")}},
         {QStringLiteral("sql"), QStringLiteral("SQL"), QStringLiteral("sql"), {QStringLiteral("sql")}},
-        {QStringLiteral("markdown"), QStringLiteral("Markdown"), QStringLiteral("markdown"), {}}
+        {QStringLiteral("markdown"), QStringLiteral("Markdown"), QStringLiteral("markdown"),
+            {QStringLiteral("md"), QStringLiteral("markdown")}}
     };
 }
 
