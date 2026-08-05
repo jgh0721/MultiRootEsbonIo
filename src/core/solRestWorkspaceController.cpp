@@ -168,10 +168,32 @@ WorkspaceController::WorkspaceController( QObject* parent )
         emit projectsChanged( count );
 
         // 스캔 완료 시점에 이미 열려 있던 문서들의 프로젝트를 뒤늦게 확정한다.
+        //
+        // 가상 프로젝트로 잡혀 있던 문서도 반드시 다시 확인해야 한다. 워크스페이스를
+        // 열기 전에 파일을 먼저 열었거나(핫 이그짓 복원 등) 스캔 전에 열렸다면
+        // 가상 프로젝트가 붙는데, 그 뒤 실제 프로젝트가 발견돼도 예전에는
+        // projectId 가 비어 있지 않다는 이유로 영영 승격되지 않았다.
+        // 그러면 conf.py 의 테마/확장이 적용되지 않은 채로 계속 렌더링된다.
         for( DocumentContext& context : documents_ )
         {
-            if( context.projectId.isEmpty() )
-                resolveProject( context );
+            if( !context.projectId.isEmpty() && !context.isVirtual )
+                continue;
+
+            const QString previousProjectId = context.projectId;
+            resolveProject( context );
+            if( context.projectId == previousProjectId )
+                continue;
+
+            // 담당 서버가 바뀌었으므로 새 서버에 다시 열어야 한다.
+            context.syncedToServer = false;
+            context.nudgedInitialBuild = false;
+            if( !previousProjectId.isEmpty() )
+            {
+                emit logMessage( tr( "프로젝트 재배정: %1 -> %2" )
+                                    .arg( previousProjectId, context.projectId ) );
+                // 더 이상 쓰이지 않는 가상 프로젝트 서버는 내린다.
+                lspPool_->stopProject( previousProjectId );
+            }
         }
         if( activeView_ )
             setActiveDocument( activeView_ );
@@ -697,6 +719,7 @@ void WorkspaceController::setActiveDocument( QTextView* view )
     if( shuttingDown_ )
         return;
 
+    QTextView* previousView = activeView_;
     activeView_ = view;
     if( view == nullptr )
     {
@@ -726,13 +749,24 @@ void WorkspaceController::setActiveDocument( QTextView* view )
         resolveProject( *context );
     }
 
-    if( context->projectId == activeProjectId_ )
-        return;
+    // 프로젝트가 바뀌었는지와 문서가 바뀌었는지는 별개다.
+    //
+    // 예전에는 projectId 가 같으면 곧바로 반환했는데, 한 프로젝트 안에 문서가
+    // 여러 개인 보통의 경우(docs/source 에 .rst 여러 개)에는 탭을 바꿔도
+    // 프리뷰가 이전 문서에 멈춰 있게 된다.
+    const bool projectChanged = ( context->projectId != activeProjectId_ );
+    const bool documentChanged = ( previousView != view );
 
-    activeProjectId_ = context->projectId;
-    emit activeProjectChanged( activeProjectId_, context->isVirtual );
-    emit logMessage( tr( "활성 프로젝트: %1" )
-                        .arg( activeProjectId_.isEmpty() ? unresolvedProjectLabel() : activeProjectId_ ) );
+    if( projectChanged )
+    {
+        activeProjectId_ = context->projectId;
+        emit activeProjectChanged( activeProjectId_, context->isVirtual );
+        emit logMessage( tr( "활성 프로젝트: %1" )
+                            .arg( activeProjectId_.isEmpty() ? unresolvedProjectLabel() : activeProjectId_ ) );
+    }
+
+    if( !projectChanged && !documentChanged )
+        return;   // 같은 문서에 대한 중복 호출
 
     requestPreviewBuild( true );
     ensureLspForActiveDocument();
