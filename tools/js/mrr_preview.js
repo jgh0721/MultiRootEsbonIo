@@ -137,12 +137,21 @@
         }
         points.sort(function (a, b) { return a.y - b.y || a.line - b.line; });
 
-        // 보간이 흔들리지 않으려면 y 와 line 이 함께 증가해야 한다.
-        // 순서가 뒤집힌 기준점(부동 요소 등)은 버린다.
+        // 보간이 흔들리지 않으려면 y 와 line 이 **둘 다** 증가해야 한다.
+        //
+        // y 가 같은 기준점이 연달아 나오는 경우가 실제로 많다. 예를 들어
+        // list-table 한 행의 셀 8개는 소스에서는 8줄이지만 화면에서는 모두 같은
+        // 높이에 있다. 이걸 그대로 두면 에디터에서 그 8줄을 지나는 동안 프리뷰가
+        // 멈춰 있다가 다음 행에서 갑자기 점프한다.
+        //
+        // 같은 y 를 가진 묶음에서는 첫 항목만 남긴다. 그러면 그 줄 범위 전체가
+        // 다음 기준점까지의 픽셀 구간에 고르게 매핑되어 스크롤이 매끄러워지고,
+        // 역변환도 하나의 값으로 확정된다.
         var monotonic = [];
         for (var m = 0; m < points.length; m += 1) {
             var last = monotonic.length ? monotonic[monotonic.length - 1] : null;
-            if (last && points[m].src === last.src && points[m].line <= last.line) {
+            if (last && points[m].src === last.src
+                && (points[m].line <= last.line || points[m].y <= last.y)) {
                 continue;
             }
             monotonic.push(points[m]);
