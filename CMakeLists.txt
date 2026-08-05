@@ -90,6 +90,8 @@ add_executable(${PROJECT_NAME}
         src/utils/DwmTitleBar.hpp
         src/utils/FileLoadHelper.cpp
         src/utils/FileLoadHelper.hpp
+        src/utils/ProcessReaper.cpp
+        src/utils/ProcessReaper.hpp
         uniqueLibs/solDocument_Defs.hpp
         uniqueLibs/solEncodingDetector.cpp
         uniqueLibs/solEncodingDetector.hpp
@@ -143,9 +145,15 @@ if(MRST_BUILD_TESTS)
             tests/main.cpp
             tests/TestRunner.hpp
             tests/tst_RstContainerLexer.cpp
+            tests/tst_LspMessageRouting.cpp
             # 테스트 대상 프로덕션 소스는 OBJECT 라이브러리로 빼지 않고 명시 나열한다
             # (globbing 금지 + 단일 타깃이라는 이 프로젝트의 규칙을 따른다).
             src/editor/RstContainerLexer.cpp
+            src/core/solEsbonioLspClient.cpp
+            src/core/solEsbonioLspClient.hpp
+            src/utils/ProcessReaper.cpp
+            src/core/solSphinxDiagnostics.cpp
+            src/core/solSphinxScanner.cpp
     )
     target_include_directories(mrst_tests PRIVATE
             "${CMAKE_SOURCE_DIR}"
@@ -153,7 +161,12 @@ if(MRST_BUILD_TESTS)
             "${CMAKE_SOURCE_DIR}/tests"
             "${CMAKE_SOURCE_DIR}/uniqueLibs"
     )
-    target_link_libraries(mrst_tests PRIVATE Qt6::Core Qt6::Test)
+    # 테스트 대상 소스가 stdafx.h 를 포함하고, 거기서 Qt 전 모듈을 끌어온다.
+    # 실제로 쓰는 건 Core 뿐이지만 헤더 경로를 얻으려면 링크가 필요하다.
+    target_link_libraries(mrst_tests PRIVATE
+            Qt6::Core Qt6::Core5Compat Qt6::Gui Qt6::Widgets
+            Qt6::WebEngineCore Qt6::WebEngineWidgets Qt6::Test
+    )
     if(MSVC)
         target_compile_options(mrst_tests PRIVATE /utf-8 /permissive- /Zc:__cplusplus)
     endif()

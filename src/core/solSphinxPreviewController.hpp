@@ -70,6 +70,10 @@ public:
 
 signals:
     void                                logMessage( const QString& text );
+    /// 이번 빌드에서 실제로 다시 읽힌 원본 파일들. 진단을 이 범위로만
+    /// 교체해야 증분 빌드에서 다른 파일의 진단이 사라지지 않는다.
+    /// diagnosticsReady 보다 먼저 발신된다.
+    void                                processedSourcesKnown( const QStringList& sources );
     void                                buildStarted( const QString& projectId );
     void                                buildFinished( const mrst::PreviewBuildResult& result );
     void                                diagnosticsReady( const QString& source,

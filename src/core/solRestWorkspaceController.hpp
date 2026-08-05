@@ -17,6 +17,7 @@ class QWebEngineView;
 namespace mrst {
 
 class DiagnosticsStore;
+class LspClient;
 class PreviewBridge;
 class ProjectRegistry;
 class PythonEnvManager;
@@ -84,6 +85,7 @@ signals:
     void                                missingDependenciesDetected( const QString& projectId,
                                                                      const QStringList& distributions,
                                                                      const QStringList& themes );
+    void                                lspStatusChanged( const QString& projectId, const QString& state );
 
 private:
     [[nodiscard]] DocumentContext*      contextFor( QTextView* view );
@@ -93,6 +95,13 @@ private:
     [[nodiscard]] QString               writeShadowCopy( QTextView* view, const QString& path ) const;
     void                                showPreviewHtml( const QString& htmlPath, const QString& documentKey );
     void                                refreshDiagnosticMarks( const QString& normalizedPath );
+
+    // ── Esbonio ──
+    // 지금은 활성 프로젝트 하나만 띄운다. 프로젝트당 하나씩 유지하는 풀은
+    // 다음 단계에서 이 자리를 대체한다.
+    void                                ensureLspForActiveDocument();
+    void                                syncDocumentToServer( DocumentContext& context, bool forceOpen );
+    void                                setLspStatus( const QString& state );
 
     // ── 스크롤 동기화 ──
     // 에디터 -> 프리뷰, 프리뷰 -> 에디터 양방향. 어느 쪽이든 "기준 비율 위치에
@@ -108,7 +117,10 @@ private:
     SphinxPreviewController*            previewController_ = nullptr;
     PreviewBridge*                      previewBridge_ = nullptr;
     DiagnosticsStore*                   diagnosticsStore_ = nullptr;
+    LspClient*                          lspClient_ = nullptr;
+    QString                             lspState_;
     QStringList                         previewSources_;      ///< data-mrr-src 인덱스 -> 원본 경로
+    QStringList                         previewProcessedSources_;  ///< 이번 빌드가 다시 읽은 파일들
     /// 한쪽이 유발한 스크롤이 되돌아와 무한 왕복하는 것을 막는다.
     qint64                              suppressSyncUntilMs_ = 0;
 

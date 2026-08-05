@@ -1,6 +1,8 @@
 ﻿#include "stdafx.h"
 #include "solEsbonioLspClient.hpp"
 
+#include "utils/ProcessReaper.hpp"
+
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -11,6 +13,26 @@
 
 namespace mrst {
 namespace {
+
+/// MRST_LSP_TRACE 가 지정되면 오가는 프레임을 그대로 파일에 남긴다.
+/// LSP 문제는 "아무 일도 안 일어난다" 로만 관측되기 때문에, 실제 트래픽을
+/// 볼 수단이 없으면 원인 추적이 사실상 불가능하다.
+void traceLsp(const char* direction, const QByteArray& payload) {
+    static const QString tracePath =
+        QString::fromLocal8Bit(qgetenv("MRST_LSP_TRACE")).trimmed();
+    if (tracePath.isEmpty()) {
+        return;
+    }
+
+    QFile file(tracePath);
+    if (!file.open(QIODevice::Append | QIODevice::Text)) {
+        return;
+    }
+    file.write(direction);
+    file.write(" ");
+    file.write(payload.left(4000));
+    file.write("\n");
+}
 
 // 경로 변환은 solSphinxScanner.hpp 의 mrst::toCanonicalQString() 을 쓴다.
 QString projectBuildChild(const SphinxProject& project, const QString& child) {
@@ -55,6 +77,24 @@ LspDocumentSymbol parseSymbolInformationObject(const QJsonObject& object) {
 }
 
 }  // namespace
+
+LspMessageKind classifyLspMessage(const QJsonObject& message) {
+    const bool hasId = message.contains(QStringLiteral("id"))
+                       && !message.value(QStringLiteral("id")).isNull();
+    const bool hasMethod = message.contains(QStringLiteral("method"))
+                           && !message.value(QStringLiteral("method")).toString().isEmpty();
+
+    if (hasId && hasMethod) {
+        return LspMessageKind::Request;
+    }
+    if (hasId) {
+        return LspMessageKind::Response;
+    }
+    if (hasMethod) {
+        return LspMessageKind::Notification;
+    }
+    return LspMessageKind::Invalid;
+}
 
 QList<LspDocumentSymbol> parseDocumentSymbols(const QJsonValue& result) {
     QList<LspDocumentSymbol> symbols;
@@ -103,7 +143,7 @@ QByteArray JsonRpcWriter::notify( const QString& method, const QJsonObject& para
     } );
 }
 
-QByteArray JsonRpcWriter::response( int id, const QJsonValue& result )
+QByteArray JsonRpcWriter::response( const QJsonValue& id, const QJsonValue& result )
 {
     return frame( {
         {QStringLiteral( "jsonrpc" ), QStringLiteral( "2.0" )},
@@ -193,7 +233,7 @@ void LspClient::start(const SphinxProject& project, const QString& pythonExe, co
     sphinxBuildExe_ = sphinxBuildExe;
     activeProjectId_ = QString::fromStdWString(project.projectId);
     documentVersions_.clear();
-    completionRequestIds_.clear();
+    pendingRequests_.clear();
     documentSymbolRequestPaths_.clear();
 
     process_ = std::make_unique<QProcess>();
@@ -214,6 +254,11 @@ void LspClient::start(const SphinxProject& project, const QString& pythonExe, co
         emit logMessage(QStringLiteral("Esbonio 시작 실패: %1").arg(pythonExe));
         return;
     }
+
+    // Esbonio 는 sphinx_agent 를 손자 프로세스로 띄운다. 우리가 자식만
+    // 종료해서는 손자가 남으므로 Job Object 로 묶어 앱과 함께 정리되게 한다.
+    assignToKillOnExitJob(process_->processId());
+
     emit logMessage(QStringLiteral("Esbonio 시작: %1").arg(activeProjectId_));
     initialize();
 }
@@ -232,7 +277,7 @@ void LspClient::stop() {
     process_.reset();
     activeProjectId_.clear();
     documentVersions_.clear();
-    completionRequestIds_.clear();
+    pendingRequests_.clear();
     documentSymbolRequestPaths_.clear();
 }
 
@@ -294,7 +339,7 @@ int LspClient::completion(const QString& path, int line, int column) {
         {QStringLiteral("textDocument"), textDocumentIdentifier(path)},
         {QStringLiteral("position"), QJsonObject{{QStringLiteral("line"), qMax(0, line - 1)}, {QStringLiteral("character"), qMax(0, column - 1)}}},
     }, &id));
-    completionRequestIds_.insert(id);
+    pendingRequests_.insert(id, QStringLiteral("textDocument/completion"));
     return id;
 }
 
@@ -306,6 +351,7 @@ int LspClient::documentSymbols(const QString& path) {
     write(writer_.request(QStringLiteral("textDocument/documentSymbol"), {
         {QStringLiteral("textDocument"), textDocumentIdentifier(path)},
     }, &id));
+    pendingRequests_.insert(id, QStringLiteral("textDocument/documentSymbol"));
     documentSymbolRequestPaths_.insert(id, QFileInfo(path).absoluteFilePath());
     return id;
 }
@@ -316,6 +362,7 @@ void LspClient::readStdout() {
     }
     parser_.append(process_->readAllStandardOutput());
     for (const QJsonObject& message : parser_.takeMessages()) {
+        traceLsp("<<", QJsonDocument(message).toJson(QJsonDocument::Compact));
         handleMessage(message);
         emit jsonMessage(message);
     }
@@ -338,37 +385,111 @@ void LspClient::initialize() {
     const QString buildDir = projectBuildChild(project_, QStringLiteral("lsp/dummy"));
     const QString doctreeDir = projectBuildChild(project_, QStringLiteral("lsp/doctrees"));
 
-    QJsonArray buildCommand{sphinxBuildExe_, QStringLiteral("-b"), QStringLiteral("dummy"), QStringLiteral("-c"), confDir, QStringLiteral("-d"), doctreeDir, sourceDir, buildDir};
+    int initializeId = 0;
     write(writer_.request(QStringLiteral("initialize"), {
         {QStringLiteral("processId"), QJsonValue::Null},
         {QStringLiteral("rootUri"), rootUri},
         {QStringLiteral("workspaceFolders"), QJsonArray{QJsonObject{{QStringLiteral("uri"), rootUri}, {QStringLiteral("name"), activeProjectId_}}}},
+        // Esbonio 는 선언된 capability 에 따라 동작을 바꾼다. 너무 얇게 선언하면
+        // 아예 다른 경로를 타므로 파이썬 원본 수준으로 맞춘다.
         {QStringLiteral("capabilities"), QJsonObject{
             {QStringLiteral("textDocument"), QJsonObject{
                 {QStringLiteral("synchronization"), QJsonObject{{QStringLiteral("didSave"), true}, {QStringLiteral("dynamicRegistration"), false}}},
-                {QStringLiteral("completion"), QJsonObject{{QStringLiteral("contextSupport"), true}}},
+                {QStringLiteral("completion"), QJsonObject{
+                    {QStringLiteral("contextSupport"), true},
+                    {QStringLiteral("completionItem"), QJsonObject{
+                        {QStringLiteral("snippetSupport"), false},
+                        {QStringLiteral("commitCharactersSupport"), true},
+                        {QStringLiteral("documentationFormat"), QJsonArray{QStringLiteral("markdown"), QStringLiteral("plaintext")}},
+                        {QStringLiteral("deprecatedSupport"), true},
+                        {QStringLiteral("preselectSupport"), true},
+                        {QStringLiteral("insertReplaceSupport"), true},
+                        {QStringLiteral("labelDetailsSupport"), true},
+                        {QStringLiteral("resolveSupport"), QJsonObject{
+                            {QStringLiteral("properties"), QJsonArray{QStringLiteral("documentation"),
+                                                                      QStringLiteral("detail"),
+                                                                      QStringLiteral("additionalTextEdits")}}}},
+                    }},
+                    {QStringLiteral("completionList"), QJsonObject{
+                        {QStringLiteral("itemDefaults"), QJsonArray{QStringLiteral("commitCharacters"),
+                                                                    QStringLiteral("editRange"),
+                                                                    QStringLiteral("insertTextFormat"),
+                                                                    QStringLiteral("insertTextMode"),
+                                                                    QStringLiteral("data")}}}},
+                }},
+                {QStringLiteral("documentSymbol"), QJsonObject{
+                    {QStringLiteral("hierarchicalDocumentSymbolSupport"), true},
+                }},
                 {QStringLiteral("publishDiagnostics"), QJsonObject{{QStringLiteral("relatedInformation"), true}}},
             }},
+            {QStringLiteral("window"), QJsonObject{{QStringLiteral("workDoneProgress"), true}}},
             {QStringLiteral("workspace"), QJsonObject{{QStringLiteral("workspaceFolders"), true}, {QStringLiteral("configuration"), true}}},
         }},
         {QStringLiteral("initializationOptions"), QJsonObject{
-            {QStringLiteral("esbonio"), QJsonObject{{QStringLiteral("sphinx"), QJsonObject{{QStringLiteral("buildCommand"), buildCommand}, {QStringLiteral("cwd"), rootPath}}}}},
+            {QStringLiteral("esbonio"), QJsonObject{{QStringLiteral("sphinx"), sphinxConfiguration()}}},
+            // Esbonio 1.x 형식 폴백.
             {QStringLiteral("sphinx"), QJsonObject{{QStringLiteral("confDir"), confDir}, {QStringLiteral("srcDir"), sourceDir}, {QStringLiteral("buildDir"), buildDir}}},
         }},
-    }));
+    }, &initializeId));
+    pendingRequests_.insert(initializeId, QStringLiteral("initialize"));
     write(writer_.notify(QStringLiteral("initialized"), {}));
 }
 
 void LspClient::handleMessage(const QJsonObject& message) {
-    if (message.contains(QStringLiteral("id")) && documentSymbolRequestPaths_.contains(message.value(QStringLiteral("id")).toInt())) {
-        const int id = message.value(QStringLiteral("id")).toInt();
+    switch (classifyLspMessage(message)) {
+        case LspMessageKind::Request:
+            handleServerRequest(message);
+            return;
+        case LspMessageKind::Response:
+            handleResponse(message);
+            return;
+        case LspMessageKind::Notification:
+            handleNotification(message.value(QStringLiteral("method")).toString(),
+                               message.value(QStringLiteral("params")).toObject());
+            return;
+        case LspMessageKind::Invalid:
+            return;
+    }
+}
+
+void LspClient::handleServerRequest(const QJsonObject& message) {
+    // id 를 int 로 바꾸지 않는다. Esbonio 는 문자열 UUID 를 쓴다.
+    const QJsonValue id = message.value(QStringLiteral("id"));
+    const QString method = message.value(QStringLiteral("method")).toString();
+
+    if (method == QStringLiteral("workspace/configuration")) {
+        // Esbonio 2.x 는 설정을 여기로 끌어간다. 빈 객체를 돌려주면 빌드 방법을
+        // 영영 알 수 없어 진단이 하나도 나오지 않는다.
+        const QJsonArray items = message.value(QStringLiteral("params")).toObject()
+                                     .value(QStringLiteral("items")).toArray();
+        QJsonArray result;
+        for (const QJsonValue& item : items) {
+            result.push_back(configurationForSection(
+                item.toObject().value(QStringLiteral("section")).toString()));
+        }
+        write(writer_.response(id, result));
+        return;
+    }
+
+    // 응답하지 않으면 서버가 그 자리에서 멈춘다. 모르는 요청도 null 로 답한다.
+    write(writer_.response(id, QJsonValue()));
+}
+
+void LspClient::handleResponse(const QJsonObject& message) {
+    const int id = message.value(QStringLiteral("id")).toInt();
+    const QString method = pendingRequests_.take(id);
+    if (method.isEmpty()) {
+        return;
+    }
+
+    if (method == QStringLiteral("textDocument/documentSymbol")) {
         const QString path = documentSymbolRequestPaths_.take(id);
         emit documentSymbolsReady(path, parseDocumentSymbols(message.value(QStringLiteral("result"))));
         return;
     }
 
-    if (message.contains(QStringLiteral("id")) && completionRequestIds_.remove(message.value(QStringLiteral("id")).toInt())) {
-        QJsonValue result = message.value(QStringLiteral("result"));
+    if (method == QStringLiteral("textDocument/completion")) {
+        const QJsonValue result = message.value(QStringLiteral("result"));
         QJsonArray rawItems;
         if (result.isArray()) {
             rawItems = result.toArray();
@@ -393,33 +514,89 @@ void LspClient::handleMessage(const QJsonObject& message) {
             }
         }
         emit completionsReady(items);
-        return;
     }
+}
 
-    const QString method = message.value(QStringLiteral("method")).toString();
+void LspClient::handleNotification(const QString& method, const QJsonObject& params) {
     if (method == QStringLiteral("textDocument/publishDiagnostics")) {
-        const QJsonObject params = message.value(QStringLiteral("params")).toObject();
         emit diagnosticsReady(QStringLiteral("esbonio"), parseLspDiagnostics(
             params.value(QStringLiteral("uri")).toString(),
             params.value(QStringLiteral("diagnostics")).toArray()));
         return;
     }
 
-    if (method == QStringLiteral("workspace/configuration") && message.contains(QStringLiteral("id"))) {
-        const int id = message.value(QStringLiteral("id")).toInt();
-        const QJsonArray items = message.value(QStringLiteral("params")).toObject().value(QStringLiteral("items")).toArray();
-        QJsonArray result;
-        for (qsizetype i = 0; i < items.size(); ++i) {
-            result.push_back(QJsonObject{});
+    if (method == QStringLiteral("window/logMessage") || method == QStringLiteral("window/showMessage")) {
+        const QString text = params.value(QStringLiteral("message")).toString().trimmed();
+        if (!text.isEmpty()) {
+            emit logMessage(text);
         }
-        write(writer_.response(id, result));
+        return;
     }
+
+    emit serverNotification(method, params);
+}
+
+QJsonObject LspClient::sphinxConfiguration() const {
+    const QString rootPath = toCanonicalQString(project_.rootPath);
+    const QString confDir = toCanonicalQString(project_.confPath.parent_path());
+    const QString sourceDir = toCanonicalQString(project_.sourcePath);
+    const QString buildDir = projectBuildChild(project_, QStringLiteral("lsp/dummy"));
+    const QString doctreeDir = projectBuildChild(project_, QStringLiteral("lsp/doctrees"));
+
+    QJsonObject configOverrides;
+    if (htmlStyleOverride_) {
+        configOverrides.insert(QStringLiteral("html_style"), QJsonValue::Null);
+    }
+
+    // pythonCommand 는 일부러 넣지 않는다. 넣으면 esbonio 가 그 인터프리터로
+    // 하위 프로세스를 다시 띄우는데, 비ASCII 경로에서 깨진다.
+    // (프로젝트별 인터프리터 지정은 Phase 8 에서 다룬다.)
+    // 첫 항목은 반드시 리터럴 "sphinx-build" 여야 한다.
+    // esbonio 의 sphinx_agent/config.py fromcli() 는
+    //     if args[0] == "sphinx-build": args = args[1:]
+    // 로 딱 이 문자열일 때만 프로그램 이름을 떼어낸다. 절대 경로를 넣으면
+    // 그게 그대로 남아 sphinx-build 의 첫 위치 인자, 즉 **source 디렉터리** 로
+    // 해석되어 "Cannot find source directory (...sphinx-build.exe)" 로 죽는다.
+    // 어차피 에이전트는 Sphinx 를 in-process 로 만들기 때문에 실행 파일 경로는
+    // 필요 없다.
+    return {
+        {QStringLiteral("buildCommand"), QJsonArray{
+            QStringLiteral("sphinx-build"), QStringLiteral("-b"), QStringLiteral("dummy"),
+            QStringLiteral("-c"), confDir,
+            QStringLiteral("-d"), doctreeDir,
+            sourceDir, buildDir}},
+        {QStringLiteral("cwd"), rootPath},
+        {QStringLiteral("configOverrides"), configOverrides},
+        {QStringLiteral("enableDevTools"), false},
+    };
+}
+
+QJsonValue LspClient::configurationForSection(const QString& section) const {
+    if (section.isEmpty() || section == QStringLiteral("esbonio")) {
+        return QJsonObject{
+            {QStringLiteral("sphinx"), sphinxConfiguration()},
+            {QStringLiteral("server"), QJsonObject{{QStringLiteral("logLevel"), QStringLiteral("info")}}},
+        };
+    }
+    if (section == QStringLiteral("esbonio.sphinx")) {
+        return sphinxConfiguration();
+    }
+    if (section == QStringLiteral("esbonio.server")) {
+        return QJsonObject{{QStringLiteral("logLevel"), QStringLiteral("info")}};
+    }
+    return QJsonObject{};
+}
+
+void LspClient::setHtmlStyleOverride(const bool overrideToNull) {
+    htmlStyleOverride_ = overrideToNull;
 }
 
 void LspClient::write(const QByteArray& frame) {
     if (process_ != nullptr && process_->state() != QProcess::NotRunning) {
+        traceLsp(">>", frame);
+        // waitForBytesWritten 을 걸면 메시지마다 GUI 가 멈춘다.
+        // QProcess 가 알아서 버퍼링하므로 필요 없다.
         process_->write(frame);
-        process_->waitForBytesWritten(100);
     }
 }
 

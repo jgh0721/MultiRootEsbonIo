@@ -47,6 +47,15 @@ private:
 };
 
 [[nodiscard]] std::string readRootDoc(const std::filesystem::path& confPath);
+
+/// conf.py 에 `html_style = ''` 이 있는지. Sphinx 8 에서 _static checksum
+/// 오류를 내므로 configOverrides 로 None 을 강제해야 한다.
+///
+/// 정규식이라 한계가 있다: 변수 대입(html_style = STYLE), 조건부 대입,
+/// 삼중따옴표 문자열 안의 텍스트는 잡지 못한다. 정확한 판정은 Python
+/// 빌더의 --auto-fix-legacy-conf(ast 파싱)가 하고, 이 함수는 런타임이 아직
+/// 준비되지 않은 시점의 폴백이다.
+[[nodiscard]] bool confDeclaresEmptyHtmlStyle(const std::filesystem::path& confPath);
 [[nodiscard]] std::filesystem::path inferSourcePath(const std::filesystem::path& rootPath, const std::string& rootDoc);
 [[nodiscard]] std::wstring projectIdFor(const std::filesystem::path& workspaceRoot, const std::filesystem::path& rootPath);
 [[nodiscard]] const SphinxProject* resolveProjectForFile(const std::filesystem::path& filePath, const std::vector<SphinxProject>& projects);

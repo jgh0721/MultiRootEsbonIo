@@ -256,6 +256,9 @@ void SphinxPreviewController::finishBuild( const bool processOk, const bool canc
 
     if( !cancelled )
     {
+        // 진단보다 먼저 "무엇이 다시 읽혔는지" 를 알려야 소비자가 교체 범위를
+        // 정할 수 있다.
+        emit processedSourcesKnown( result.sources );
         emit diagnosticsReady( QStringLiteral( "sphinx-build" ), result.diagnostics );
 
         if( !result.missingExtensions.isEmpty() || !result.missingThemes.isEmpty() )

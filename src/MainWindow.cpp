@@ -2389,9 +2389,9 @@ void MainWindow::setupPythonEnvironment()
     connect( pythonEnv_, &mrst::PythonEnvManager::stateChanged, this,
             [this]( mrst::EnvState ) { updateEnvStatusChip(); } );
     connect( pythonEnv_, &mrst::PythonEnvManager::readyChanged, this, [this]( const bool ready ) {
-        // 런타임이 준비되기 전에 열린 문서는 프리뷰를 건너뛰었으므로 지금 시도한다.
+        // 런타임이 준비되기 전에 열린 문서는 프리뷰/LSP 를 건너뛰었으므로 지금 시도한다.
         if( ready && controller_ != nullptr )
-            controller_->requestPreviewBuild( true );
+            controller_->setActiveDocument( textViewOf( currentView() ) );
     } );
     connect( pythonEnv_, &mrst::PythonEnvManager::progressChanged, this,
             [this]( const int percent, const QString& phase ) {

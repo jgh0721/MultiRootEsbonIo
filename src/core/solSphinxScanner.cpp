@@ -149,6 +149,30 @@ std::string readRootDoc(const fs::path& confPath) {
     return normalizeDocName(rootDoc);
 }
 
+bool confDeclaresEmptyHtmlStyle(const fs::path& confPath) {
+    std::ifstream file(confPath, std::ios::binary);
+    if (!file) {
+        return false;
+    }
+    std::ostringstream stream;
+    stream << file.rdbuf();
+    const std::string text = stream.str();
+
+    // 마지막 대입이 이긴다 (readRootDoc 과 같은 방식).
+    static const std::regex assignment(R"((?:^|\n)[ \t]*html_style[ \t]*(?::[^=\n]*)?=[ \t]*([^\n]*))");
+    bool empty = false;
+    for (std::sregex_iterator it(text.begin(), text.end(), assignment), end; it != end; ++it) {
+        std::string value = trim((*it)[1].str());
+        // 줄 끝 주석 제거 (따옴표 안의 #은 신경 쓰지 않는다 — 폴백이므로).
+        const std::size_t hash = value.find('#');
+        if (hash != std::string::npos) {
+            value = trim(value.substr(0, hash));
+        }
+        empty = (value == "''" || value == "\"\"" || value == "''''''" || value == "\"\"\"\"\"\"");
+    }
+    return empty;
+}
+
 fs::path inferSourcePath(const fs::path& rootPath, const std::string& rootDoc) {
     const fs::path rootDocPath(rootDoc);
     if (!rootDocPath.has_parent_path()) {
