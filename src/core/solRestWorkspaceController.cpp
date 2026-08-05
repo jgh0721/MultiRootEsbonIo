@@ -8,6 +8,7 @@
 #include "solPythonEnvMgr.hpp"
 #include "solSphinxPreviewController.hpp"
 #include "solSphinxProjectRegistry.hpp"
+#include "solVirtualProjectMgr.hpp"
 #include "editor/QBaseEditor.hpp"
 
 #include "solSphinxDiagnosticsStore.hpp"
@@ -74,9 +75,12 @@ WorkspaceController::WorkspaceController( QObject* parent )
     : QObject( parent )
     , registry_( new ProjectRegistry( this ) )
     , previewController_( new SphinxPreviewController( this ) )
+    , virtualProjects_( new VirtualProjectManager( this ) )
     , diagnosticsStore_( new DiagnosticsStore( this ) )
     , lspPool_( new LspServerPool( this ) )
 {
+    connect( virtualProjects_, &VirtualProjectManager::logMessage, this, &WorkspaceController::logMessage );
+
     connect( lspPool_, &LspServerPool::logMessage, this,
             [this]( const QString&, const QString& text ) { emit logMessage( text ); } );
     connect( lspPool_, &LspServerPool::diagnosticsReady, this,
@@ -358,7 +362,7 @@ void WorkspaceController::requestPreviewBuild( const bool immediate )
     if( view == nullptr || context == nullptr || context->path.isEmpty() )
         return;
 
-    const SphinxProject* project = registry_->findById( context->projectId );
+    const SphinxProject* project = lookupProject( context->projectId );
     if( project == nullptr )
         return;   // 가상 프로젝트는 Phase 7 에서 처리한다.
 
@@ -495,7 +499,7 @@ void WorkspaceController::ensureLspForActiveDocument()
     if( view == nullptr || context == nullptr || context->path.isEmpty() )
         return;
 
-    const SphinxProject* project = registry_->findById( context->projectId );
+    const SphinxProject* project = lookupProject( context->projectId );
     if( project == nullptr )
         return;   // 가상 프로젝트는 다음 단계에서 다룬다.
 
@@ -628,6 +632,9 @@ void WorkspaceController::shutdown()
     // LSP 프로세스는 위젯 파괴 전에 정리해야 고아로 남지 않는다.
     if( lspPool_ != nullptr )
         lspPool_->stopAll();
+    // 서버를 먼저 내린 뒤에 임시 디렉터리를 지운다 (아직 물고 있을 수 있다).
+    if( virtualProjects_ != nullptr )
+        virtualProjects_->cleanup();
     documents_.clear();
     activeView_ = nullptr;
     activeProjectId_.clear();
@@ -764,7 +771,29 @@ void WorkspaceController::resolveProject( DocumentContext& context )
         return;
 
     if( const SphinxProject* project = registry_->resolveForFile( context.path ) )
+    {
         context.projectId = QString::fromStdWString( project->projectId );
+        return;
+    }
+
+    // 스캔이 아직 안 끝났으면 가상 프로젝트를 만들지 않는다. 잠시 뒤 실제
+    // 프로젝트가 나타날 수 있는데, 그 사이에 임시 프로젝트를 만들면 같은
+    // 파일에 서버가 두 번 붙는다.
+    if( registry_->isScanning() )
+        return;
+
+    if( const SphinxProject* virtualProject = virtualProjects_->projectFor( context.path ) )
+    {
+        context.projectId = QString::fromStdWString( virtualProject->projectId );
+        context.isVirtual = true;
+    }
+}
+
+const SphinxProject* WorkspaceController::lookupProject( const QString& projectId ) const
+{
+    if( const SphinxProject* project = registry_->findById( projectId ) )
+        return project;
+    return virtualProjects_->findById( projectId );
 }
 
 void WorkspaceController::logProjectList()

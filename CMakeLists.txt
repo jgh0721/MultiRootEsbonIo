@@ -68,6 +68,8 @@ add_executable(${PROJECT_NAME}
         src/core/solRestWorkspaceController.hpp
         src/core/solSphinxProjectRegistry.cpp
         src/core/solSphinxProjectRegistry.hpp
+        src/core/solVirtualProjectMgr.cpp
+        src/core/solVirtualProjectMgr.hpp
         src/uis/dlgSettings.cpp
         src/uis/dlgSettings.hpp
         src/uis/dlgSettings.ui

@@ -23,6 +23,7 @@ class PreviewBridge;
 class ProjectRegistry;
 class PythonEnvManager;
 class SphinxPreviewController;
+class VirtualProjectManager;
 struct PreviewBuildResult;
 
 /// 열린 문서 하나에 대한 Sphinx 관점의 상태.
@@ -94,6 +95,8 @@ signals:
 private:
     [[nodiscard]] DocumentContext*      contextFor( QTextView* view );
     void                                resolveProject( DocumentContext& context );
+    /// 실제 프로젝트를 먼저 찾고, 없으면 가상 프로젝트에서 찾는다.
+    [[nodiscard]] const SphinxProject*  lookupProject( const QString& projectId ) const;
     void                                logProjectList();
     void                                onPreviewFinished( const PreviewBuildResult& result );
     [[nodiscard]] QString               writeShadowCopy( QTextView* view, const QString& path ) const;
@@ -124,6 +127,7 @@ private:
     PythonEnvManager*                   pythonEnv_ = nullptr;
     QWebEngineView*                     previewView_ = nullptr;
     SphinxPreviewController*            previewController_ = nullptr;
+    VirtualProjectManager*              virtualProjects_ = nullptr;
     PreviewBridge*                      previewBridge_ = nullptr;
     DiagnosticsStore*                   diagnosticsStore_ = nullptr;
     LspServerPool*                      lspPool_ = nullptr;

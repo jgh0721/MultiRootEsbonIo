@@ -17,4 +17,10 @@ namespace mrst {
 /// Windows 외 플랫폼에서는 아무 것도 하지 않는다.
 void assignToKillOnExitJob( qint64 processId );
 
+/// 그 PID 의 프로세스가 아직 살아 있는가.
+/// 크래시로 남은 임시 디렉터리를 정리할 때, 다른 인스턴스가 쓰는 것을 지우지
+/// 않으려고 쓴다. (PID 재사용으로 오탐할 수 있지만 방향이 안전한 쪽이다 —
+/// 살아 있다고 잘못 보면 지우지 않고 넘어갈 뿐이다.)
+[[nodiscard]] bool isProcessRunning( qint64 processId );
+
 }  // namespace mrst

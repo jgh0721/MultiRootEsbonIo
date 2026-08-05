@@ -55,10 +55,30 @@ void assignToKillOnExitJob( const qint64 processId )
     CloseHandle( process );
 }
 
+bool isProcessRunning( const qint64 processId )
+{
+    if( processId <= 0 )
+        return false;
+
+    HANDLE process = OpenProcess( SYNCHRONIZE, FALSE, static_cast< DWORD >( processId ) );
+    if( process == nullptr )
+        return false;
+
+    // 핸들이 열려도 이미 끝난 프로세스일 수 있다 (좀비). 대기 상태로 구분한다.
+    const DWORD wait = WaitForSingleObject( process, 0 );
+    CloseHandle( process );
+    return wait == WAIT_TIMEOUT;
+}
+
 #else
 
 void assignToKillOnExitJob( qint64 )
 {
+}
+
+bool isProcessRunning( qint64 )
+{
+    return false;
 }
 
 #endif
