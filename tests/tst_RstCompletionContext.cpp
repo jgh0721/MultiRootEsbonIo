@@ -25,6 +25,15 @@ private slots:
     void noContextInPlainText();
     void filtersByPrefix();
     void tablesAreNonEmpty();
+
+    // ── LSP 응답 다듬기 ──
+    void stripsLeadingSpaceInDirectiveContext();
+    void keepsLeadingSpaceOutsideDirectiveContext();
+    void keepsTrailingSpaceOfInsertText();
+    void dropsDuplicateAndEmptyInsertText();
+    void stripsSnippetControlCharacter();
+    void limitsItemCount();
+    void mergeKeepsPrimaryOrderAndSkipsDuplicates();
 };
 
 void TestRstCompletionContext::detectsDirective_data()
@@ -146,6 +155,93 @@ void TestRstCompletionContext::tablesAreNonEmpty()
 
     QCOMPARE( directives.size(), QSet< QString >( directives.begin(), directives.end() ).size() );
     QCOMPARE( roles.size(), QSet< QString >( roles.begin(), roles.end() ).size() );
+}
+
+// ── LSP 응답 다듬기 ────────────────────────────────────────
+
+namespace {
+
+QVector< Item > items( const QStringList& insertTexts )
+{
+    QVector< Item > result;
+    for( const QString& text : insertTexts )
+        result.push_back( { text.trimmed(), text, QString{}, 0 } );
+    return result;
+}
+
+QStringList insertTexts( const QVector< Item >& source )
+{
+    QStringList result;
+    for( const Item& item : source )
+        result << item.insertText;
+    return result;
+}
+
+}  // namespace
+
+void TestRstCompletionContext::stripsLeadingSpaceInDirectiveContext()
+{
+    // Esbonio 는 ".." 직후 발화를 전제로 " image::" 를 돌려준다.
+    // ".. " 까지 친 상태에서 그대로 넣으면 "..  image::" 가 된다.
+    const QVector< Item > normalized =
+        normalizeLspItems( items( { QStringLiteral( " image::" ), QStringLiteral( " note::" ) } ),
+                          QStringLiteral( ".. " ), 4 );
+
+    QCOMPARE( insertTexts( normalized ),
+             QStringList( { QStringLiteral( "image::" ), QStringLiteral( "note::" ) } ) );
+}
+
+void TestRstCompletionContext::keepsLeadingSpaceOutsideDirectiveContext()
+{
+    const QVector< Item > normalized =
+        normalizeLspItems( items( { QStringLiteral( " ref:" ) } ), QStringLiteral( "본문 :" ), 7 );
+    QCOMPARE( insertTexts( normalized ), QStringList( { QStringLiteral( " ref:" ) } ) );
+}
+
+void TestRstCompletionContext::keepsTrailingSpaceOfInsertText()
+{
+    // 끝 공백은 캐럿을 인자 자리로 보내는 의미가 있다. 잘라내면 안 된다.
+    const QVector< Item > normalized =
+        normalizeLspItems( items( { QStringLiteral( " code-block:: " ) } ),
+                          QStringLiteral( ".. co" ), 6 );
+    QCOMPARE( insertTexts( normalized ), QStringList( { QStringLiteral( "code-block:: " ) } ) );
+}
+
+void TestRstCompletionContext::dropsDuplicateAndEmptyInsertText()
+{
+    const QVector< Item > cleaned = finalizeItems( items( { QStringLiteral( "note::" ),
+                                                           QString{},
+                                                           QStringLiteral( "note::" ),
+                                                           QStringLiteral( "tip::" ) } ) );
+    QCOMPARE( insertTexts( cleaned ),
+             QStringList( { QStringLiteral( "note::" ), QStringLiteral( "tip::" ) } ) );
+}
+
+void TestRstCompletionContext::stripsSnippetControlCharacter()
+{
+    const QString withControl = QStringLiteral( "image::" ) + QChar( 0x0001 );
+    const QVector< Item > cleaned = finalizeItems( items( { withControl } ) );
+    QCOMPARE( insertTexts( cleaned ), QStringList( { QStringLiteral( "image::" ) } ) );
+}
+
+void TestRstCompletionContext::limitsItemCount()
+{
+    QStringList many;
+    for( int index = 0; index < 500; ++index )
+        many << QStringLiteral( "item%1" ).arg( index );
+
+    QCOMPARE( finalizeItems( items( many ) ).size(), 200 );
+    QCOMPARE( finalizeItems( items( many ), 5 ).size(), 5 );
+}
+
+void TestRstCompletionContext::mergeKeepsPrimaryOrderAndSkipsDuplicates()
+{
+    const QVector< Item > merged =
+        mergeItems( items( { QStringLiteral( "b" ), QStringLiteral( "a" ) } ),
+                   items( { QStringLiteral( "a" ), QStringLiteral( "c" ) } ) );
+
+    QCOMPARE( insertTexts( merged ), QStringList( { QStringLiteral( "b" ), QStringLiteral( "a" ),
+                                                   QStringLiteral( "c" ) } ) );
 }
 
 MRST_REGISTER_TEST( TestRstCompletionContext );

@@ -16,6 +16,7 @@ class QWebEngineView;
 
 namespace mrst {
 
+class CompletionCoordinator;
 class DiagnosticsStore;
 class LspClient;
 class LspServerPool;
@@ -82,6 +83,9 @@ public:
     /// immediate=false 면 디바운스(편집 중), true 면 즉시(저장/탭 전환).
     void                                requestPreviewBuild( bool immediate = false );
 
+    /// Ctrl+Space. 트리거 문자 없이 지금 캐럿 위치에서 자동완성을 연다.
+    void                                requestCompletion();
+
 signals:
     void                                logMessage( const QString& text );
     void                                projectsChanged( int count );
@@ -134,6 +138,7 @@ private:
     PreviewBridge*                      previewBridge_ = nullptr;
     DiagnosticsStore*                   diagnosticsStore_ = nullptr;
     LspServerPool*                      lspPool_ = nullptr;
+    CompletionCoordinator*              completions_ = nullptr;
     QString                             lspState_;
     QStringList                         previewSources_;      ///< data-mrr-src 인덱스 -> 원본 경로
     QStringList                         previewProcessedSources_;  ///< 이번 빌드가 다시 읽은 파일들

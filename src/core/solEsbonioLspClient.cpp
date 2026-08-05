@@ -330,14 +330,23 @@ void LspClient::didClose(const QString& path) {
     }));
 }
 
-int LspClient::completion(const QString& path, int line, int column) {
+int LspClient::completion(const QString& path, int line, int column, const QString& triggerCharacter) {
     if (!isRunning()) {
         return 0;
     }
+
+    // triggerKind 2(TriggerCharacter) 는 Esbonio 가 등록한 문자일 때만 쓴다.
+    // 등록하지 않은 문자로 보내면 Esbonio 가 그 컨텍스트를 아예 다루지 않는다.
+    QJsonObject context{{QStringLiteral("triggerKind"), triggerCharacter.isEmpty() ? 1 : 2}};
+    if (!triggerCharacter.isEmpty()) {
+        context.insert(QStringLiteral("triggerCharacter"), triggerCharacter);
+    }
+
     int id = 0;
     write(writer_.request(QStringLiteral("textDocument/completion"), {
         {QStringLiteral("textDocument"), textDocumentIdentifier(path)},
         {QStringLiteral("position"), QJsonObject{{QStringLiteral("line"), qMax(0, line - 1)}, {QStringLiteral("character"), qMax(0, column - 1)}}},
+        {QStringLiteral("context"), context},
     }, &id));
     pendingRequests_.insert(id, QStringLiteral("textDocument/completion"));
     return id;
@@ -513,7 +522,9 @@ void LspClient::handleResponse(const QJsonObject& message) {
                 items.push_back(item);
             }
         }
-        emit completionsReady(items);
+        // 요청 id 를 같이 보낸다. 디바운스된 요청이 여러 개 날아갈 수 있고,
+        // 늦게 도착한 옛 응답으로 팝업을 덮으면 사용자가 친 것과 어긋난다.
+        emit completionsReady(id, items);
     }
 }
 

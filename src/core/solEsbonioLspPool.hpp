@@ -54,7 +54,7 @@ signals:
     void                                logMessage( const QString& projectId, const QString& text );
     void                                diagnosticsReady( const QString& projectId, const QString& source,
                                                           const QVector< DiagnosticEntry >& entries );
-    void                                completionsReady( const QString& projectId,
+    void                                completionsReady( const QString& projectId, int requestId,
                                                           const QList< LspCompletionItem >& items );
     void                                documentSymbolsReady( const QString& projectId, const QString& path,
                                                               const QList< LspDocumentSymbol >& symbols );

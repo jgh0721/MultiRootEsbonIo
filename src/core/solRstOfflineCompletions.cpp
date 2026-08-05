@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QRegularExpression>
+#include <QSet>
 
 namespace mrst::rstcomplete {
 namespace {
@@ -340,6 +341,66 @@ QVector< Item > candidatesFor( const Context& context )
     }
 
     return items;
+}
+
+QVector< Item > normalizeLspItems( QVector< Item > items, const QString& lineText, const int column )
+{
+    const int caret = qBound( 0, column - 1, static_cast< int >( lineText.length() ) );
+    const QString before = lineText.left( caret );
+    // 앞쪽만 잘라야 한다. trimmed() 로 뒤까지 자르면 정작 문제가 되는 상황인
+    // ".. " (뒤에 공백 하나) 가 ".." 이 되어 컨텍스트 판정을 놓친다.
+    const QStringView stripped = QStringView( before ).mid( leadingIndent( before ) );
+    if( !stripped.startsWith( QStringLiteral( ".. " ) ) )
+        return items;
+
+    for( Item& item : items )
+    {
+        // QString::trimmed() 는 뒤쪽도 자른다. 여기서는 앞만 잘라야 한다 —
+        // "code-block:: " 의 끝 공백은 커서를 인자 자리로 보내는 의미가 있다.
+        qsizetype leading = 0;
+        while( leading < item.insertText.length() && item.insertText.at( leading ).isSpace() )
+            ++leading;
+        item.insertText = item.insertText.mid( leading );
+    }
+    return items;
+}
+
+QVector< Item > finalizeItems( QVector< Item > items, const int limit )
+{
+    QVector< Item > result;
+    result.reserve( qMin( items.size(), static_cast< qsizetype >( limit ) ) );
+
+    QSet< QString > seen;
+    for( Item& item : items )
+    {
+        // Esbonio 는 스니펫 경계에 \x01 을 남기기도 한다. 그대로 넣으면 문서에 박힌다.
+        item.insertText.remove( QChar( 0x0001 ) );
+        if( item.insertText.isEmpty() || seen.contains( item.insertText ) )
+            continue;
+
+        seen.insert( item.insertText );
+        result.push_back( item );
+        if( result.size() >= limit )
+            break;
+    }
+    return result;
+}
+
+QVector< Item > mergeItems( QVector< Item > primary, const QVector< Item >& additional )
+{
+    QSet< QString > seen;
+    seen.reserve( primary.size() );
+    for( const Item& item : primary )
+        seen.insert( item.insertText );
+
+    for( const Item& item : additional )
+    {
+        if( seen.contains( item.insertText ) )
+            continue;
+        seen.insert( item.insertText );
+        primary.push_back( item );
+    }
+    return primary;
 }
 
 }  // namespace mrst::rstcomplete

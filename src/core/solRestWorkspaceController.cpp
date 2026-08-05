@@ -5,6 +5,7 @@
 #include "solEsbonioLspClient.hpp"
 #include "solEsbonioLspPool.hpp"
 #include "solPreviewBridge.hpp"
+#include "solRestCompletionCoordinator.hpp"
 #include "solPythonEnvMgr.hpp"
 #include "solPythonEnvResolver.hpp"
 #include "solSphinxPreviewController.hpp"
@@ -79,8 +80,35 @@ WorkspaceController::WorkspaceController( QObject* parent )
     , virtualProjects_( new VirtualProjectManager( this ) )
     , diagnosticsStore_( new DiagnosticsStore( this ) )
     , lspPool_( new LspServerPool( this ) )
+    , completions_( new CompletionCoordinator( this ) )
 {
     connect( virtualProjects_, &VirtualProjectManager::logMessage, this, &WorkspaceController::logMessage );
+
+    // 자동완성 조율자는 LSP 풀을 모른다. 라우팅은 여기서만 한다.
+    connect( completions_, &CompletionCoordinator::logMessage, this, &WorkspaceController::logMessage );
+    connect( completions_, &CompletionCoordinator::lspCompletionRequested, this,
+            [this]( const QString& path, int line, int column, const QString& triggerCharacter ) {
+                LspClient* client = lspPool_->clientFor( activeProjectId_ );
+                const int requestId = ( client != nullptr && client->isRunning() )
+                                          ? client->completion( path, line, column, triggerCharacter )
+                                          : 0;
+                // 직접 연결이므로 emit 이 돌아오기 전에 id 가 등록된다.
+                completions_->registerRequestId( requestId );
+            } );
+    connect( completions_, &CompletionCoordinator::vocabularyHarvested, this,
+            [this]( const QStringList& directives, const QStringList& roles ) {
+                // 같은 프로젝트의 열린 탭 전부에 먹인다. 렉서 캐시는 뷰마다 따로다.
+                for( const DocumentContext& context : std::as_const( documents_ ) )
+                {
+                    if( context.projectId == activeProjectId_ && !context.view.isNull() )
+                        context.view->feedRstCompletionVocabulary( directives, roles );
+                }
+            } );
+
+    connect( lspPool_, &LspServerPool::completionsReady, this,
+            [this]( const QString& projectId, int requestId, const QList< LspCompletionItem >& items ) {
+                completions_->applyLspItems( projectId, requestId, items );
+            } );
 
     connect( lspPool_, &LspServerPool::logMessage, this,
             [this]( const QString&, const QString& text ) { emit logMessage( text ); } );
@@ -107,6 +135,8 @@ WorkspaceController::WorkspaceController( QObject* parent )
                     // 초기 빌드는 활성 여부와 무관하게 유발해야 한다.
                     // 백그라운드 프로젝트의 진단도 테이블에 모이기 때문이다.
                     nudgeInitialBuild( projectId );
+                    // 빌드 전에 빈 완성 결과를 받았다면 이제 다시 물어볼 수 있다.
+                    completions_->notifyBuildComplete( projectId );
                 }
                 else if( method == QStringLiteral( "sphinx/clientErrored" ) && isActive )
                     setLspStatus( tr( "오류" ) );
@@ -711,6 +741,8 @@ void WorkspaceController::attachDocument( QTextView* view )
         if( activeView_ == view )
             syncPreviewFromEditor();
     } );
+
+    completions_->attachEditor( view );
 }
 
 void WorkspaceController::detachDocument( QTextView* view )
@@ -730,6 +762,8 @@ void WorkspaceController::detachDocument( QTextView* view )
         }
     }
 
+    completions_->detachEditor( view );
+
     documents_.remove( view );
     if( activeView_ == view )
     {
@@ -745,9 +779,11 @@ void WorkspaceController::setActiveDocument( QTextView* view )
 
     QTextView* previousView = activeView_;
     activeView_ = view;
+    completions_->setActiveEditor( view );
     if( view == nullptr )
     {
         activeProjectId_.clear();
+        completions_->setActiveProjectId( QString{} );
         return;
     }
 
@@ -784,6 +820,7 @@ void WorkspaceController::setActiveDocument( QTextView* view )
     if( projectChanged )
     {
         activeProjectId_ = context->projectId;
+        completions_->setActiveProjectId( activeProjectId_ );
         emit activeProjectChanged( activeProjectId_, context->isVirtual );
         emit logMessage( tr( "활성 프로젝트: %1" )
                             .arg( activeProjectId_.isEmpty() ? unresolvedProjectLabel() : activeProjectId_ ) );
@@ -794,6 +831,20 @@ void WorkspaceController::setActiveDocument( QTextView* view )
 
     requestPreviewBuild( true );
     ensureLspForActiveDocument();
+}
+
+void WorkspaceController::requestCompletion()
+{
+    if( shuttingDown_ || activeView_.isNull() )
+        return;
+
+    // Ctrl+Space 는 사용자가 지금 이 순간을 기준으로 물어본 것이다.
+    // didChange 는 디바운스되므로 먼저 흘려보내지 않으면 서버가 옛 텍스트를
+    // 보고 "여기는 completion 컨텍스트가 아니다" 라고 정당하게 답한다.
+    if( DocumentContext* context = contextFor( activeView_ ); context != nullptr )
+        syncDocumentToServer( *context, false );
+
+    completions_->requestExplicit();
 }
 
 void WorkspaceController::notifyDocumentSaved( QTextView* view )

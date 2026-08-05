@@ -974,6 +974,16 @@ int QTextView::currentPosition() const
     return m_editor ? m_editor->currentPos() : 0;
 }
 
+int QTextView::caretLine() const
+{
+    return m_editor ? m_editor->lineFromPosition( m_editor->currentPos() ) + 1 : 1;
+}
+
+int QTextView::caretColumn() const
+{
+    return m_editor ? m_editor->columnFromPosition( m_editor->currentPos() ) + 1 : 1;
+}
+
 int QTextView::firstVisibleLine() const
 {
     return m_editor ? m_editor->firstVisibleLine() + 1 : 1;
@@ -1104,6 +1114,38 @@ void QTextView::setDiagnosticMarks( const QVector< mrst::DiagnosticEntry >& entr
         m_editor->applyIndicator( diagnosticIndicatorFor( entry.severity ), start,
                                  qMin( length, documentEnd - start ) );
     }
+}
+
+void QTextView::feedRstCompletionVocabulary( const QStringList& directives, const QStringList& roles )
+{
+    if( !m_editor )
+        return;
+
+    mrst::rst::RstMetadataCache* cache = m_editor->rstMetadataCache();
+    if( cache == nullptr )
+        return;   // 컨테이너 렉싱 중이 아니다 (.rst 가 아닌 문서)
+
+    bool changed = false;
+    for( const QString& name : directives )
+        changed |= cache->directives.insert( name.toStdString() ).second;
+    for( const QString& name : roles )
+        changed |= cache->roles.insert( name.toStdString() ).second;
+
+    // 3-state 의 핵심. 비어 있을 때는 UNKNOWN 이라 아무것도 빨갛지 않다가,
+    // 여기서 처음 채워지는 순간부터 목록에 없는 이름이 INVALID 가 된다.
+    if( !directives.isEmpty() && !cache->directivesPopulated )
+    {
+        cache->directivesPopulated = true;
+        changed = true;
+    }
+    if( !roles.isEmpty() && !cache->rolesPopulated )
+    {
+        cache->rolesPopulated = true;
+        changed = true;
+    }
+
+    if( changed )
+        m_editor->restyleDocument();
 }
 
 QString QTextView::diagnosticTooltipAt( int position ) const

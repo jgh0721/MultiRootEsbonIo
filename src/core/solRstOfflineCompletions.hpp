@@ -52,4 +52,21 @@ struct Item
 [[nodiscard]] QStringList knownDirectives();
 [[nodiscard]] QStringList knownRoles();
 
+// ── LSP 응답 다듬기 ────────────────────────────────────────
+// Esbonio 가 돌려주는 것을 그대로 넣으면 문서가 깨진다. 아래 셋은 순수 함수라
+// 위젯 없이 검증한다.
+
+/// Esbonio 는 ".." 직후에 발화될 것을 전제로 " image::" 처럼 **앞에 공백이 붙은**
+/// insertText 를 돌려준다. 사용자가 ".. " 까지 친 뒤 완성을 부르면 "..  image::"
+/// 처럼 공백이 둘이 된다. directive 컨텍스트에서만 앞 공백을 떼어낸다.
+[[nodiscard]] QVector< Item > normalizeLspItems( QVector< Item > items, const QString& lineText,
+                                                 int column );
+
+/// 팝업에 올리기 전 정리: 제어 문자 제거, 빈/중복 insertText 제거, 개수 제한.
+[[nodiscard]] QVector< Item > finalizeItems( QVector< Item > items, int limit = 200 );
+
+/// primary 를 앞에 두고, additional 중 insertText 가 겹치지 않는 것만 뒤에 붙인다.
+/// LSP 결과 위에 오프라인 후보를 보충할 때 쓴다.
+[[nodiscard]] QVector< Item > mergeItems( QVector< Item > primary, const QVector< Item >& additional );
+
 }  // namespace mrst::rstcomplete

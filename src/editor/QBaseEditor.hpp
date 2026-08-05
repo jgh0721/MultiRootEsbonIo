@@ -146,6 +146,14 @@ public:
     [[nodiscard]] QString textRange( int startPos, int endPos ) const;
     [[nodiscard]] int     positionFromLineColumn( int line, int column ) const;
     [[nodiscard]] int     currentPosition() const;
+    /// 캐럿의 줄/열 (1-based). currentLine()/currentColumn() 과 달리 캐시를
+    /// 거치지 않고 Scintilla 에 직접 묻는다.
+    ///
+    /// 캐시는 SCN_UPDATEUI 로 갱신되는데 SCN_CHARADDED 가 그보다 먼저 도착한다.
+    /// 문자 입력 직후에 캐시를 읽으면 한 글자(연속 입력이면 여러 글자) 이전
+    /// 위치가 나와 자동완성 컨텍스트가 통째로 어긋난다.
+    [[nodiscard]] int     caretLine() const;
+    [[nodiscard]] int     caretColumn() const;
     [[nodiscard]] int     firstVisibleLine() const;
     void                  scrollToLine( int line, double viewportRatio = 0.35 );
     /// 창 세로 ratio 위치에 실제로 보이는 줄 (1-based, 소수).
@@ -161,6 +169,10 @@ public:
     void                  replaceRangeAtCursor( int backspaceCount, const QString& insertText );
     /// 진단 스퀴글을 다시 그린다. 빈 목록이면 전부 지운다.
     void                  setDiagnosticMarks( const QVector< mrst::DiagnosticEntry >& entries );
+    /// LSP 자동완성에서 수확한 directive/role 이름을 reST 렉서 캐시에 먹인다.
+    /// 캐시가 채워져야 목록에 없는 directive 가 비로소 빨갛게 표시된다 (3-state).
+    void                  feedRstCompletionVocabulary( const QStringList& directives,
+                                                       const QStringList& roles );
     [[nodiscard]] QString diagnosticTooltipAt( int position ) const;
 
     QToolBar* createToolBar() override;

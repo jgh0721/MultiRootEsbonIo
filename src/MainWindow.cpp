@@ -647,6 +647,15 @@ void MainWindow::createMenus()
     m_pasteAction->setShortcutContext( Qt::ApplicationShortcut );
     m_pasteAction->setEnabled( false );
 
+    editMenu->addSeparator();
+    auto* completionAction = editMenu->addAction( tr( "자동 완성(&M)" ), this, [this] {
+        if( controller_ != nullptr )
+            controller_->requestCompletion();
+    } );
+    completionAction->setObjectName( QStringLiteral( "editor.completion" ) );
+    completionAction->setShortcut( QKeySequence( Qt::CTRL | Qt::Key_Space ) );
+    completionAction->setShortcutContext( Qt::WindowShortcut );
+
     auto* viewMenu = menuBar()->addMenu( tr( "보기(&V)" ) );
     viewMenu->addAction( tr( "테마 전환" ), this, &MainWindow::onThemeToggle );
 

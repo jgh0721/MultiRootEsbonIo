@@ -66,6 +66,8 @@ add_executable(${PROJECT_NAME}
         src/core/solSphinxPreviewController.hpp
         src/core/solPreviewBridge.cpp
         src/core/solPreviewBridge.hpp
+        src/core/solRestCompletionCoordinator.cpp
+        src/core/solRestCompletionCoordinator.hpp
         src/core/solRestWorkspaceController.cpp
         src/core/solRestWorkspaceController.hpp
         src/core/solRstOfflineCompletions.cpp
@@ -85,6 +87,8 @@ add_executable(${PROJECT_NAME}
         src/editor/QBaseEditor.hpp
         src/editor/RstContainerLexer.cpp
         src/editor/RstContainerLexer.hpp
+        src/editor/CompletionPopupWidget.cpp
+        src/editor/CompletionPopupWidget.hpp
         src/editor/FindReplaceWidget.cpp
         src/editor/FindReplaceWidget.hpp
         src/editor/ColumnRulerWidget.hpp

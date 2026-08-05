@@ -124,8 +124,8 @@ LspClient* LspServerPool::activate( const SphinxProject& project )
                 emit diagnosticsReady( projectId, source, entries );
             } );
     connect( client, &LspClient::completionsReady, this,
-            [this, projectId]( const QList< LspCompletionItem >& items ) {
-                emit completionsReady( projectId, items );
+            [this, projectId]( int requestId, const QList< LspCompletionItem >& items ) {
+                emit completionsReady( projectId, requestId, items );
             } );
     connect( client, &LspClient::documentSymbolsReady, this,
             [this, projectId]( const QString& path, const QList< LspDocumentSymbol >& symbols ) {

@@ -105,7 +105,9 @@ public:
     void didChange(const QString& path, const QString& text);
     void didSave(const QString& path, const QString& text);
     void didClose(const QString& path);
-    int completion(const QString& path, int line, int column);
+    /// triggerCharacter 를 주면 triggerKind=2 로 보낸다. Esbonio 가 등록한
+    /// 문자(: / < > 공백 백틱)일 때만 의미가 있다.
+    int completion(const QString& path, int line, int column, const QString& triggerCharacter = {});
     int documentSymbols(const QString& path);
 
 signals:
@@ -115,7 +117,7 @@ signals:
     /// 상태 표시와 "빌드 끝난 뒤 자동완성 재시도" 에 쓴다.
     void serverNotification(const QString& method, const QJsonObject& params);
     void diagnosticsReady(const QString& source, const QVector<DiagnosticEntry>& entries);
-    void completionsReady(const QList<LspCompletionItem>& items);
+    void completionsReady(int requestId, const QList<LspCompletionItem>& items);
     void documentSymbolsReady(const QString& path, const QList<LspDocumentSymbol>& symbols);
 
 private slots:
