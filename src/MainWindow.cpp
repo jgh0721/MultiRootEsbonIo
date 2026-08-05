@@ -549,6 +549,7 @@ MainWindow::MainWindow( QWidget* parent )
             } );
 
     setupDiagnosticsTable();
+    setupOutlineTrees();
     setupMissingDependencyBar();
     setupPythonEnvironment();
 
@@ -2353,6 +2354,137 @@ void MainWindow::setupDiagnosticsTable()
     {
         connect( store, &mrst::DiagnosticsStore::changed, this, &MainWindow::refreshDiagnosticsTable );
     }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 개요 트리
+// ═══════════════════════════════════════════════════════════
+namespace {
+
+/// 개요 항목에 붙이는 (경로, 줄) 데이터 역할.
+constexpr int kOutlinePathRole = Qt::UserRole;
+constexpr int kOutlineLineRole = Qt::UserRole + 1;
+
+QString outlineItemLabel( const mrst::OutlineSymbol& symbol )
+{
+    return symbol.detail.isEmpty()
+               ? QStringLiteral( "%1  (%2)" ).arg( symbol.name ).arg( symbol.line )
+               : QStringLiteral( "%1 — %2  (%3)" ).arg( symbol.name, symbol.detail ).arg( symbol.line );
+}
+
+void addOutlineSymbols( QTreeWidgetItem* parent, QTreeWidget* tree,
+                        const QVector< mrst::OutlineSymbol >& symbols )
+{
+    for( const mrst::OutlineSymbol& symbol : symbols )
+    {
+        auto* item = new QTreeWidgetItem( QStringList{ outlineItemLabel( symbol ) } );
+        if( !symbol.path.isEmpty() )
+        {
+            item->setData( 0, kOutlinePathRole, symbol.path );
+            item->setData( 0, kOutlineLineRole, symbol.line );
+        }
+        if( parent != nullptr )
+            parent->addChild( item );
+        else
+            tree->addTopLevelItem( item );
+
+        addOutlineSymbols( item, tree, symbol.children );
+    }
+}
+
+void setOutlinePlaceholder( QTreeWidget* tree, const QString& text )
+{
+    if( tree == nullptr )
+        return;
+    tree->clear();
+    tree->addTopLevelItem( new QTreeWidgetItem( QStringList{ text } ) );
+}
+
+}  // namespace
+
+void MainWindow::setupOutlineTrees()
+{
+    if( controller_ == nullptr )
+        return;
+
+    for( QTreeWidget* tree : { Ui.treOutlineDocument, Ui.treOutlineProject } )
+    {
+        if( tree == nullptr )
+            continue;
+        tree->setHeaderHidden( true );
+        tree->setUniformRowHeights( true );
+        connect( tree, &QTreeWidget::itemActivated, this, &MainWindow::onOutlineItemActivated );
+        connect( tree, &QTreeWidget::itemDoubleClicked, this, &MainWindow::onOutlineItemActivated );
+    }
+    setOutlinePlaceholder( Ui.treOutlineDocument, tr( "열린 문서가 없습니다." ) );
+    setOutlinePlaceholder( Ui.treOutlineProject, tr( "활성 Sphinx 프로젝트가 없습니다." ) );
+
+    connect( controller_, &mrst::WorkspaceController::documentOutlineReady, this,
+            [this]( const QString&, const QVector< mrst::OutlineSymbol >& symbols ) {
+                QTreeWidget* tree = Ui.treOutlineDocument;
+                if( tree == nullptr )
+                    return;
+                if( symbols.isEmpty() )
+                {
+                    setOutlinePlaceholder( tree, tr( "문서 심볼이 없습니다." ) );
+                    return;
+                }
+                tree->clear();
+                addOutlineSymbols( nullptr, tree, symbols );
+                tree->expandToDepth( 1 );
+            } );
+
+    connect( controller_, &mrst::WorkspaceController::projectOutlineReady, this,
+            [this]( const QString&, const QVector< mrst::OutlineDocumentEntry >& documents,
+                    const int truncated ) {
+                QTreeWidget* tree = Ui.treOutlineProject;
+                if( tree == nullptr )
+                    return;
+                if( documents.isEmpty() )
+                {
+                    setOutlinePlaceholder( tree, tr( "활성 프로젝트에 reST 문서가 없습니다." ) );
+                    return;
+                }
+
+                tree->clear();
+                for( const mrst::OutlineDocumentEntry& document : documents )
+                {
+                    auto* item = new QTreeWidgetItem( QStringList{ document.label } );
+                    item->setData( 0, kOutlinePathRole, document.path );
+                    item->setData( 0, kOutlineLineRole, 1 );
+                    tree->addTopLevelItem( item );
+
+                    if( document.symbols.isEmpty() )
+                        item->addChild( new QTreeWidgetItem( QStringList{ tr( "심볼 없음" ) } ) );
+                    else
+                        addOutlineSymbols( item, tree, document.symbols );
+                }
+                if( truncated > 0 )
+                {
+                    tree->addTopLevelItem( new QTreeWidgetItem(
+                        QStringList{ tr( "… %1개 문서 생략" ).arg( truncated ) } ) );
+                }
+                tree->expandToDepth( 0 );
+            } );
+
+    connect( controller_, &mrst::WorkspaceController::outlineCleared, this,
+            [this]( const QString& reason ) {
+                setOutlinePlaceholder( Ui.treOutlineDocument, reason );
+            } );
+}
+
+void MainWindow::onOutlineItemActivated( QTreeWidgetItem* item, int /*column*/ )
+{
+    if( item == nullptr )
+        return;
+
+    const QString path = item->data( 0, kOutlinePathRole ).toString();
+    if( path.isEmpty() )
+        return;
+
+    openFile( path );
+    if( QTextView* view = textViewOf( currentView() ) )
+        view->goToPosition( qMax( 1, item->data( 0, kOutlineLineRole ).toInt() ), 1 );
 }
 
 void MainWindow::refreshDiagnosticsTable()

@@ -194,6 +194,9 @@ private:
     void                                updateEnvStatusChip();
     void                                setupDiagnosticsTable();
     void                                refreshDiagnosticsTable();
+    /// 문서/프로젝트 개요 트리. 컨트롤러가 주는 항목을 그리고 클릭 시 이동한다.
+    void                                setupOutlineTrees();
+    void                                onOutlineItemActivated( QTreeWidgetItem* item, int column );
     /// 누락된 Sphinx 확장/테마를 알리는 비모달 바.
     /// 프리뷰 빌드는 디바운스 타이머로 발화하므로 모달을 띄우면 쓸 수 없게 된다.
     void                                setupMissingDependencyBar();

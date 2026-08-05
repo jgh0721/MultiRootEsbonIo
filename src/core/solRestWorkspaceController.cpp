@@ -6,6 +6,7 @@
 #include "solEsbonioLspPool.hpp"
 #include "solPreviewBridge.hpp"
 #include "solRestCompletionCoordinator.hpp"
+#include "solRestOutlineService.hpp"
 #include "solPythonEnvMgr.hpp"
 #include "solPythonEnvResolver.hpp"
 #include "solSphinxPreviewController.hpp"
@@ -21,6 +22,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
+#include <QThreadPool>
+#include <QTimer>
 #include <QUrl>
 #include <QWebEngineView>
 
@@ -71,6 +74,9 @@ QString unresolvedProjectLabel()
     return WorkspaceController::tr( "(프로젝트 없음)" );
 }
 
+/// 프로젝트 개요 트리에 올리는 문서 수 상한. 넘으면 잘라내고 로그로 알린다.
+constexpr int kMaxProjectOutlineDocuments = 500;
+
 }  // namespace
 
 WorkspaceController::WorkspaceController( QObject* parent )
@@ -108,6 +114,29 @@ WorkspaceController::WorkspaceController( QObject* parent )
     connect( lspPool_, &LspServerPool::completionsReady, this,
             [this]( const QString& projectId, int requestId, const QList< LspCompletionItem >& items ) {
                 completions_->applyLspItems( projectId, requestId, items );
+            } );
+
+    // 개요: 편집 중에는 매 글자 다시 만들지 않는다.
+    outlineDebounce_ = new QTimer( this );
+    outlineDebounce_->setSingleShot( true );
+    outlineDebounce_->setInterval( 650 );
+    connect( outlineDebounce_, &QTimer::timeout, this, &WorkspaceController::refreshDocumentOutline );
+
+    connect( lspPool_, &LspServerPool::documentSymbolsReady, this,
+            [this]( const QString& projectId, const QString& path,
+                    const QList< LspDocumentSymbol >& symbols ) {
+                // LSP 응답은 활성 문서에만 반영한다. 프로젝트 개요는 문서 수가
+                // 수백 개일 수 있어 파일마다 왕복하지 않고 정규식 폴백으로 채운다.
+                if( symbols.isEmpty() || projectId != activeProjectId_ || activeView_.isNull() )
+                    return;
+
+                const DocumentContext* context = contextFor( activeView_ );
+                if( context == nullptr )
+                    return;
+                if( QFileInfo( path ).absoluteFilePath() != context->path )
+                    return;
+
+                emit documentOutlineReady( context->path, toOutlineSymbols( symbols, context->path ) );
             } );
 
     connect( lspPool_, &LspServerPool::logMessage, this,
@@ -622,6 +651,93 @@ void WorkspaceController::syncDocumentToServer( DocumentContext& context, const 
     client->didChange( context.path, context.view->text() );
 }
 
+// ── 개요 ──────────────────────────────────────────────────
+
+void WorkspaceController::refreshDocumentOutline()
+{
+    if( shuttingDown_ || activeView_.isNull() )
+    {
+        emit outlineCleared( tr( "열린 문서가 없습니다." ) );
+        return;
+    }
+
+    DocumentContext* context = contextFor( activeView_ );
+    if( context == nullptr || context->path.isEmpty() )
+    {
+        emit outlineCleared( tr( "열린 문서가 없습니다." ) );
+        return;
+    }
+
+    // 폴백을 먼저 내보낸다. Esbonio 가 데워지기 전에도 개요가 비어 있지 않게.
+    emit documentOutlineReady( context->path,
+                              parseRstOutline( activeView_->text(), context->path ) );
+
+    // LSP 가 살아 있으면 더 정확한 결과로 덮어쓴다.
+    if( LspClient* client = lspPool_->clientFor( context->projectId );
+        client != nullptr && client->isRunning() && context->syncedToServer )
+    {
+        client->didChange( context->path, activeView_->text() );
+        client->documentSymbols( context->path );
+    }
+}
+
+void WorkspaceController::refreshProjectOutline( const bool force )
+{
+    if( shuttingDown_ )
+        return;
+    if( !force && projectOutlineProjectId_ == activeProjectId_ )
+        return;
+
+    projectOutlineProjectId_ = activeProjectId_;
+    const quint64 generation = ++outlineGeneration_;
+
+    const SphinxProject* project = lookupProject( activeProjectId_ );
+    if( project == nullptr )
+    {
+        emit projectOutlineReady( activeProjectId_, {}, 0 );
+        return;
+    }
+
+    const QString sourceRoot = toQString( project->sourcePath );
+    const QString rootDoc = QString::fromStdString( project->rootDoc );
+    const QString projectId = activeProjectId_;
+    QPointer< WorkspaceController > guard( this );
+
+    // 문서 수백 개를 읽어 파싱하는 일이라 GUI 스레드에서 하면 눈에 띄게 멈춘다.
+    QThreadPool::globalInstance()->start( [guard, sourceRoot, rootDoc, projectId, generation] {
+        int total = 0;
+        const QStringList paths = collectProjectDocuments( sourceRoot, rootDoc,
+                                                          kMaxProjectOutlineDocuments, &total );
+        QVector< OutlineDocumentEntry > entries = buildProjectOutline( sourceRoot, paths );
+        const int truncated = qMax( 0, total - static_cast< int >( paths.size() ) );
+
+        QMetaObject::invokeMethod(
+            guard,
+            [guard, entries = std::move( entries ), projectId, truncated, generation]() mutable {
+                if( guard )
+                    guard->applyProjectOutline( std::move( entries ), projectId, truncated, generation );
+            },
+            Qt::QueuedConnection );
+    } );
+}
+
+void WorkspaceController::applyProjectOutline( QVector< OutlineDocumentEntry > documents,
+                                               const QString& projectId, const int truncated,
+                                               const quint64 generation )
+{
+    // 프로젝트가 바뀐 뒤 도착한 결과는 버린다.
+    if( shuttingDown_ || generation != outlineGeneration_ || projectId != activeProjectId_ )
+        return;
+
+    emit projectOutlineReady( projectId, documents, truncated );
+    if( truncated > 0 )
+    {
+        emit logMessage( tr( "프로젝트 개요: 문서가 많아 %1개만 표시합니다 (%2개 생략)." )
+                            .arg( documents.size() )
+                            .arg( truncated ) );
+    }
+}
+
 void WorkspaceController::refreshDiagnosticMarks( const QString& normalizedPath )
 {
     if( diagnosticsStore_ == nullptr )
@@ -734,12 +850,41 @@ void WorkspaceController::attachDocument( QTextView* view )
         requestPreviewBuild( false );
         if( DocumentContext* context = contextFor( view ) )
             syncDocumentToServer( *context, false );
+        outlineDebounce_->start();
     } );
 
     // 에디터 -> 프리뷰 스크롤 동기화.
     connect( view, &QTextView::sigViewportScrolled, this, [this, view] {
         if( activeView_ == view )
             syncPreviewFromEditor();
+    } );
+
+    // 파일 로드는 비동기다. attachDocument()/setActiveDocument() 가 불릴 때는
+    // 아직 텍스트가 비어 있어서, 그때 보낸 didOpen 은 빈 문서였고 개요도 비었다.
+    // 로드가 끝난 지금 다시 맞춘다.
+    connect( view, &QTextView::sigFileOpened, this, [this, view]( const QString& ) {
+        DocumentContext* context = contextFor( view );
+        if( context == nullptr )
+            return;
+
+        const QString loadedPath = view->currentFilePath().isEmpty()
+                                       ? QString{}
+                                       : QFileInfo( view->currentFilePath() ).absoluteFilePath();
+        if( loadedPath != context->path )
+        {
+            context->path = loadedPath;
+            context->projectId.clear();
+            resolveProject( *context );
+        }
+
+        // 이미 열려 있으면 didChange 로 전체 텍스트를 다시 보낸다.
+        // didOpen 을 두 번 보내는 것은 프로토콜 위반이다.
+        syncDocumentToServer( *context, false );
+
+        if( activeView_ != view )
+            return;
+        refreshDocumentOutline();
+        requestPreviewBuild( true );
     } );
 
     completions_->attachEditor( view );
@@ -784,6 +929,8 @@ void WorkspaceController::setActiveDocument( QTextView* view )
     {
         activeProjectId_.clear();
         completions_->setActiveProjectId( QString{} );
+        outlineDebounce_->stop();
+        emit outlineCleared( tr( "열린 문서가 없습니다." ) );
         return;
     }
 
@@ -831,6 +978,10 @@ void WorkspaceController::setActiveDocument( QTextView* view )
 
     requestPreviewBuild( true );
     ensureLspForActiveDocument();
+
+    outlineDebounce_->stop();
+    refreshDocumentOutline();
+    refreshProjectOutline( false );
 }
 
 void WorkspaceController::requestCompletion()

@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "solRestOutlineService.hpp"
 #include "solSphinxDiagnostics.hpp"
 #include "solSphinxScanner.hpp"
 
@@ -12,6 +13,7 @@
 #include <QVector>
 
 class QTextView;
+class QTimer;
 class QWebEngineView;
 
 namespace mrst {
@@ -98,6 +100,16 @@ signals:
                                                                      const QStringList& themes );
     void                                lspStatusChanged( const QString& projectId, const QString& state );
 
+    // ── 개요 ──
+    /// 활성 문서의 섹션 개요. 먼저 정규식 폴백으로 한 번, LSP 응답이 오면 다시.
+    void                                documentOutlineReady( const QString& path,
+                                                              const QVector< OutlineSymbol >& symbols );
+    /// 프로젝트의 문서 목록과 각 문서의 개요. truncated 는 상한에 걸려 잘린 개수.
+    void                                projectOutlineReady( const QString& projectId,
+                                                             const QVector< OutlineDocumentEntry >& documents,
+                                                             int truncated );
+    void                                outlineCleared( const QString& reason );
+
 private:
     [[nodiscard]] DocumentContext*      contextFor( QTextView* view );
     void                                resolveProject( DocumentContext& context );
@@ -120,6 +132,16 @@ private:
     /// 축출 후 재기동하면 서버에 문서 상태가 전혀 없으므로, 활성 탭 하나만
     /// 열면 나머지 탭의 진단이 조용히 사라진다.
     void                                reopenDocumentsForProject( const QString& projectId );
+
+    // ── 개요 ──
+    /// 활성 문서의 개요를 정규식 폴백으로 즉시 내보내고 LSP 에도 물어본다.
+    void                                refreshDocumentOutline();
+    /// 프로젝트 문서 목록을 작업 스레드에서 훑는다.
+    /// force=false 면 같은 프로젝트에 대해 다시 돌지 않는다.
+    void                                refreshProjectOutline( bool force );
+    void                                applyProjectOutline( QVector< OutlineDocumentEntry > documents,
+                                                             const QString& projectId, int truncated,
+                                                             quint64 generation );
 
     // ── 스크롤 동기화 ──
     // 에디터 -> 프리뷰, 프리뷰 -> 에디터 양방향. 어느 쪽이든 "기준 비율 위치에
@@ -154,6 +176,12 @@ private:
     bool                                previewLoadedOk_ = false;
     int                                 hotSwapToken_ = 0;
     QString                             pendingFullLoadPath_;
+
+    // ── 개요 상태 ──
+    QTimer*                             outlineDebounce_ = nullptr;
+    QString                             projectOutlineProjectId_;
+    /// 늦게 도착한 이전 프로젝트의 순회 결과를 버리기 위한 세대 번호.
+    quint64                             outlineGeneration_ = 0;
 
     QHash< QTextView*, DocumentContext > documents_;
     QPointer< QTextView >               activeView_;

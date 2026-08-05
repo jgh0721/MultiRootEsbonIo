@@ -68,6 +68,8 @@ add_executable(${PROJECT_NAME}
         src/core/solPreviewBridge.hpp
         src/core/solRestCompletionCoordinator.cpp
         src/core/solRestCompletionCoordinator.hpp
+        src/core/solRestOutlineService.cpp
+        src/core/solRestOutlineService.hpp
         src/core/solRestWorkspaceController.cpp
         src/core/solRestWorkspaceController.hpp
         src/core/solRstOfflineCompletions.cpp
@@ -160,10 +162,12 @@ if(MRST_BUILD_TESTS)
             tests/tst_LspMessageRouting.cpp
             tests/tst_ProjectResolution.cpp
             tests/tst_RstCompletionContext.cpp
+            tests/tst_RstOutline.cpp
             # 테스트 대상 프로덕션 소스는 OBJECT 라이브러리로 빼지 않고 명시 나열한다
             # (globbing 금지 + 단일 타깃이라는 이 프로젝트의 규칙을 따른다).
             src/editor/RstContainerLexer.cpp
             src/core/solRstOfflineCompletions.cpp
+            src/core/solRestOutlineService.cpp
             src/core/solEsbonioLspClient.cpp
             src/core/solEsbonioLspClient.hpp
             src/utils/ProcessReaper.cpp
