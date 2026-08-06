@@ -1,5 +1,6 @@
 ﻿#include "stdafx.h"
 #include "solBaseView.hpp"
+#include "solQlementineTheme.hpp"
 #include "solThemeManager.hpp"
 
 #include <QFileInfo>
@@ -83,6 +84,15 @@ void QBaseView::setDisplayTitle( const QString& title )
 void QBaseView::applyThemeStyleSheet( Theme theme )
 {
     Q_UNUSED( theme );
+
+    // Qlementine QStyle 이 켜져 있으면 뷰 안쪽도 QStyle 이 그린다.
+    // 아래 스타일시트를 씌우면 자식 위젯까지 전부 덮어써 버린다.
+    if( QlementineTheme::isActive() )
+    {
+        setStyleSheet( QString() );
+        return;
+    }
+
     auto& tm = ThemeManager::instance();
     setStyleSheet( QStringLiteral(
         "QWidget { background-color: %1; color: %2; }"

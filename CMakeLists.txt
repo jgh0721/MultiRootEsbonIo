@@ -29,6 +29,7 @@ find_package(Qt6 REQUIRED COMPONENTS
 
 # ── 외부 라이브러리 (FetchContent) ────────────────────────
 include(cmake/BuildScintillaLexilla.cmake)
+include(cmake/BuildQlementine.cmake)
 
 qt_standard_project_setup()
 
@@ -52,6 +53,8 @@ add_executable(${PROJECT_NAME}
         src/core/solPythonEnvResolver.hpp
         src/core/solUvTaskRunner.cpp
         src/core/solUvTaskRunner.hpp
+        src/core/solQlementineTheme.cpp
+        src/core/solQlementineTheme.hpp
         src/core/solThemeManager.cpp
         src/core/solThemeManager.hpp
         src/core/solShadowBackupStore.cpp
@@ -137,6 +140,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::WebEngineWidgets
     ScintillaEditBaseQt
     LexillaStatic
+    qlementine
 )
 
 if(MSVC)

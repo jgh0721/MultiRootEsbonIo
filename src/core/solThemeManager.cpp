@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "core/solThemeManager.hpp"
 #include "core/solAppSettings.hpp"
+#include "core/solQlementineTheme.hpp"
 
 #include <QApplication>
 #include <QFile>
@@ -511,6 +512,34 @@ QColor ThemeManager::canvasAreaColor() const { return color( QStringLiteral( "co
 
 void ThemeManager::applyToApplication()
 {
+    if( !qApp )
+        return;
+
+    // Qlementine QStyle 이 켜져 있으면 전역 스타일시트를 절대 걸지 않는다.
+    // 이유가 두 가지인데, 두 번째가 치명적이다.
+    //
+    // 1) 아래 스타일시트는 `QWidget { background-color: ... }` 로 시작해서 QStyle 이
+    //    그린 결과를 거의 전부 덮어쓴다. 그러면 스타일을 적용한 의미가 없다.
+    //
+    // 2) qApp 에 스타일시트가 있으면 Qt 는 모든 위젯을 QStyleSheetStyle 로 감싸고
+    //    **생성 도중에** polish() 를 호출한다. QComboBox 의 경우 그 시점이
+    //    QComboBoxPrivate::viewContainer() 안, `container` 변수에 대입되기 전이다.
+    //    거기서 QlementineStyle::polish() 가 ComboboxItemViewFilter 를 콤보박스에
+    //    설치하고, 그 필터는 ChildAdded 를 받으면 QComboBox::view() 를 부른다.
+    //    view() → viewContainer() → container 는 아직 null → 컨테이너를 또 만들고
+    //    → ChildAdded → ... 무한 재귀로 스택 오버플로(0xC00000FD)가 난다.
+    //    실제로 .rst 파일을 열 때 QTextView 도구모음의 콤보박스에서 터졌다.
+    //    (qlementine v1.4.2 ComboboxItemViewFilter.hpp:49 의 상류 재진입 버그)
+    //
+    // 예전에 남겨 두려 했던 QScrollArea#canvasScrollArea 규칙은 이 포팅에 해당
+    // 위젯이 없어서 어차피 아무것도 매칭하지 않았다. 나중에 PDF/이미지 뷰를
+    // 옮겨 올 때 캔버스 배경은 스타일시트가 아니라 QPalette 로 지정해야 한다.
+    if( QlementineTheme::isActive() )
+    {
+        qApp->setStyleSheet( QString() );
+        return;
+    }
+
     const auto bg      = backgroundColor().name();
     const auto fg      = foregroundColor().name();
     const auto tb      = toolBarColor().name();
@@ -539,8 +568,7 @@ void ThemeManager::applyToApplication()
                                       "QScrollBar { background-color: %3; }"
                                      ).arg( bg, fg, tb, ta, ti, cv, border, surface, accent );
 
-    if( qApp )
-        qApp->setStyleSheet( ss );
+    qApp->setStyleSheet( ss );
 }
 
 void ThemeManager::loadOverrides()

@@ -62,7 +62,8 @@ private:
     void                                loadOverrides();
     void                                saveOverrides() const;
 
-    Theme                               m_theme = Light;
+    // 기본 테마는 다크다. main() 이 저장된 설정으로 덮어쓴다.
+    Theme                               m_theme = Dark;
     QHash<QString, QColor>              m_lightOverrides;
     QHash<QString, QColor>              m_darkOverrides;
 };

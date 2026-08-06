@@ -8,4 +8,8 @@
     <qresource prefix="/preview">
         <file alias="mrr_preview.js">../tools/js/mrr_preview.js</file>
     </qresource>
+    <qresource prefix="/themes">
+        <file alias="dark.json">../resources/themes/dark.json</file>
+        <file alias="light.json">../resources/themes/light.json</file>
+    </qresource>
 </RCC>
