@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 3.21)
 
 project("MultiRoot-reST-CPP" VERSION 0.1.0 LANGUAGES CXX)
 
+# 실행 파일 아이콘(resources/app.rc)을 컴파일하려면 RC 언어가 필요하다.
+if(WIN32)
+    enable_language(RC)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -57,6 +62,8 @@ add_executable(${PROJECT_NAME}
         src/core/solQlementineTheme.hpp
         src/core/solThemeManager.cpp
         src/core/solThemeManager.hpp
+        src/core/solGlossaryIndex.cpp
+        src/core/solGlossaryIndex.hpp
         src/core/solShadowBackupStore.cpp
         src/core/solShadowBackupStore.hpp
         src/core/solSphinxScanner.cpp
@@ -98,6 +105,8 @@ add_executable(${PROJECT_NAME}
         src/editor/RstContainerLexer.hpp
         src/editor/CompletionPopupWidget.cpp
         src/editor/CompletionPopupWidget.hpp
+        src/editor/CompletionDetailPopup.cpp
+        src/editor/CompletionDetailPopup.hpp
         src/editor/FindReplaceWidget.cpp
         src/editor/FindReplaceWidget.hpp
         src/editor/ColumnRulerWidget.hpp
@@ -117,6 +126,10 @@ add_executable(${PROJECT_NAME}
         uniqueLibs/solEncodingDetector.cpp
         uniqueLibs/solEncodingDetector.hpp
 )
+
+if(WIN32)
+    target_sources(${PROJECT_NAME} PRIVATE resources/app.rc)
+endif()
 
 # ── MSVC stdafx.h 미리 컴파일된 헤더 지정 ────────────────
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/stdafx.h)
@@ -172,10 +185,12 @@ if(MRST_BUILD_TESTS)
             tests/tst_RstCompletionContext.cpp
             tests/tst_RstOutline.cpp
             tests/tst_WorkspaceSearch.cpp
+            tests/tst_GlossaryParsing.cpp
             # 테스트 대상 프로덕션 소스는 OBJECT 라이브러리로 빼지 않고 명시 나열한다
             # (globbing 금지 + 단일 타깃이라는 이 프로젝트의 규칙을 따른다).
             src/editor/RstContainerLexer.cpp
             src/core/solRstOfflineCompletions.cpp
+            src/core/solGlossaryIndex.cpp
             src/core/solRestOutlineService.cpp
             src/core/solWorkspaceSearch.cpp
             src/core/solWorkspaceSession.cpp

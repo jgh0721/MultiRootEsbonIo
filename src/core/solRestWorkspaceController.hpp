@@ -20,6 +20,7 @@ namespace mrst {
 
 class CompletionCoordinator;
 class DiagnosticsStore;
+class GlossaryIndex;
 class LspClient;
 class LspServerPool;
 class PreviewBridge;
@@ -143,6 +144,11 @@ private:
                                                              const QString& projectId, int truncated,
                                                              quint64 generation );
 
+    // ── 용어집 ──
+    /// 활성 프로젝트의 `.. glossary::` 를 다시 훑는다.
+    /// force=false 면 같은 프로젝트에 대해 다시 돌지 않는다.
+    void                                refreshGlossary( bool force );
+
     // ── 스크롤 동기화 ──
     // 에디터 -> 프리뷰, 프리뷰 -> 에디터 양방향. 어느 쪽이든 "기준 비율 위치에
     // 있는 줄" 을 상대편의 같은 비율 위치로 보낸다.
@@ -161,6 +167,7 @@ private:
     DiagnosticsStore*                   diagnosticsStore_ = nullptr;
     LspServerPool*                      lspPool_ = nullptr;
     CompletionCoordinator*              completions_ = nullptr;
+    GlossaryIndex*                      glossary_ = nullptr;
     QString                             lspState_;
     QStringList                         previewSources_;      ///< data-mrr-src 인덱스 -> 원본 경로
     QStringList                         previewProcessedSources_;  ///< 이번 빌드가 다시 읽은 파일들

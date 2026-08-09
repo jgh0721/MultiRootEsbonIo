@@ -5,6 +5,7 @@
 #include "solEsbonioLspClient.hpp"
 #include "solEsbonioLspPool.hpp"
 #include "solPreviewBridge.hpp"
+#include "solGlossaryIndex.hpp"
 #include "solRestCompletionCoordinator.hpp"
 #include "solRestOutlineService.hpp"
 #include "solPythonEnvMgr.hpp"
@@ -87,8 +88,19 @@ WorkspaceController::WorkspaceController( QObject* parent )
     , diagnosticsStore_( new DiagnosticsStore( this ) )
     , lspPool_( new LspServerPool( this ) )
     , completions_( new CompletionCoordinator( this ) )
+    , glossary_( new GlossaryIndex( this ) )
 {
     connect( virtualProjects_, &VirtualProjectManager::logMessage, this, &WorkspaceController::logMessage );
+
+    // 용어집은 Esbonio 가 아니라 우리가 직접 훑는다. objects.inv 에는 이름만 있고
+    // 정의 본문이 없어서 팝업에 보여 줄 것이 나오지 않는다.
+    completions_->setGlossaryIndex( glossary_ );
+    connect( glossary_, &GlossaryIndex::ready, this,
+            [this]( const QString& projectId, int count ) {
+                completions_->notifyGlossaryReady( projectId );
+                if( count > 0 )
+                    emit logMessage( tr( "용어집 %1개 [%2]" ).arg( count ).arg( projectId ) );
+            } );
 
     // 자동완성 조율자는 LSP 풀을 모른다. 라우팅은 여기서만 한다.
     connect( completions_, &CompletionCoordinator::logMessage, this, &WorkspaceController::logMessage );
@@ -888,6 +900,15 @@ void WorkspaceController::attachDocument( QTextView* view )
     } );
 
     completions_->attachEditor( view );
+
+    // 본문의 `:role:`target`` 호버 -> 상세 팝업. 지금은 :term: 만 내용이 있다.
+    // attachDocument 는 같은 뷰에 대해 두 번 불릴 수 있어 UniqueConnection 이
+    // 필요하다. 그런데 그 플래그는 **멤버 함수 연결에서만** 동작하므로
+    // (람다에 쓰면 Qt 가 fatal 로 죽는다) 슬롯을 그대로 연결한다.
+    connect( view, &QTextView::sigRoleHovered, completions_,
+            &CompletionCoordinator::showHoverDetail, Qt::UniqueConnection );
+    connect( view, &QTextView::sigRoleHoverEnded, completions_,
+            &CompletionCoordinator::hideHoverDetail, Qt::UniqueConnection );
 }
 
 void WorkspaceController::detachDocument( QTextView* view )
@@ -982,6 +1003,22 @@ void WorkspaceController::setActiveDocument( QTextView* view )
     outlineDebounce_->stop();
     refreshDocumentOutline();
     refreshProjectOutline( false );
+    refreshGlossary( false );
+}
+
+void WorkspaceController::refreshGlossary( const bool force )
+{
+    if( shuttingDown_ || glossary_ == nullptr )
+        return;
+
+    glossary_->setActiveProjectId( activeProjectId_ );
+
+    const SphinxProject* project = lookupProject( activeProjectId_ );
+    if( project == nullptr )
+        return;
+
+    glossary_->refresh( activeProjectId_, toQString( project->sourcePath ),
+                       QString::fromStdString( project->rootDoc ), force );
 }
 
 void WorkspaceController::requestCompletion()
@@ -1015,6 +1052,10 @@ void WorkspaceController::notifyDocumentSaved( QTextView* view )
             client->didSave( context->path, view->text() );
         }
     }
+
+    // 저장한 문서가 용어집일 수 있다. 파일 하나 때문에 전부 다시 훑지만
+    // 프로젝트 개요 스캔과 같은 규모라 체감되지 않는다.
+    refreshGlossary( true );
 }
 
 DocumentContext* WorkspaceController::contextFor( QTextView* view )
