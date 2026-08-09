@@ -52,40 +52,6 @@
 
 namespace
 {
-    enum class NewFileTarget
-    {
-        Text,
-        Image
-    };
-
-    enum class ClipboardImagePastePolicy
-    {
-        Ask = 0,
-        AlwaysOpen = 1,
-        AlwaysIgnore = 2
-    };
-
-    constexpr auto kClipboardImagePastePolicyKey = "clipboard/imagePastePolicy";
-
-    QString clipboardImagePastePolicyKey()
-    {
-        return QString::fromLatin1( kClipboardImagePastePolicyKey );
-    }
-
-    ClipboardImagePastePolicy loadClipboardImagePastePolicy()
-    {
-        AppSettings settings;
-        return static_cast< ClipboardImagePastePolicy >(
-            settings.value( clipboardImagePastePolicyKey(), static_cast< int >( ClipboardImagePastePolicy::Ask ) ).toInt() );
-    }
-
-    void saveClipboardImagePastePolicy( ClipboardImagePastePolicy policy )
-    {
-        AppSettings settings;
-
-        settings.setValue( clipboardImagePastePolicyKey(), static_cast< int >( policy ) );
-    }
-
     QStringList imageFileExtensions()
     {
         return { "jpg", "jpeg", "png", "bmp", "gif", "tiff", "tif", "ico", "webp", "svg" };
@@ -253,68 +219,6 @@ namespace
         return controlBytes > 16 && controlBytes > sample.size() / 10;
     }
 
-    QString clipboardPasteContextText( QBaseView* view )
-    {
-        return {};
-        //if( qobject_cast< QTextView* >( view ) )
-        //    return QObject::tr( "텍스트" );
-        //if( qobject_cast< QMarkdownView* >( view ) )
-        //    return QObject::tr( "Markdown" );
-        //if( qobject_cast< QImageView* >( view ) )
-        //    return QObject::tr( "이미지" );
-        //return QObject::tr( "현재" );
-    }
-
-    QString clipboardImagePastePolicyText( ClipboardImagePastePolicy policy )
-    {
-        switch( policy )
-        {
-            case ClipboardImagePastePolicy::AlwaysOpen:
-                return QObject::tr( "항상 열기" );
-            case ClipboardImagePastePolicy::AlwaysIgnore:
-                return QObject::tr( "항상 무시" );
-            case ClipboardImagePastePolicy::Ask:
-            default:
-                return QObject::tr( "매번 확인" );
-        }
-    }
-
-    bool promptNewFileTarget( QWidget* parent, NewFileTarget* target )
-    {
-        if( !target )
-            return false;
-
-        QMessageBox box( QMessageBox::Question,
-                        QObject::tr( "새 파일" ),
-                        QObject::tr( "새 파일에서 시작할 작업 유형을 선택하세요." ),
-                        QMessageBox::NoButton,
-                        parent );
-        box.setInformativeText(
-            QObject::tr( "텍스트 뷰어는 빈 문서로, 이미지 뷰어는 빈 캔버스(800 × 600)로 시작합니다." ) );
-
-        auto* textButton = box.addButton( QObject::tr( "텍스트 뷰어" ), QMessageBox::AcceptRole );
-        auto* imageButton = box.addButton( QObject::tr( "이미지 뷰어" ), QMessageBox::ActionRole );
-        auto* cancelButton = box.addButton( QMessageBox::Cancel );
-
-        box.setDefaultButton( textButton );
-        box.setEscapeButton( cancelButton );
-        box.exec();
-
-        if( box.clickedButton() == textButton )
-        {
-            *target = NewFileTarget::Text;
-            return true;
-        }
-
-        if( box.clickedButton() == imageButton )
-        {
-            *target = NewFileTarget::Image;
-            return true;
-        }
-
-        return false;
-    }
-
     void refreshViewerToolBarSlot( QWidget* host )
     {
         if( !host )
@@ -476,7 +380,8 @@ MainWindow::MainWindow( QWidget* parent )
     m_tabWidget->setTabsClosable( true );
     m_tabWidget->setMovable( true );
     m_tabWidget->setDocumentMode( true );
-    m_tabWidget->setAttribute( Qt::WA_OpaquePaintEvent );
+    // WA_OpaquePaintEvent 는 붙이지 않는다. QTabWidget 은 탭 베이스와 프레임만 그려
+    // 자기 영역을 전부 채우지 않으므로, 배경 지우기를 끄면 리사이즈 때 잔상이 남는다.
 
     Ui.webEngineView->setHtml( QStringLiteral( "<h1>MultiRoot reST C++ Port</h1><p>C++/Qt 전환 셸이 시작되었습니다.</p>" ) );
 
@@ -486,6 +391,16 @@ MainWindow::MainWindow( QWidget* parent )
     Ui.splEditWithStatisticsOnContent->setStretchFactor( 1, 0 );
     Ui.splSideWithContent->setStretchFactor( 0, 0 );
     Ui.splSideWithContent->setStretchFactor( 1, 1 );
+
+    // 편집기 | 프리뷰 스플리터.
+    // 자식 하나가 QWebEngineView(별도 합성 표면)라 핸들을 끌면 노출 영역이
+    // 실시간으로 바뀐다. 두 프레임이 스스로 배경을 칠하게 해야 그 틈이
+    // 이전 픽셀(검은 띠)로 남지 않는다.
+    Ui.splitter_2->setChildrenCollapsible( false );
+    Ui.splitter_2->setStretchFactor( 0, 1 );
+    Ui.splitter_2->setStretchFactor( 1, 1 );
+    Ui.frmEditor->setAutoFillBackground( true );
+    Ui.frmWebPreview->setAutoFillBackground( true );
 
     connect( m_tabWidget, &QTabWidget::tabCloseRequested, this, &MainWindow::onCloseTab );
     connect( m_tabWidget, &QTabWidget::currentChanged, this, &MainWindow::onTabChanged );
@@ -668,9 +583,6 @@ void MainWindow::createMenus()
     settingsAction->setObjectName( QStringLiteral( "app.settings" ) );
     settingsAction->setShortcut( QKeySequence( Qt::CTRL | Qt::Key_I ) );
     settingsAction->setShortcutContext( Qt::ApplicationShortcut );
-    settingsMenu->addSeparator();
-    settingsMenu->addAction( tr( "클립보드 이미지 붙여넣기 확인 다시 켜기" ),
-                            this, &MainWindow::onResetClipboardImagePastePrompt );
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -708,7 +620,8 @@ void MainWindow::setupCentralContainer()
     if( uiCentralWidget )
     {
         uiCentralWidget->setAcceptDrops( true );
-        uiCentralWidget->setAttribute( Qt::WA_OpaquePaintEvent );
+        // WA_OpaquePaintEvent 는 붙이지 않는다 — paintEvent 가 없는 평범한 QWidget 이라
+        // 배경 지우기를 끄면 노출 영역에 이전 픽셀이 남는다 (스플리터 드래그 시 검은 띠).
         containerLayout->addWidget( uiCentralWidget, 1 );
     }
 
@@ -753,7 +666,6 @@ void MainWindow::updateViewerToolBar()
         m_viewerToolBar->setParent( m_viewerToolBarHost );
         m_viewerToolBar->setObjectName( "viewerToolBar" );
 
-        m_viewerToolBar->addSeparator();
         connect( m_viewerToolBar, &QObject::destroyed, this, [this] {
             m_viewerToolBar = nullptr;
         } );
@@ -907,6 +819,11 @@ void MainWindow::applyCurrentTheme()
     DwmTitleBar::applyTheme( this,
                             themeManager.currentTheme() == ThemeManager::Dark,
                             themeManager.toolBarColor() );
+
+    // 프리뷰가 아직 아무것도 안 그렸거나 리사이즈로 새 영역이 드러났을 때
+    // Chromium 이 칠하는 바탕색. 기본값(흰색)이면 다크 테마에서 번쩍인다.
+    if( Ui.webEngineView != nullptr && Ui.webEngineView->page() != nullptr )
+        Ui.webEngineView->page()->setBackgroundColor( themeManager.backgroundColor() );
 
     for( int i = 0; i < m_tabWidget->count(); ++i )
     {
@@ -1184,223 +1101,28 @@ void MainWindow::connectViewStatusSignals( QBaseView* view )
     }
 }
 
-bool MainWindow::canPasteClipboardImage() const
-{
-    if( !canPasteClipboardImageInCurrentContext() )
-        return false;
-
-    const QClipboard* clipboard = QApplication::clipboard();
-    if( !clipboard )
-        return false;
-
-    const QMimeData* mimeData = clipboard->mimeData();
-    if( !mimeData || !mimeData->hasImage() )
-        return false;
-
-    const QVariant imageData = mimeData->imageData();
-    if( imageData.canConvert<QImage>() )
-        return !qvariant_cast< QImage >( imageData ).isNull();
-    if( imageData.canConvert<QPixmap>() )
-        return !qvariant_cast< QPixmap >( imageData ).isNull();
-
-    return !clipboard->image().isNull();
-}
-
-bool MainWindow::canPasteClipboardImageInCurrentContext() const
-{
-    if( !m_tabWidget )
-        return false;
-
-    if( m_tabWidget->count() == 0 )
-        return true;
-
-    QBaseView* view = currentView();
-    return qobject_cast< QTextView* >( view );
-    //return qobject_cast< QImageView* >( view )
-    //    || qobject_cast< QPDFView* >( view )
-    //    || qobject_cast< QTextView* >( view )
-    //    || qobject_cast< QMarkdownView* >( view );
-    return false;
-}
-
-bool MainWindow::shouldConfirmClipboardImageOpen() const
-{
-    QBaseView* view = currentView();
-    return qobject_cast< QTextView* >( view );
-    //return qobject_cast< QPDFView* >( view )
-    //    || qobject_cast< QTextView* >( view )
-    //    || qobject_cast< QMarkdownView* >( view );
-    return false;
-}
-
-bool MainWindow::confirmOpenClipboardImage() const
-{
-    const ClipboardImagePastePolicy policy = loadClipboardImagePastePolicy();
-    if( policy == ClipboardImagePastePolicy::AlwaysOpen )
-        return true;
-    if( policy == ClipboardImagePastePolicy::AlwaysIgnore )
-        return false;
-
-    QBaseView* view = currentView();
-    const QString contextText = clipboardPasteContextText( view );
-    const QString currentTabTitle = view ? view->title() : tr( "현재 탭" );
-
-    QMessageBox box( QMessageBox::Question,
-                    tr( "클립보드 이미지 붙여넣기" ),
-                    tr( "클립보드에 이미지 데이터가 있습니다." ),
-                    QMessageBox::NoButton,
-                    const_cast< MainWindow* >( this ) );
-    box.setInformativeText(
-        tr( "현재는 %1 탭 \"%2\"이(가) 활성화되어 있습니다.\n이미지를 새 이미지 뷰어 탭으로 여시겠습니까?" )
-            .arg( contextText, currentTabTitle ) );
-    box.setDetailedText( tr( "선택하면 현재 탭 내용은 변경되지 않고, 새 이미지 뷰어 탭이 추가됩니다." ) );
-
-    auto* openOnceButton = box.addButton( tr( "이번만 열기" ), QMessageBox::AcceptRole );
-    auto* alwaysOpenButton = box.addButton( tr( "항상 열기" ), QMessageBox::YesRole );
-    auto* alwaysIgnoreButton = box.addButton( tr( "항상 무시" ), QMessageBox::DestructiveRole );
-    box.setDefaultButton( openOnceButton );
-    box.setEscapeButton( alwaysIgnoreButton );
-    box.exec();
-
-    if( box.clickedButton() == alwaysOpenButton )
-    {
-        saveClipboardImagePastePolicy( ClipboardImagePastePolicy::AlwaysOpen );
-        return true;
-    }
-
-    if( box.clickedButton() == alwaysIgnoreButton )
-    {
-        saveClipboardImagePastePolicy( ClipboardImagePastePolicy::AlwaysIgnore );
-        return false;
-    }
-
-    return box.clickedButton() == openOnceButton;
-}
-
-bool MainWindow::openClipboardImage()
-{
-    if( !canPasteClipboardImage() )
-        return false;
-
-    const QClipboard* clipboard = QApplication::clipboard();
-    if( !clipboard )
-        return false;
-
-    QImage image = clipboard->image();
-    if( image.isNull() )
-    {
-        const QMimeData* mimeData = clipboard->mimeData();
-        if( mimeData && mimeData->hasImage() )
-        {
-            const QVariant imageData = mimeData->imageData();
-            if( imageData.canConvert<QImage>() )
-                image = qvariant_cast< QImage >( imageData );
-            else if( imageData.canConvert<QPixmap>() )
-                image = qvariant_cast< QPixmap >( imageData ).toImage();
-        }
-    }
-
-    if( image.isNull() )
-        return false;
-
-    // Create a base white canvas (minimum 800x600, or padded if image is larger)
-    int bgWidth = qMax( 800, image.width() + 100 );
-    int bgHeight = qMax( 600, image.height() + 100 );
-    QImage bgImage( bgWidth, bgHeight, QImage::Format_ARGB32 );
-    bgImage.fill( Qt::white );
-
-    //auto* view = new QImageView( this );
-    //if( !view->openImage( bgImage, tr( "클립보드 이미지" ) ) )
-    //{
-    //    delete view;
-    //    return false;
-    //}
-
-    //applyThemeToView( view );
-    //addViewTab( view );
-
-    //// Start composite mode with the clipboard image
-    //view->startComposite( image );
-
-    return true;
-}
-
-bool MainWindow::confirmOpenCapturedImage() const
-{
-    QMessageBox box( QMessageBox::Question,
-                    tr( "캡쳐 결과 열기" ),
-                    tr( "캡쳐 이미지가 클립보드에 복사되었습니다." ),
-                    QMessageBox::NoButton,
-                    const_cast< MainWindow* >( this ) );
-    box.setInformativeText( tr( "캡쳐 결과를 새 이미지 뷰어 탭으로 여시겠습니까?" ) );
-    box.setDetailedText( tr( "아니요를 선택해도 캡쳐 이미지는 클립보드에 유지됩니다." ) );
-    auto* openButton = box.addButton( tr( "이미지 뷰어로 열기" ), QMessageBox::AcceptRole );
-    auto* keepClipboardButton = box.addButton( tr( "클립보드에만 복사" ), QMessageBox::RejectRole );
-    box.setDefaultButton( openButton );
-    box.setEscapeButton( keepClipboardButton );
-    box.exec();
-    return box.clickedButton() == openButton;
-}
-
-bool MainWindow::openCapturedImage( const QImage& image, const QString& title )
-{
-    if( image.isNull() )
-        return false;
-
-    //auto* view = new QImageView( this );
-    //applyPersistedViewSettings( view );
-    //if( !view->openImage( image, title.isEmpty() ? tr( "캡쳐 이미지" ) : title ) )
-    //{
-    //    delete view;
-    //    return false;
-    //}
-
-    //applyThemeToView( view );
-    //addViewTab( view );
-    return true;
-}
-
 // ═══════════════════════════════════════════════════════════
 // 슬롯
 // ═══════════════════════════════════════════════════════════
 void MainWindow::onFileNew()
 {
-    NewFileTarget target = NewFileTarget::Text;
-    if( !promptNewFileTarget( this, &target ) )
-        return;
-
-    if( target == NewFileTarget::Text )
-    {
-        auto* view = new QTextView( this );
-        applyPersistedViewSettings( view );
-        applyThemeToView( view );
-        addViewTab( view );
-        return;
-    }
-
-    //auto* view = new QImageView( this );
-    //applyPersistedViewSettings( view );
-    //if( !view->openBlankCanvas() )
-    //{
-    //    QMessageBox::warning( this, tr( "오류" ), tr( "빈 캔버스를 만들 수 없습니다." ) );
-    //    delete view;
-    //    return;
-    //}
-
-    //applyThemeToView( view );
-    //addViewTab( view );
+    // 이 앱이 여는 것은 텍스트 문서뿐이다. 예전에는 텍스트/이미지 뷰어 중
+    // 무엇으로 시작할지 물었지만 이미지 뷰어는 이 포팅에 없다.
+    auto* view = new QTextView( this );
+    applyPersistedViewSettings( view );
+    applyThemeToView( view );
+    addViewTab( view );
 }
 
 void MainWindow::onFileOpen()
 {
     const QStringList files = QFileDialog::getOpenFileNames( this,
         tr( "파일 열기" ), {},
-        tr( "모든 지원 파일 (*.jpg *.jpeg *.png *.bmp *.gif *.tiff *.tif *.ico *.webp *.svg "
-            "*.txt *.log *.ini *.cfg *.xml *.json *.html *.htm *.css *.js *.ts *.rst "
-            "*.cpp *.c *.h *.hpp *.py *.java *.md *.markdown);;"
-            "이미지 (*.jpg *.jpeg *.png *.bmp *.gif *.tiff *.tif *.ico *.webp *.svg);;"
+        tr( "모든 지원 파일 (*.rst *.txt *.log *.ini *.cfg *.xml *.json *.html *.htm *.css "
+            "*.js *.ts *.cpp *.c *.h *.hpp *.py *.java *.md *.markdown);;"
+            "reStructuredText (*.rst);;"
             "텍스트 (*.txt *.log *.ini *.cfg *.xml *.json *.html *.css *.js *.cpp *.c *.h *.py);;"
-            "마크다운 (*.rst *.md *.markdown);;"
+            "마크다운 (*.md *.markdown);;"
             "모든 파일 (*)" )
     );
     for( const auto& f : files )
@@ -1474,70 +1196,13 @@ void MainWindow::updateSaveActionState()
 
 void MainWindow::onPaste()
 {
-    if( !canPasteClipboardImage() )
-        return;
+    // 편집 메뉴의 붙여넣기. 예전에는 클립보드 이미지를 이미지 뷰어 탭으로 여는
+    // 것이 전부였는데, 이 포팅에는 이미지 뷰어가 없어 아무 일도 하지 않았다.
+    // 이제는 활성 문서에 그대로 붙여넣는다.
+    if( auto* view = currentView() )
+        view->pasteFromClipboard();
 
-    //QBaseView* view = currentView();
-    //if( auto* imageView = qobject_cast< QImageView* >( view ) )
-    //{
-    //    const QClipboard* clipboard = QApplication::clipboard();
-    //    QImage image = clipboard->image();
-    //    if( image.isNull() )
-    //    {
-    //        const QMimeData* mimeData = clipboard->mimeData();
-    //        if( mimeData && mimeData->hasImage() )
-    //        {
-    //            const QVariant imageData = mimeData->imageData();
-    //            if( imageData.canConvert<QImage>() )
-    //                image = qvariant_cast< QImage >( imageData );
-    //            else if( imageData.canConvert<QPixmap>() )
-    //                image = qvariant_cast< QPixmap >( imageData ).toImage();
-    //        }
-    //    }
-
-    //    if( !image.isNull() )
-    //    {
-    //        QMessageBox box( QMessageBox::Question,
-    //                        tr( "클립보드 이미지 붙여넣기" ),
-    //                        tr( "클립보드에 이미지 데이터가 있습니다.\n이미지를 어떻게 처리하시겠습니까?" ),
-    //                        QMessageBox::NoButton,
-    //                        this );
-    //        auto* newTabBtn = box.addButton( tr( "새 탭으로 열기" ), QMessageBox::AcceptRole );
-    //        auto* compositeBtn = box.addButton( tr( "현재 탭에 합성" ), QMessageBox::ActionRole );
-    //        auto* cancelBtn = box.addButton( tr( "취소" ), QMessageBox::RejectRole );
-    //        box.setDefaultButton( compositeBtn );
-    //        box.setEscapeButton( cancelBtn );
-    //        box.exec();
-
-    //        if( box.clickedButton() == cancelBtn )
-    //            return;
-
-    //        if( box.clickedButton() == compositeBtn )
-    //        {
-    //            imageView->startComposite( image );
-    //            return;
-    //        }
-    //    }
-    //}
-    //else if( shouldConfirmClipboardImageOpen() && !confirmOpenClipboardImage() )
-    //{
-    //    return;
-    //}
-
-    openClipboardImage();
-}
-
-void MainWindow::onResetClipboardImagePastePrompt()
-{
-    saveClipboardImagePastePolicy( ClipboardImagePastePolicy::Ask );
-
-    if( m_statusLabel )
-    {
-        statusBar()->showMessage(
-            tr( "클립보드 이미지 붙여넣기 동작이 '%1'(으)로 재설정되었습니다." )
-                .arg( clipboardImagePastePolicyText( ClipboardImagePastePolicy::Ask ) ),
-            4000 );
-    }
+    updatePasteActionState();
 }
 
 void MainWindow::onCloseTab( int index )
@@ -1986,7 +1651,7 @@ void MainWindow::refreshLoadingIndicator()
 void MainWindow::updatePasteActionState()
 {
     if( m_pasteAction )
-        m_pasteAction->setEnabled( canPasteClipboardImage() );
+        m_pasteAction->setEnabled( currentView() && currentView()->canPasteFromClipboard() );
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2142,13 +1807,8 @@ void MainWindow::openDroppedPaths( const QStringList& paths )
 
 void MainWindow::openDroppedDirectory( const QString& dirPath )
 {
-    const QString firstImage = firstImageFileInDirectory( dirPath );
-    if( !firstImage.isEmpty() )
-    {
-        openFile( firstImage );
-        return;
-    }
-
+    // 예전에는 폴더 안의 첫 이미지를 먼저 찾아 열었다. 이미지 뷰어가 없는 지금은
+    // 그 파일이 텍스트로 열려 깨져 보이기만 하므로 그냥 직계 파일들을 연다.
     QDir dir( dirPath );
     const QFileInfoList entries = dir.entryInfoList( QDir::Files, QDir::Name | QDir::IgnoreCase );
     if( entries.isEmpty() )
@@ -2161,20 +1821,6 @@ void MainWindow::openDroppedDirectory( const QString& dirPath )
         openFile( entry.absoluteFilePath() );
 }
 
-QString MainWindow::firstImageFileInDirectory( const QString& dirPath ) const
-{
-    QDir dir( dirPath );
-    QStringList filters;
-    for( const QString& ext : imageFileExtensions() )
-        filters << QStringLiteral( "*.%1" ).arg( ext );
-
-    dir.setNameFilters( filters );
-    const QFileInfoList images = dir.entryInfoList( QDir::Files, QDir::Name | QDir::IgnoreCase );
-    if( images.isEmpty() )
-        return {};
-
-    return images.first().absoluteFilePath();
-}
 
 bool MainWindow::shouldConfirmBinaryTextOpen( const QString& filePath ) const
 {

@@ -161,6 +161,10 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 	m_editor->send(sciMessage(SCI_SETVIEWEOL), 0);
 	m_editor->send(sciMessage(SCI_SETCONTROLCHARSYMBOL), static_cast<sptr_t>(' '));
 
+	// 마우스를 멈추면 SCN_DWELLSTART 가 온다 (:term: 호버 팝업).
+	// 0 이면 dwell 통지 자체가 오지 않는다 (SC_TIME_FOREVER).
+	m_editor->send(sciMessage(SCI_SETMOUSEDWELLTIME), 400);
+
 	m_editor->send(sciMessage(SCI_SETCODEPAGE), Scintilla::CpUtf8);
 	m_editor->send(sciMessage(SCI_SETMARGINTYPEN), 0, static_cast<sptr_t>(Scintilla::MarginType::Number));
 	configureBraceHighlightIndicators();
@@ -196,6 +200,16 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 	connect(m_editor, &ScintillaEditBase::charAdded,
 			this, [this](int ch) {
 				emit charAdded(ch);
+			});
+	connect(m_editor, &ScintillaEditBase::dwellStart,
+			this, [this](int x, int y) {
+				const int position = positionFromPoint(QPoint(x, y));
+				if (position >= 0)
+					emit dwellStarted(position, QPoint(x, y));
+			});
+	connect(m_editor, &ScintillaEditBase::dwellEnd,
+			this, [this](int, int) {
+				emit dwellEnded();
 			});
 	connect(m_editor, &ScintillaEditBase::marginClicked,
 			this, [this](Scintilla::Position position, Scintilla::KeyMod, int margin) {
@@ -416,6 +430,17 @@ void ScintillaQtDirectBackend::copy()
 {
 	if (m_editor)
 		m_editor->send(sciMessage(SCI_COPY));
+}
+
+void ScintillaQtDirectBackend::paste()
+{
+	if (m_editor)
+		m_editor->send(sciMessage(SCI_PASTE));
+}
+
+bool ScintillaQtDirectBackend::canPaste() const
+{
+	return m_editor && m_editor->send(sciMessage(SCI_CANPASTE)) != 0;
 }
 
 void ScintillaQtDirectBackend::setCursorPosition(int line, int index)
@@ -840,6 +865,17 @@ QPoint ScintillaQtDirectBackend::pointFromPosition(int position) const
 	const int x = static_cast<int>(m_editor->send(sciMessage(SCI_POINTXFROMPOSITION), 0, safePosition));
 	const int y = static_cast<int>(m_editor->send(sciMessage(SCI_POINTYFROMPOSITION), 0, safePosition));
 	return { x, y };
+}
+
+int ScintillaQtDirectBackend::positionFromPoint(const QPoint& viewportPos) const
+{
+	if (!m_editor)
+		return -1;
+
+	// CLOSE 계열은 글자 위가 아니면 -1 을 돌려준다. 빈 여백에서 호버 팝업이
+	// 엉뚱한 위치의 텍스트를 집어 오는 것을 막아 준다.
+	return static_cast<int>(m_editor->send(sciMessage(SCI_POSITIONFROMPOINTCLOSE),
+										   viewportPos.x(), viewportPos.y()));
 }
 
 // ── 컨테이너 렉싱 지원 ─────────────────────────────────────

@@ -69,6 +69,8 @@ public:
     void discardHotExitBackup();
     bool canCopyToClipboard() const override;
     bool copySelectionToClipboard() override;
+    bool canPasteFromClipboard() const override;
+    bool pasteFromClipboard() override;
     void goToLine( int line );
     void goToPosition( int line, int column );
     int  characterCount() const;
@@ -191,6 +193,11 @@ signals:
     void sigCharAdded( int ch );
     /// 세로 스크롤이 변했다. 프리뷰 동기화용.
     void sigViewportScrolled();
+    /// 마우스가 `:role:`target`` 위에서 멈췄다. globalPos 는 전역 화면 좌표.
+    /// 롤 이름에 콜론이 들어가는 도메인 표기(`py:func`)도 그대로 넘어온다.
+    void sigRoleHovered( const QString& role, const QString& target, const QPoint& globalPos );
+    /// 호버가 끝났다 (마우스가 움직였거나 편집기를 벗어났다).
+    void sigRoleHoverEnded();
 
 private:
     struct SearchOptions
@@ -200,6 +207,10 @@ private:
         bool wholeWords = false;
         bool forward = true;
     };
+
+    /// dwell 위치의 줄에서 `:role:`target`` 을 찾아 sigRoleHovered 를 낸다.
+    /// 커서가 롤 안에 없으면 sigRoleHoverEnded 를 낸다.
+    void handleDwellStart( int position, const QPoint& viewportPos );
 
     bool promptOpenModeForFile( const QString& filePath, TextFileSession::OpenMode& openMode ) const;
     bool ensureEditorBackend();

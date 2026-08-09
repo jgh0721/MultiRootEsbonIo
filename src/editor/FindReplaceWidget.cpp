@@ -11,34 +11,25 @@
 
 namespace {
 
-QIcon iconFromText(const QString& text, int size = 16)
+/// 검색 옵션 토글.
+///
+/// 예전에는 QLineEdit::addAction(TrailingPosition) 으로 입력칸 **안**에 넣었는데,
+/// Qlementine 스타일은 QLineEdit 내부 아이콘 버튼의 Move 이벤트를 가로채 인덱스와
+/// 무관하게 전부 오른쪽 끝 한 자리에 겹쳐 놓는다(LineEditButtonEventFilter).
+/// 그래서 토글들을 입력칸 밖으로 꺼내고, 입력칸 안에는 내장 clear 버튼 하나만 남긴다.
+QToolButton* makeOptionButton(QWidget* parent, const QString& text, const QString& toolTip)
 {
-    QPixmap pix(size, size);
-    pix.fill(Qt::transparent);
-    QPainter p(&pix);
-    p.setRenderHint(QPainter::Antialiasing);
-    QFont font = QApplication::font();
-    font.setPixelSize(size - 4);
-    font.setBold(true);
-    p.setFont(font);
-    p.setPen(QApplication::palette().color(QPalette::Text));
-    p.drawText(pix.rect(), Qt::AlignCenter, text);
-    p.end();
-
-    // checked state: draw with highlight color
-    QPixmap pixChecked(size, size);
-    pixChecked.fill(Qt::transparent);
-    QPainter pc(&pixChecked);
-    pc.setRenderHint(QPainter::Antialiasing);
-    pc.setFont(font);
-    pc.setPen(QApplication::palette().color(QPalette::Highlight));
-    pc.drawText(pixChecked.rect(), Qt::AlignCenter, text);
-    pc.end();
-
-    QIcon icon;
-    icon.addPixmap(pix, QIcon::Normal, QIcon::Off);
-    icon.addPixmap(pixChecked, QIcon::Normal, QIcon::On);
-    return icon;
+    auto* button = new QToolButton(parent);
+    button->setText(text);
+    button->setToolTip(toolTip);
+    button->setCheckable(true);
+    button->setAutoRaise(true);
+    button->setFocusPolicy(Qt::NoFocus);
+    // 아이콘이 없으므로 글자를 그리게 명시한다 (기본값은 IconOnly).
+    button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    button->setFixedHeight(24);
+    button->setMinimumWidth(26);
+    return button;
 }
 
 } // namespace
@@ -82,58 +73,43 @@ void FindReplaceWidget::setupUi()
     });
     topRow->addWidget(m_toggleBtn);
 
-    // 검색 입력 필드
+    // 검색 입력 필드 — 내부 위젯은 내장 clear 버튼 하나뿐이다.
     m_searchEdit = new QLineEdit(this);
     m_searchEdit->setMaximumWidth(280);
     m_searchEdit->setPlaceholderText(tr("검색"));
-    m_searchEdit->setClearButtonEnabled(false);
-
-    // 내부 액션: T1 대소문자 구분 (Leading 위치)
-    m_caseAction = new QAction(this);
-    m_caseAction->setCheckable(true);
-    m_caseAction->setToolTip(tr("대/소문자 구분"));
-    m_caseAction->setIcon(iconFromText(QStringLiteral("Aa")));
-    m_searchEdit->addAction(m_caseAction, QLineEdit::TrailingPosition);
-    connect(m_caseAction, &QAction::toggled, this, [this] {
-        updatePlaceholderText();
-        emit optionsChanged();
-    });
-
-    // 내부 액션: T2 단어 일치
-    m_wordAction = new QAction(this);
-    m_wordAction->setCheckable(true);
-    m_wordAction->setToolTip(tr("단어 일치"));
-    m_wordAction->setIcon(iconFromText(QStringLiteral("W")));
-    m_searchEdit->addAction(m_wordAction, QLineEdit::TrailingPosition);
-    connect(m_wordAction, &QAction::toggled, this, [this] {
-        updatePlaceholderText();
-        emit optionsChanged();
-    });
-
-    // 내부 액션: X (Clear) — 텍스트 입력 시에만 표시
-    m_clearAction = m_searchEdit->addAction(
-        style()->standardIcon(QStyle::SP_LineEditClearButton),
-        QLineEdit::TrailingPosition);
-    m_clearAction->setToolTip(tr("지우기"));
-    m_clearAction->setVisible(false);
-    connect(m_clearAction, &QAction::triggered, m_searchEdit, &QLineEdit::clear);
+    m_searchEdit->setClearButtonEnabled(true);
 
     connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
-        m_clearAction->setVisible(!text.isEmpty());
         emit findTextChanged(text);
     });
 
     topRow->addWidget(m_searchEdit);
 
-    // 결과 개수 라벨
+    // T1: 대/소문자 구분
+    m_caseBtn = makeOptionButton(this, QStringLiteral("Aa"), tr("대/소문자 구분"));
+    connect(m_caseBtn, &QToolButton::toggled, this, [this] {
+        updatePlaceholderText();
+        emit optionsChanged();
+    });
+    topRow->addWidget(m_caseBtn);
+
+    // T2: 단어 일치
+    m_wordBtn = makeOptionButton(this, QStringLiteral("W"), tr("단어 일치"));
+    connect(m_wordBtn, &QToolButton::toggled, this, [this] {
+        updatePlaceholderText();
+        emit optionsChanged();
+    });
+    topRow->addWidget(m_wordBtn);
+
+    // 결과 개수 라벨 — 내용이 없으면 자리를 차지하지 않는다.
     m_countLabel = new QLabel(this);
-    m_countLabel->setMinimumWidth(60);
-    m_countLabel->setAlignment(Qt::AlignCenter);
+    m_countLabel->setAlignment(Qt::AlignVCenter | Qt::AlignRight);
+    m_countLabel->setVisible(false);
     topRow->addWidget(m_countLabel);
 
     m_excludedCountLabel = new QLabel(this);
-    m_excludedCountLabel->setMinimumWidth(60);
-    m_excludedCountLabel->setAlignment(Qt::AlignCenter);
+    m_excludedCountLabel->setAlignment(Qt::AlignVCenter | Qt::AlignRight);
+    m_excludedCountLabel->setVisible(false);
     topRow->addWidget(m_excludedCountLabel);
 
     // Btn1: 이전 항목
@@ -194,6 +170,9 @@ void FindReplaceWidget::setupUi()
         emit closed();
     });
     topRow->addWidget(m_closeBtn);
+
+    // 남는 폭은 전부 여기로 — 라벨이나 버튼이 늘어나 위치가 흔들리지 않는다.
+    topRow->addStretch(1);
 
     mainLayout->addLayout(topRow);
 
@@ -279,12 +258,12 @@ QString FindReplaceWidget::replaceText() const
 
 bool FindReplaceWidget::isCaseSensitive() const
 {
-    return m_caseAction && m_caseAction->isChecked();
+    return m_caseBtn && m_caseBtn->isChecked();
 }
 
 bool FindReplaceWidget::isWholeWord() const
 {
-    return m_wordAction && m_wordAction->isChecked();
+    return m_wordBtn && m_wordBtn->isChecked();
 }
 
 bool FindReplaceWidget::isSearchInSelection() const
@@ -315,12 +294,12 @@ void FindReplaceWidget::setSearchInSelectionChecked(bool checked)
 
 void FindReplaceWidget::setMatchCount(int count)
 {
-    if (m_countLabel) {
-        if (count < 0 || (m_searchEdit && m_searchEdit->text().isEmpty()))
-            m_countLabel->setText(QString());
-        else
-            m_countLabel->setText(tr("결과 %1 개").arg(count));
-    }
+    if (!m_countLabel)
+        return;
+
+    const bool show = count >= 0 && !(m_searchEdit && m_searchEdit->text().isEmpty());
+    m_countLabel->setText(show ? tr("결과 %1 개").arg(count) : QString());
+    m_countLabel->setVisible(show);
 }
 
 void FindReplaceWidget::setExcludedCount(int count)
@@ -328,10 +307,9 @@ void FindReplaceWidget::setExcludedCount(int count)
     if (!m_excludedCountLabel)
         return;
 
-    if (count <= 0 || (m_searchEdit && m_searchEdit->text().isEmpty()))
-        m_excludedCountLabel->setText(QString());
-    else
-        m_excludedCountLabel->setText(tr("제외 %1 개").arg(count));
+    const bool show = count > 0 && !(m_searchEdit && m_searchEdit->text().isEmpty());
+    m_excludedCountLabel->setText(show ? tr("제외 %1 개").arg(count) : QString());
+    m_excludedCountLabel->setVisible(show);
 }
 
 void FindReplaceWidget::focusSearchField()
@@ -358,9 +336,9 @@ void FindReplaceWidget::updatePlaceholderText()
         return;
 
     QStringList modes;
-    if (m_caseAction && m_caseAction->isChecked())
+    if (m_caseBtn && m_caseBtn->isChecked())
         modes << tr("대/소문자 구분");
-    if (m_wordAction && m_wordAction->isChecked())
+    if (m_wordBtn && m_wordBtn->isChecked())
         modes << tr("단어 일치");
 
     if (modes.isEmpty())

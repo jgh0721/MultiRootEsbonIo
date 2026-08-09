@@ -58,7 +58,6 @@ public slots:
     void                                onFileSaveAs();
     void                                onCopy();
     void                                onPaste();
-    void                                onResetClipboardImagePastePrompt();
     void                                onSettings();
     void                                onCloseTab( int index );
     void                                onTabChanged( int index );
@@ -133,19 +132,11 @@ private:
     QBaseView*                          preferredLoadingView() const;
     void                                cancelLoadingView( QBaseView* view, bool showStatusMessage = true );
     QIcon                               tabIconForView( QBaseView* view ) const;
-    bool                                canPasteClipboardImage() const;
-    bool                                canPasteClipboardImageInCurrentContext() const;
-    bool                                shouldConfirmClipboardImageOpen() const;
-    bool                                confirmOpenClipboardImage() const;
-    bool                                openClipboardImage();
-    bool                                confirmOpenCapturedImage() const;
-    bool                                openCapturedImage( const QImage& image, const QString& title = {} );
     QStringList                         droppedPathsFromMimeData( const QMimeData* mimeData ) const;
     bool                                hasDroppedPaths( const QMimeData* mimeData ) const;
     bool                                handleDropEvent( QDropEvent* event );
     void                                openDroppedPaths( const QStringList& paths );
     void                                openDroppedDirectory( const QString& dirPath );
-    QString                             firstImageFileInDirectory( const QString& dirPath ) const;
     bool                                shouldConfirmBinaryTextOpen( const QString& filePath ) const;
     bool                                confirmOpenBinaryTextFile( const QString& filePath ) const;
 
