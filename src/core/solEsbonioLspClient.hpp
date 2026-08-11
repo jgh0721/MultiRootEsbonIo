@@ -116,7 +116,11 @@ signals:
     /// sphinx/clientCreated, sphinx/appCreated, sphinx/clientErrored, $/progress 등.
     /// 상태 표시와 "빌드 끝난 뒤 자동완성 재시도" 에 쓴다.
     void serverNotification(const QString& method, const QJsonObject& params);
-    void diagnosticsReady(const QString& source, const QVector<DiagnosticEntry>& entries);
+    /// path 를 따로 실어 보낸다. publishDiagnostics 는 "이 파일은 이제 깨끗하다"
+    /// 를 **빈 배열**로 알리는데, entries 만 봐서는 어느 파일인지 알 수 없어
+    /// 옛 진단을 지울 수가 없다.
+    void diagnosticsReady(const QString& source, const QString& path,
+                          const QVector<DiagnosticEntry>& entries);
     void completionsReady(int requestId, const QList<LspCompletionItem>& items);
     void documentSymbolsReady(const QString& path, const QList<LspDocumentSymbol>& symbols);
 

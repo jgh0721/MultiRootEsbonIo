@@ -53,6 +53,7 @@ signals:
     // 모든 시그널이 projectId 를 달고 나간다. 단일 클라이언트와의 결정적 차이다.
     void                                logMessage( const QString& projectId, const QString& text );
     void                                diagnosticsReady( const QString& projectId, const QString& source,
+                                                          const QString& path,
                                                           const QVector< DiagnosticEntry >& entries );
     void                                completionsReady( const QString& projectId, int requestId,
                                                           const QList< LspCompletionItem >& items );

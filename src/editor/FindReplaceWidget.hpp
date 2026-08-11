@@ -58,10 +58,9 @@ private:
 
     // ── 상단 행: 검색 ──
     QToolButton*  m_toggleBtn = nullptr;       // > 접기/펼치기
-    QLineEdit*    m_searchEdit = nullptr;      // EditControl1
-    QAction*      m_clearAction = nullptr;     // X clear
-    QAction*      m_caseAction = nullptr;      // T1 대소문자 구분
-    QAction*      m_wordAction = nullptr;      // T2 단어 일치
+    QLineEdit*    m_searchEdit = nullptr;      // EditControl1 (내장 clear 버튼 사용)
+    QToolButton*  m_caseBtn = nullptr;         // T1 대소문자 구분
+    QToolButton*  m_wordBtn = nullptr;         // T2 단어 일치
     QLabel*       m_countLabel = nullptr;      // 결과 X 개
     QLabel*       m_excludedCountLabel = nullptr; // 제외 X 개
     QToolButton*  m_prevBtn = nullptr;         // Btn1

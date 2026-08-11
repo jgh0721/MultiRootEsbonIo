@@ -161,6 +161,10 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 	m_editor->send(sciMessage(SCI_SETVIEWEOL), 0);
 	m_editor->send(sciMessage(SCI_SETCONTROLCHARSYMBOL), static_cast<sptr_t>(' '));
 
+	// 마우스를 멈추면 SCN_DWELLSTART 가 온다 (:term: 호버 팝업).
+	// 0 이면 dwell 통지 자체가 오지 않는다 (SC_TIME_FOREVER).
+	m_editor->send(sciMessage(SCI_SETMOUSEDWELLTIME), 400);
+
 	m_editor->send(sciMessage(SCI_SETCODEPAGE), Scintilla::CpUtf8);
 	m_editor->send(sciMessage(SCI_SETMARGINTYPEN), 0, static_cast<sptr_t>(Scintilla::MarginType::Number));
 	configureBraceHighlightIndicators();
@@ -196,6 +200,16 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 	connect(m_editor, &ScintillaEditBase::charAdded,
 			this, [this](int ch) {
 				emit charAdded(ch);
+			});
+	connect(m_editor, &ScintillaEditBase::dwellStart,
+			this, [this](int x, int y) {
+				const int position = positionFromPoint(QPoint(x, y));
+				if (position >= 0)
+					emit dwellStarted(position, QPoint(x, y));
+			});
+	connect(m_editor, &ScintillaEditBase::dwellEnd,
+			this, [this](int, int) {
+				emit dwellEnded();
 			});
 	connect(m_editor, &ScintillaEditBase::marginClicked,
 			this, [this](Scintilla::Position position, Scintilla::KeyMod, int margin) {
@@ -416,6 +430,17 @@ void ScintillaQtDirectBackend::copy()
 {
 	if (m_editor)
 		m_editor->send(sciMessage(SCI_COPY));
+}
+
+void ScintillaQtDirectBackend::paste()
+{
+	if (m_editor)
+		m_editor->send(sciMessage(SCI_PASTE));
+}
+
+bool ScintillaQtDirectBackend::canPaste() const
+{
+	return m_editor && m_editor->send(sciMessage(SCI_CANPASTE)) != 0;
 }
 
 void ScintillaQtDirectBackend::setCursorPosition(int line, int index)
@@ -842,6 +867,17 @@ QPoint ScintillaQtDirectBackend::pointFromPosition(int position) const
 	return { x, y };
 }
 
+int ScintillaQtDirectBackend::positionFromPoint(const QPoint& viewportPos) const
+{
+	if (!m_editor)
+		return -1;
+
+	// CLOSE 계열은 글자 위가 아니면 -1 을 돌려준다. 빈 여백에서 호버 팝업이
+	// 엉뚱한 위치의 텍스트를 집어 오는 것을 막아 준다.
+	return static_cast<int>(m_editor->send(sciMessage(SCI_POSITIONFROMPOINTCLOSE),
+										   viewportPos.x(), viewportPos.y()));
+}
+
 // ── 컨테이너 렉싱 지원 ─────────────────────────────────────
 
 int ScintillaQtDirectBackend::endStyled() const
@@ -1206,10 +1242,14 @@ void ScintillaQtDirectBackend::handleStyleNeeded(int endPosition)
 	const int firstLine = lineFromPosition(startPosition);
 	const int lastLine = qMin(lineFromPosition(qMin(endPosition, documentEnd)), totalLines - 1);
 
-	// 렉서는 제목/구분선 판정을 위해 앞뒤 한 줄을 문맥으로 요구한다.
+	// 제목은 최대 세 줄(윗줄/제목/밑줄)에 걸친다. 편집된 줄부터만 다시 칠하면
+	// 그 위의 윗줄이 옛 스타일로 남으므로, 칠할 범위 자체를 두 줄 위로 넓힌다.
+	const int paintFirstLine = qMax(0, firstLine - 2);
+
+	// 렉서는 제목/구분선 판정을 위해 앞뒤 두 줄을 문맥으로 요구한다.
 	// 문맥까지 포함해 렉싱한 뒤, 실제로 칠할 구간만 잘라 쓴다.
-	const int contextFirstLine = qMax(0, firstLine - 1);
-	const int contextLastLine = qMin(totalLines - 1, lastLine + 1);
+	const int contextFirstLine = qMax(0, paintFirstLine - 2);
+	const int contextLastLine = qMin(totalLines - 1, lastLine + 2);
 
 	const int contextStart = positionFromLine(contextFirstLine);
 	const int contextEnd = (contextLastLine + 1 < totalLines)
@@ -1223,7 +1263,7 @@ void ScintillaQtDirectBackend::handleStyleNeeded(int endPosition)
 	const std::vector<unsigned char> styles =
 		m_rstLexer->styleBytes(std::string(chunk.constData(), static_cast<std::size_t>(chunk.size())));
 
-	const int paintStart = positionFromLine(firstLine);
+	const int paintStart = positionFromLine(paintFirstLine);
 	const int paintEnd = (lastLine + 1 < totalLines) ? positionFromLine(lastLine + 1) : documentEnd;
 	const int offset = paintStart - contextStart;
 	const int length = paintEnd - paintStart;

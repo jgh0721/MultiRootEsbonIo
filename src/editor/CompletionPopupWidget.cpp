@@ -279,6 +279,22 @@ CompletionPopupWidget::CompletionPopupWidget( QWidget* parent )
     layout->addWidget( list_ );
 
     connect( list_, &QListWidget::clicked, this, [ this ]( const QModelIndex& ) { acceptCurrent(); } );
+    connect( list_, &QListWidget::currentItemChanged, this,
+             [ this ]( QListWidgetItem*, QListWidgetItem* ) { emit currentItemChanged( currentItem() ); } );
+}
+
+CompletionDisplayItem CompletionPopupWidget::currentItem() const
+{
+    CompletionDisplayItem item;
+    const QListWidgetItem* current = list_ != nullptr ? list_->currentItem() : nullptr;
+    if( current == nullptr )
+        return item;
+
+    item.label = current->data( kRoleLabel ).toString();
+    item.insertText = current->data( kRoleInsertText ).toString();
+    item.detail = current->data( kRoleDetail ).toString();
+    item.kind = current->data( kRoleKind ).toInt();
+    return item;
 }
 
 void CompletionPopupWidget::setItems( const QList< CompletionDisplayItem >& items )

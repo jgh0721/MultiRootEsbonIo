@@ -39,6 +39,10 @@ public:
     virtual bool                        canCopyToClipboard() const { return false; }
     virtual bool                        copySelectionToClipboard() { return false; }
 
+    // ── 붙여넣기 ── 클립보드에서 붙여넣기 가능 여부
+    virtual bool                        canPasteFromClipboard() const { return false; }
+    virtual bool                        pasteFromClipboard() { return false; }
+
     ///////////////////////////////////////////////////////////////////////////
     /// 뷰 독립 도구모음
     virtual QToolBar*                   createToolBar();

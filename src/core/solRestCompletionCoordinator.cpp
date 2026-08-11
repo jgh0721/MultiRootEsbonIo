@@ -3,9 +3,12 @@
 
 #include "editor/QBaseEditor.hpp"
 #include "editor/RstContainerLexer.hpp"
+#include "solGlossaryIndex.hpp"
 
 #include <QApplication>
+#include <QDir>
 #include <QEvent>
+#include <QFileInfo>
 #include <QKeyEvent>
 #include <QTimer>
 
@@ -70,6 +73,7 @@ QList< CompletionDisplayItem > toDisplayList( const QVector< rstcomplete::Item >
 CompletionCoordinator::CompletionCoordinator( QObject* parent )
     : QObject( parent )
     , popup_( new CompletionPopupWidget( nullptr ) )
+    , detail_( new CompletionDetailPopup( nullptr ) )
     , debounce_( new QTimer( this ) )
 {
     debounce_->setSingleShot( true );
@@ -78,12 +82,20 @@ CompletionCoordinator::CompletionCoordinator( QObject* parent )
 
     connect( popup_, &CompletionPopupWidget::itemSelected, this,
             &CompletionCoordinator::insertCompletion );
+    connect( popup_, &CompletionPopupWidget::currentItemChanged, this,
+            &CompletionCoordinator::refreshDetailPopup );
 }
 
 CompletionCoordinator::~CompletionCoordinator()
 {
     qApp->removeEventFilter( this );
+    delete detail_.data();
     delete popup_.data();
+}
+
+void CompletionCoordinator::setGlossaryIndex( GlossaryIndex* glossary )
+{
+    glossary_ = glossary;
 }
 
 void CompletionCoordinator::showPopupAtCaret()
@@ -93,11 +105,165 @@ void CompletionCoordinator::showPopupAtCaret()
 
     // 부모 없는 Tool 창은 Windows 에서 메인 창 뒤로 숨는다. 창이 바뀔 때마다
     // 붙여 준다 (탭이 다른 창으로 떨어져 나갈 수 있다).
-    if( QWidget* window = activeView_->window(); popup_->parentWidget() != window )
+    QWidget* window = activeView_->window();
+    if( popup_->parentWidget() != window )
         popup_->setParent( window, popup_->windowFlags() );
+    if( !detail_.isNull() && detail_->parentWidget() != window )
+        detail_->setParent( window, detail_->windowFlags() );
 
     popup_->showAt( activeView_->caretGlobalPos() );
     qApp->installEventFilter( this );
+
+    // 목록이 자리를 잡은 뒤에 옆에 붙인다.
+    refreshDetailPopup( popup_->currentItem() );
+}
+
+void CompletionCoordinator::refreshDetailPopup( const CompletionDisplayItem& item )
+{
+    if( detail_.isNull() )
+        return;
+    if( popup_.isNull() || !popup_->isVisible() )
+    {
+        detail_->hide();
+        return;
+    }
+
+    QString title;
+    QString body;
+    QString source;
+    if( !buildDetailContent( item, &title, &body, &source )
+        || !detail_->setContent( title, body, source ) )
+    {
+        detail_->hide();
+        return;
+    }
+
+    detail_->showBesideAnchor( popup_->geometry() );
+}
+
+bool CompletionCoordinator::buildDetailContent( const CompletionDisplayItem& item, QString* title,
+                                                QString* body, QString* source ) const
+{
+    if( item.label.isEmpty() )
+        return false;
+
+    *title = item.label;
+    *body = item.detail;
+    source->clear();
+
+    // 용어집 항목이면 정의 전문과 출처를 붙인다. 롤 대상 컨텍스트가 아니어도
+    // 이름이 용어와 같으면 보여 준다 (LSP 가 준 후보도 마찬가지로 걸린다).
+    const bool termContext = shownContext_.kind == rstcomplete::ContextKind::RoleTarget
+                             && shownContext_.directiveName == QLatin1String( "term" );
+    if( glossary_ != nullptr && ( termContext || shownContext_.kind == rstcomplete::ContextKind::None ) )
+    {
+        if( const GlossaryEntry* entry = glossary_->lookup( item.label ); entry != nullptr )
+        {
+            *body = entry->definition;
+            if( !entry->path.isEmpty() )
+            {
+                *source = QStringLiteral( "%1:%2" )
+                              .arg( QFileInfo( entry->path ).fileName() )
+                              .arg( entry->line );
+            }
+        }
+    }
+
+    return !title->isEmpty() && ( !body->isEmpty() || !source->isEmpty() );
+}
+
+QList< CompletionDisplayItem >
+CompletionCoordinator::localCandidatesFor( const rstcomplete::Context& context ) const
+{
+    QList< CompletionDisplayItem > items;
+    if( glossary_ == nullptr || context.kind != rstcomplete::ContextKind::RoleTarget )
+        return items;
+    if( context.directiveName != QLatin1String( "term" ) )
+        return items;
+
+    // Esbonio 는 프로젝트 빌드가 끝나야 대상 후보를 만든다. 그 사이에도
+    // 용어집만큼은 우리가 직접 훑어 둔 것이 있으므로 바로 쓸 수 있다.
+    const QVector< GlossaryEntry > entries = glossary_->match( QString{} );
+    items.reserve( static_cast< int >( entries.size() ) );
+    for( const GlossaryEntry& entry : entries )
+    {
+        CompletionDisplayItem item;
+        item.label = entry.term;
+        item.insertText = entry.term;
+        item.detail = QObject::tr( "용어집" );
+        item.kind = 21;   // LSP CompletionItemKind::Constant — 다른 롤 대상과 구분만 되면 된다
+        item.filterText = entry.term;
+        items.push_back( item );
+    }
+    return items;
+}
+
+void CompletionCoordinator::notifyGlossaryReady( const QString& projectId )
+{
+    if( projectId != activeProjectId_ || !isPopupVisible() || popup_.isNull() )
+        return;
+    if( shownContext_.kind != rstcomplete::ContextKind::RoleTarget
+        || shownContext_.directiveName != QLatin1String( "term" ) )
+    {
+        return;
+    }
+
+    const QList< CompletionDisplayItem > local = localCandidatesFor( shownContext_ );
+    if( local.isEmpty() )
+        return;
+
+    offlineItems_ = local;
+    popup_->setItems( offlineItems_ );
+    popup_->updateFilter( shownContext_.prefix );
+    showPopupAtCaret();
+}
+
+void CompletionCoordinator::showHoverDetail( const QString& role, const QString& target,
+                                             const QPoint& globalPos )
+{
+    if( detail_.isNull() || glossary_ == nullptr )
+        return;
+    // 자동완성이 떠 있으면 그쪽이 우선이다. 두 팝업이 겹치면 읽을 수 없다.
+    if( isPopupVisible() )
+        return;
+    if( role != QLatin1String( "term" ) || target.trimmed().isEmpty() )
+    {
+        detail_->hide();
+        return;
+    }
+
+    const GlossaryEntry* entry = glossary_->lookup( target );
+    if( entry == nullptr )
+    {
+        detail_->hide();
+        return;
+    }
+
+    if( !activeView_.isNull() )
+    {
+        QWidget* window = activeView_->window();
+        if( detail_->parentWidget() != window )
+            detail_->setParent( window, detail_->windowFlags() );
+    }
+
+    const QString source = entry->path.isEmpty()
+                               ? QString{}
+                               : QStringLiteral( "%1:%2" )
+                                     .arg( QFileInfo( entry->path ).fileName() )
+                                     .arg( entry->line );
+    if( !detail_->setContent( entry->term, entry->definition, source ) )
+    {
+        detail_->hide();
+        return;
+    }
+
+    detail_->showNearPoint( globalPos );
+}
+
+void CompletionCoordinator::hideHoverDetail()
+{
+    if( !detail_.isNull() && !isPopupVisible() )
+        detail_->hide();
 }
 
 void CompletionCoordinator::attachEditor( QTextView* view )
@@ -154,6 +320,9 @@ void CompletionCoordinator::hidePopup()
     pendingTrigger_.clear();
     pendingExplicit_ = false;
     inFlight_ = {};
+
+    if( !detail_.isNull() && detail_->isVisible() )
+        detail_->hide();
 
     if( popup_ != nullptr && popup_->isVisible() )
     {
@@ -230,6 +399,8 @@ void CompletionCoordinator::trigger( const QString& triggerCharacter, const bool
     const QVector< rstcomplete::Item > offline =
         rstcomplete::finalizeItems( rstcomplete::candidatesFor( broad ) );
     offlineItems_ = toDisplayList( offline );
+    // 오프라인 표가 비워 두는 롤 대상(:term: 등)은 워크스페이스 인덱스가 채운다.
+    offlineItems_ += localCandidatesFor( context );
 
     if( !offlineItems_.isEmpty() )
     {

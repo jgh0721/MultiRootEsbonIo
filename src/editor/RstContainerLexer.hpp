@@ -77,9 +77,15 @@ public:
     [[nodiscard]] const RstMetadataCache& metadataCache() const;
     [[nodiscard]] RstMetadataCache& metadataCache();
 
+    /// lineAfterNext 는 윗줄/아랫줄로 감싼 제목(overline)을 알아보는 데 쓴다.
+    ///     ########
+    ///     제목
+    ///     ########
+    /// 첫 줄만 보면 단독 구분선과 구별할 수 없어 두 줄 아래까지 필요하다.
     [[nodiscard]] std::vector< Span > tokenizeLine( const std::string& line,
                                                     const std::string& previousLine,
-                                                    const std::string& nextLine ) const;
+                                                    const std::string& nextLine,
+                                                    const std::string& lineAfterNext = {} ) const;
 
     [[nodiscard]] std::vector< Span > styleText( const std::string& utf8Text ) const;
 

@@ -45,6 +45,8 @@ public:
 	void setSelectionRange(int lineFrom, int indexFrom, int lineTo, int indexTo);
 	void setSelectionByPos(int startPos, int endPos);
 	void copy();
+	void paste();
+	bool canPaste() const;
 
 	void setCursorPosition(int line, int index);
 	bool findFirst(const QString& text,
@@ -111,6 +113,8 @@ public:
 	QByteArray textRangeUtf8(int startPos, int endPos) const;
 	QString lineText(int line) const;
 	QPoint pointFromPosition(int position) const;
+	/// 뷰포트 좌표 -> 문서 위치. 글자 위가 아니면 -1.
+	int positionFromPoint(const QPoint& viewportPos) const;
 
 	// ── 컨테이너 렉싱 지원 ──
 	// ILexer 를 비운 상태에서 styleNeeded 시그널을 받아 직접 스타일을 칠할 때 쓴다.
@@ -149,6 +153,9 @@ signals:
 	void charAdded(int ch);
 	/// 세로 스크롤이 변했다. 프리뷰 동기화에 쓴다.
 	void viewportScrolled();
+	/// 마우스가 글자 위에서 멈췄다. position 은 문서 위치, viewportPos 는 뷰포트 좌표.
+	void dwellStarted(int position, const QPoint& viewportPos);
+	void dwellEnded();
 
 private:
 	void configureCodeFolding(bool enabled);

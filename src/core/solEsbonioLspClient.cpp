@@ -530,9 +530,9 @@ void LspClient::handleResponse(const QJsonObject& message) {
 
 void LspClient::handleNotification(const QString& method, const QJsonObject& params) {
     if (method == QStringLiteral("textDocument/publishDiagnostics")) {
-        emit diagnosticsReady(QStringLiteral("esbonio"), parseLspDiagnostics(
-            params.value(QStringLiteral("uri")).toString(),
-            params.value(QStringLiteral("diagnostics")).toArray()));
+        const QString uri = params.value(QStringLiteral("uri")).toString();
+        emit diagnosticsReady(QStringLiteral("esbonio"), fileUriToPath(uri), parseLspDiagnostics(
+            uri, params.value(QStringLiteral("diagnostics")).toArray()));
         return;
     }
 

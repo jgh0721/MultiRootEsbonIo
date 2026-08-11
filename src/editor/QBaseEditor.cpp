@@ -113,6 +113,39 @@ namespace
         return preferredSaveBomMode() != TextSaveDialog::BomMode::Exclude;
     }
 
+    /// 도구모음 라벨.
+    ///
+    /// **QToolBar 는 자기 backgroundRole 을 QPalette::Button 으로 설정한다**
+    /// (QToolBarPrivate::init). 자식 QLabel 은 foregroundRole 을 지정하지 않으면
+    /// 그 배경 역할에서 유도된 **ButtonText** 로 글자를 그린다. Qlementine 테마에서
+    /// ButtonText = secondaryColorForeground 인데, 그 값이 툴바 배경
+    /// (backgroundColorMain2) 과 다크에서는 **완전히 같고**(#282b33) 라이트에서도
+    /// 거의 같다(#ffffff vs #f3f3f3). 그래서 라벨이 통째로 보이지 않았다.
+    ///
+    /// 역할을 WindowText 로 되돌리고, 위젯이 Inactive/Disabled 그룹으로 해석돼
+    /// secondaryColorDisabled(다크 #ffffff33)로 흐려지는 것까지 막는다.
+    QLabel* makeToolBarLabel( QToolBar* toolBar, const QString& text )
+    {
+        auto* label = new QLabel( text, toolBar );
+        label->setForegroundRole( QPalette::WindowText );
+
+        QPalette     pal    = label->palette();
+        const QColor active = pal.color( QPalette::Active, QPalette::WindowText );
+        pal.setColor( QPalette::All, QPalette::WindowText, active );
+        pal.setColor( QPalette::All, QPalette::ButtonText, active );
+        pal.setColor( QPalette::All, QPalette::Text, active );
+        label->setPalette( pal );
+        return label;
+    }
+
+    /// 구분선(Qlementine 에서 16px)보다 좁은 항목 사이 간격.
+    QWidget* makeToolBarSpacer( QToolBar* toolBar, int width = 8 )
+    {
+        auto* spacer = new QWidget( toolBar );
+        spacer->setFixedWidth( width );
+        return spacer;
+    }
+
 } // namespace
 
 // ═══════════════════════════════════════════════════════════
@@ -923,6 +956,20 @@ bool QTextView::copySelectionToClipboard()
     return true;
 }
 
+bool QTextView::canPasteFromClipboard() const
+{
+    return m_editor && !m_editor->isReadOnly() && m_editor->canPaste();
+}
+
+bool QTextView::pasteFromClipboard()
+{
+    if( !canPasteFromClipboard() )
+        return false;
+
+    m_editor->paste();
+    return true;
+}
+
 void QTextView::goToLine( int line )
 {
     goToPosition( line, 1 );
@@ -1155,6 +1202,46 @@ QString QTextView::diagnosticTooltipAt( int position ) const
 
     const int line = m_editor->lineFromPosition( position ) + 1;
     return mrst::diagnosticTooltipText( m_diagnostics, currentFilePath(), line );
+}
+
+void QTextView::handleDwellStart( int position, const QPoint& viewportPos )
+{
+    if( !m_editor || position < 0 )
+    {
+        emit sigRoleHoverEnded();
+        return;
+    }
+
+    // 롤 형태는 렉서(RstContainerLexer)가 쓰는 것과 같다.
+    // 도메인 표기(:py:func:`x`)까지 한 번에 잡는다.
+    static const QRegularExpression roleRe(
+        QStringLiteral( R"(:([a-zA-Z0-9_.-]+(?::[a-zA-Z0-9_.-]+)?):`([^`]*)`)" ) );
+
+    const int line = m_editor->lineFromPosition( position );
+    const int lineStart = m_editor->positionFromLine( line );
+    const QString text = m_editor->lineText( line );
+
+    // Scintilla 위치는 UTF-8 바이트 오프셋이다. 한글이 섞인 줄에서 문자 인덱스와
+    // 어긋나므로, 줄 앞부분의 바이트 길이로 문자 인덱스를 되돌린다.
+    const int byteOffset = qMax( 0, position - lineStart );
+    const QByteArray lineUtf8 = text.toUtf8();
+    const int charIndex = QString::fromUtf8( lineUtf8.left( qMin( byteOffset, lineUtf8.size() ) ) ).size();
+
+    QRegularExpressionMatchIterator it = roleRe.globalMatch( text );
+    while( it.hasNext() )
+    {
+        const QRegularExpressionMatch match = it.next();
+        if( charIndex < match.capturedStart() || charIndex >= match.capturedEnd() )
+            continue;
+
+        const QPoint globalPos = m_editor->widget() != nullptr
+                                     ? m_editor->widget()->mapToGlobal( viewportPos )
+                                     : mapToGlobal( viewportPos );
+        emit sigRoleHovered( match.captured( 1 ), match.captured( 2 ), globalPos );
+        return;
+    }
+
+    emit sigRoleHoverEnded();
 }
 
 int QTextView::tabWidth() const
@@ -1474,24 +1561,33 @@ QToolBar* QTextView::createToolBar()
         return tb;
 
     // 언어 선택
+    // 주의: 여기서 setSizeAdjustPolicy() 를 부르면 안 된다.
+    // QComboBox::setSizeAdjustPolicy -> adjustComboBoxSize -> viewContainer() 로
+    // 이어지는데, Qlementine 이 polish 에서 설치한 ComboboxItemViewFilter 가
+    // 컨테이너 생성 도중의 ChildAdded 를 받아 view() 를 다시 부르면서 무한 재귀에
+    // 빠진다 (0xC00000FD). Qlementine 은 필터를 달기 **전에** 이미
+    // AdjustToContents 를 설정해 두므로 우리가 다시 지정할 이유도 없다.
+    // (solThemeManager.cpp 의 전역 스타일시트 금지 주석과 같은 상류 버그다.)
     auto* langCombo = new QComboBox( tb );
     langCombo->addItems( TextLexerRegistry::instance().displayNames() );
     langCombo->setCurrentText( m_document.language() );
+    langCombo->setMaximumWidth( 200 );
     connect( langCombo, &QComboBox::currentTextChanged, this, &QTextView::setLanguage );
-    tb->addWidget( new QLabel( tr( " 언어: " ), tb ) );
+    tb->addWidget( makeToolBarLabel( tb, tr( "언어:" ) ) );
     tb->addWidget( langCombo );
 
-    tb->addSeparator();
+    tb->addWidget( makeToolBarSpacer( tb ) );
 
     // 인코딩 선택
     auto* encCombo = new QComboBox( tb );
     encCombo->addItems( availableEncodings() );
     encCombo->setCurrentText( m_encoding );
+    encCombo->setMaximumWidth( 200 );
     connect( encCombo, &QComboBox::currentTextChanged, this, &QTextView::reloadWithEncoding );
-    tb->addWidget( new QLabel( tr( " 인코딩: " ), tb ) );
+    tb->addWidget( makeToolBarLabel( tb, tr( "인코딩:" ) ) );
     tb->addWidget( encCombo );
 
-    tb->addSeparator();
+    tb->addWidget( makeToolBarSpacer( tb ) );
 
     // 줄바꿈
     auto* eolCombo = new QComboBox( tb );
@@ -1499,9 +1595,13 @@ QToolBar* QTextView::createToolBar()
     eolCombo->addItem( "LF", LF );
     eolCombo->addItem( "CR", CR );
     eolCombo->setCurrentIndex( eolCombo->findData( detectedLineEnding() ) );
+    eolCombo->setMaximumWidth( 90 );
     connect( eolCombo, QOverload<int>::of( &QComboBox::currentIndexChanged ), this,
             [this, eolCombo]( int idx ) { setLineEnding( static_cast< LineEnding >( eolCombo->itemData( idx ).toInt() ) ); } );
+    tb->addWidget( makeToolBarLabel( tb, tr( "줄바꿈:" ) ) );
     tb->addWidget( eolCombo );
+
+    tb->addWidget( makeToolBarSpacer( tb ) );
 
     // 탭 간격
     auto* tabSpin = new QSpinBox( tb );
@@ -1607,6 +1707,10 @@ bool QTextView::ensureEditorBackend()
             } );
     connect( m_editor, &ScintillaQtDirectBackend::charAdded, this, &QTextView::sigCharAdded );
     connect( m_editor, &ScintillaQtDirectBackend::viewportScrolled, this, &QTextView::sigViewportScrolled );
+    connect( m_editor, &ScintillaQtDirectBackend::dwellStarted, this,
+            [this]( int position, const QPoint& viewportPos ) { handleDwellStart( position, viewportPos ); } );
+    connect( m_editor, &ScintillaQtDirectBackend::dwellEnded, this,
+            [this] { emit sigRoleHoverEnded(); } );
     connect( m_editor, &ScintillaQtDirectBackend::linesChanged, this, [this] {
         m_cachedLineCount = qMax( 1, m_editor ? m_editor->lineCount() : 1 );
         if( m_ruler && m_editor )

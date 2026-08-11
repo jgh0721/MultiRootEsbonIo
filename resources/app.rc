@@ -1,0 +1,4 @@
+// Windows 실행 파일의 셸 아이콘.
+// 첫 번째 ICON 리소스가 탐색기 / 작업 표시줄 / Alt+Tab 에서 .exe 를 대표한다.
+// 창 아이콘은 별도로 main.cpp 에서 QApplication::setWindowIcon 으로 지정한다.
+IDI_ICON1 ICON "MultiRoot-reST.ico"

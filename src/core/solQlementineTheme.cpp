@@ -33,7 +33,7 @@ namespace
     }
 }
 
-bool QlementineTheme::install()
+bool QlementineTheme::install( ThemeManager::Theme theme )
 {
     if( !qApp || g_style )
         return isActive();
@@ -42,7 +42,7 @@ bool QlementineTheme::install()
     style->setAnimationsEnabled( true );
 
     // 위젯이 만들어지기 전에 팔레트까지 확정해야 첫 프레임이 라이트로 깜빡이지 않는다.
-    if( !applyThemeToStyle( style, ThemeManager::instance().currentTheme() ) )
+    if( !applyThemeToStyle( style, theme ) )
     {
         delete style;
         return false;
@@ -59,5 +59,14 @@ bool QlementineTheme::install()
 
 bool QlementineTheme::isActive()
 {
-    return !g_style.isNull() && QApplication::style() == g_style;
+    if( g_style.isNull() )
+        return false;
+    if( QApplication::style() == g_style )
+        return true;
+
+    // qApp 에 스타일시트가 걸려 있으면 Qt 는 QApplication::setStyle 에서 우리 스타일을
+    // QStyleSheetStyle 로 감싸고 그 프록시를 부모로 삼는다(QWidget/QStyle 소유권).
+    // 이때 포인터 비교만 하면 isActive() 가 영원히 false 가 되고,
+    // applyToApplication 이 스타일시트를 계속 다시 씌워 스스로를 고착시킨다.
+    return g_style->parent() == QApplication::style();
 }

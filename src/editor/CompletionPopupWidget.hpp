@@ -47,6 +47,8 @@ public:
 
     [[nodiscard]] bool                  isActive() const;
     [[nodiscard]] int                   visibleCount() const;
+    /// 지금 강조된 항목. 목록이 비었으면 label 이 빈 항목.
+    [[nodiscard]] CompletionDisplayItem currentItem() const;
 
     void                                selectNext();
     void                                selectPrevious();
@@ -57,6 +59,8 @@ public:
 
 signals:
     void                                itemSelected( const QString& insertText );
+    /// 강조된 항목이 바뀌었다. 상세 패널을 갱신하는 데 쓴다.
+    void                                currentItemChanged( const CompletionDisplayItem& item );
 
 private:
     void                                rebuild();
