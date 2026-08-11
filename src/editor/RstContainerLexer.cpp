@@ -69,6 +69,44 @@ const std::regex kSnippetPlaceholderRegex( R"(\$\{[^}]*\})" );
     return value;
 }
 
+/// UTF-8 문자(코드포인트) 수. 후속 바이트(10xxxxxx)는 세지 않는다.
+[[nodiscard]] std::size_t utf8Length( std::string_view value )
+{
+    std::size_t count = 0;
+    for( const char raw : value )
+    {
+        if( ( static_cast< unsigned char >( raw ) & 0xC0 ) != 0x80 )
+            ++count;
+    }
+    return count;
+}
+
+/// adornmentLine 이 titleLine 의 제목 장식(윗줄/밑줄)인가.
+[[nodiscard]] bool isTitleAdornmentFor( const std::string& adornmentLine, const std::string& titleLine )
+{
+    if( adornmentLine.empty() || !std::regex_match( adornmentLine, kTransitionRegex ) )
+        return false;
+
+    const std::string adornment = trim( adornmentLine );
+    const std::string title = trim( titleLine );
+    if( adornment.empty() || title.empty() )
+        return false;
+    if( kTitleChars.find( adornment.front() ) == std::string::npos )
+        return false;
+
+    // 길이는 반드시 **문자 수**로 비교한다. 바이트로 재면 글자당 3바이트인
+    // 한글 제목은 장식이 늘 짧아 보여서 제목으로 인식되지 않는다.
+    return utf8Length( adornment ) >= utf8Length( title );
+}
+
+/// 윗줄과 밑줄이 같은 문자로 그려졌는가. reST 는 짝이 맞아야 제목으로 본다.
+[[nodiscard]] bool sameAdornmentChar( const std::string& first, const std::string& second )
+{
+    const std::string left = trim( first );
+    const std::string right = trim( second );
+    return !left.empty() && !right.empty() && left.front() == right.front();
+}
+
 [[nodiscard]] std::vector< std::string > splitLines( const std::string& text )
 {
     std::vector< std::string > lines;
@@ -210,28 +248,30 @@ RstMetadataCache& RstContainerLexer::metadataCache()
 
 std::vector< Span > RstContainerLexer::tokenizeLine( const std::string& line,
                                                     const std::string& previousLine,
-                                                    const std::string& nextLine ) const
+                                                    const std::string& nextLine,
+                                                    const std::string& lineAfterNext ) const
 {
     const std::size_t lineByteLen = line.size();
 
     // 다음 줄이 밑줄이면 이 줄은 제목이다.
-    if( !nextLine.empty() && std::regex_match( nextLine, kTransitionRegex ) )
-    {
-        const std::string strippedNext = trim( nextLine );
-        const std::string strippedLine = trim( line );
-        if( !strippedNext.empty() && kTitleChars.find( strippedNext.front() ) != std::string::npos &&
-            strippedNext.size() >= strippedLine.size() && !strippedLine.empty() )
-        {
-            return { { 0, lineByteLen, STYLE_TITLE } };
-        }
-    }
+    if( isTitleAdornmentFor( nextLine, line ) )
+        return { { 0, lineByteLen, STYLE_TITLE } };
 
     if( std::regex_match( line, kTransitionRegex ) )
     {
-        // 앞 줄에 내용이 있으면 제목의 밑줄, 없으면 단독 구분선이다.
+        // 앞 줄에 내용이 있으면 제목의 밑줄이다.
         if( !trim( previousLine ).empty() )
             return { { 0, lineByteLen, STYLE_TITLE } };
 
+        // 윗줄/아랫줄로 감싼 제목의 윗줄도 제목의 일부다.
+        //     ########
+        //     제목
+        //     ########
+        // 두 장식이 같은 문자여야 하고, 그 사이 줄이 제목이어야 한다.
+        if( isTitleAdornmentFor( lineAfterNext, nextLine ) && sameAdornmentChar( line, lineAfterNext ) )
+            return { { 0, lineByteLen, STYLE_TITLE } };
+
+        // 그 밖에는 단독 구분선이다.
         return { { 0, lineByteLen, STYLE_TRANSITION } };
     }
 
@@ -263,7 +303,8 @@ std::vector< Span > RstContainerLexer::styleText( const std::string& utf8Text ) 
 
         std::vector< Span > spans = tokenizeLine( line,
                                                  i > 0 ? lines[ i - 1 ] : std::string{},
-                                                 i + 1 < lines.size() ? lines[ i + 1 ] : std::string{} );
+                                                 i + 1 < lines.size() ? lines[ i + 1 ] : std::string{},
+                                                 i + 2 < lines.size() ? lines[ i + 2 ] : std::string{} );
         if( spans.empty() )
         {
             result.push_back( { base, base + lineByteLen, STYLE_DEFAULT } );

@@ -154,10 +154,13 @@ WorkspaceController::WorkspaceController( QObject* parent )
     connect( lspPool_, &LspServerPool::logMessage, this,
             [this]( const QString&, const QString& text ) { emit logMessage( text ); } );
     connect( lspPool_, &LspServerPool::diagnosticsReady, this,
-            [this]( const QString&, const QString& source, const QVector< DiagnosticEntry >& entries ) {
+            [this]( const QString&, const QString& source, const QString& path,
+                    const QVector< DiagnosticEntry >& entries ) {
                 // publishDiagnostics 는 파일 단위로 온다. 그 파일 것만 교체해야
                 // 다른 파일 진단이 날아가지 않는다.
-                const QString path = entries.isEmpty() ? QString{} : entries.first().path;
+                //
+                // 빈 배열도 반드시 반영해야 한다. 그게 "이 파일은 이제 깨끗하다"
+                // 는 통보이고, 무시하면 이미 고친 오류가 영영 남는다.
                 if( path.isEmpty() )
                     return;
                 diagnosticsStore_->replaceSourceForPath( source, path, entries );

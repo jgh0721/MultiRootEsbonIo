@@ -31,6 +31,8 @@ private slots:
     void byteCountIsConserved();
 
     void titleUnderlineMakesTitle();
+    void overlineTitleIsFullyStyled();
+    void nonAsciiTitleComparesCharacterCounts();
     void standaloneTransition();
     void directiveIsUnknownUntilCachePopulated();
     void directiveBecomesValidOrInvalidAfterCache();
@@ -80,6 +82,34 @@ void TestRstContainerLexer::titleUnderlineMakesTitle()
     QCOMPARE( styleAt( lexer, text, 0 ), int( STYLE_TITLE ) );   // "Title"
     QCOMPARE( styleAt( lexer, text, 6 ), int( STYLE_TITLE ) );   // "=====" (제목의 밑줄)
     QCOMPARE( styleAt( lexer, text, 12 ), int( STYLE_DEFAULT ) ); // "body"
+}
+
+void TestRstContainerLexer::overlineTitleIsFullyStyled()
+{
+    const RstContainerLexer lexer;
+    // 윗줄/아랫줄로 감싼 제목은 세 줄 모두 제목이다.
+    const std::string text = "########\nTitle\n########\n\nbody\n";
+
+    QCOMPARE( styleAt( lexer, text, 0 ), int( STYLE_TITLE ) );    // 윗줄
+    QCOMPARE( styleAt( lexer, text, 9 ), int( STYLE_TITLE ) );    // "Title"
+    QCOMPARE( styleAt( lexer, text, 15 ), int( STYLE_TITLE ) );   // 아랫줄
+    QCOMPARE( styleAt( lexer, text, 25 ), int( STYLE_DEFAULT ) ); // "body"
+
+    // 짝이 맞지 않는 장식은 윗줄로 보지 않는다.
+    const std::string mismatched = "====\nTitle\n----\n";
+    QCOMPARE( styleAt( lexer, mismatched, 0 ), int( STYLE_TRANSITION ) );
+}
+
+void TestRstContainerLexer::nonAsciiTitleComparesCharacterCounts()
+{
+    const RstContainerLexer lexer;
+    // "제목문" 은 3글자지만 UTF-8 로는 9바이트다. 바이트로 견주면 5글자짜리
+    // 밑줄이 짧다고 판정되어 제목이 강조되지 않는다.
+    const std::string text = "\xEC\xA0\x9C\xEB\xAA\xA9\xEB\xAC\xB8\n=====\nbody\n";
+
+    QCOMPARE( styleAt( lexer, text, 0 ), int( STYLE_TITLE ) );    // 제목 첫 바이트
+    QCOMPARE( styleAt( lexer, text, 10 ), int( STYLE_TITLE ) );   // 밑줄
+    QCOMPARE( styleAt( lexer, text, 16 ), int( STYLE_DEFAULT ) ); // "body"
 }
 
 void TestRstContainerLexer::standaloneTransition()

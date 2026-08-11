@@ -1242,10 +1242,14 @@ void ScintillaQtDirectBackend::handleStyleNeeded(int endPosition)
 	const int firstLine = lineFromPosition(startPosition);
 	const int lastLine = qMin(lineFromPosition(qMin(endPosition, documentEnd)), totalLines - 1);
 
-	// 렉서는 제목/구분선 판정을 위해 앞뒤 한 줄을 문맥으로 요구한다.
+	// 제목은 최대 세 줄(윗줄/제목/밑줄)에 걸친다. 편집된 줄부터만 다시 칠하면
+	// 그 위의 윗줄이 옛 스타일로 남으므로, 칠할 범위 자체를 두 줄 위로 넓힌다.
+	const int paintFirstLine = qMax(0, firstLine - 2);
+
+	// 렉서는 제목/구분선 판정을 위해 앞뒤 두 줄을 문맥으로 요구한다.
 	// 문맥까지 포함해 렉싱한 뒤, 실제로 칠할 구간만 잘라 쓴다.
-	const int contextFirstLine = qMax(0, firstLine - 1);
-	const int contextLastLine = qMin(totalLines - 1, lastLine + 1);
+	const int contextFirstLine = qMax(0, paintFirstLine - 2);
+	const int contextLastLine = qMin(totalLines - 1, lastLine + 2);
 
 	const int contextStart = positionFromLine(contextFirstLine);
 	const int contextEnd = (contextLastLine + 1 < totalLines)
@@ -1259,7 +1263,7 @@ void ScintillaQtDirectBackend::handleStyleNeeded(int endPosition)
 	const std::vector<unsigned char> styles =
 		m_rstLexer->styleBytes(std::string(chunk.constData(), static_cast<std::size_t>(chunk.size())));
 
-	const int paintStart = positionFromLine(firstLine);
+	const int paintStart = positionFromLine(paintFirstLine);
 	const int paintEnd = (lastLine + 1 < totalLines) ? positionFromLine(lastLine + 1) : documentEnd;
 	const int offset = paintStart - contextStart;
 	const int length = paintEnd - paintStart;

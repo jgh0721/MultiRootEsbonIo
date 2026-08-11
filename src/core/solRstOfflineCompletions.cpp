@@ -15,6 +15,9 @@ constexpr int kKindKeyword = 14;
 constexpr int kKindFile = 17;
 constexpr int kKindReference = 18;
 
+/// detail 은 한국어라 UTF-8 바이트다(/utf-8 로 컴파일한다).
+/// QString 으로 바꿀 때 반드시 fromUtf8() 을 써야 한다. fromLatin1() 로 읽으면
+/// 팝업에 깨진 글자가 나온다.
 struct DirectiveSpec
 {
     const char* name;
@@ -82,6 +85,7 @@ const QVector< DirectiveSpec >& directiveTable()
     return table;
 }
 
+/// detail 은 UTF-8 이다. DirectiveSpec 과 같은 주의가 필요하다.
 struct RoleSpec
 {
     const char* name;
@@ -293,7 +297,7 @@ QVector< Item > candidatesFor( const Context& context )
                     continue;
                 seen << name;
                 items.push_back( { name, name + QStringLiteral( ":: " ),
-                                  QString::fromLatin1( spec.detail ), kKindClass } );
+                                  QString::fromUtf8( spec.detail ), kKindClass } );
             }
             break;
         }
@@ -302,7 +306,7 @@ QVector< Item > candidatesFor( const Context& context )
             {
                 const QString name = QString::fromLatin1( spec.name );
                 items.push_back( { name, name + QStringLiteral( ":`" ),
-                                  QString::fromLatin1( spec.detail ), kKindKeyword } );
+                                  QString::fromUtf8( spec.detail ), kKindKeyword } );
             }
             break;
 

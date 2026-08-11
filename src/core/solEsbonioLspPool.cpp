@@ -120,8 +120,9 @@ LspClient* LspServerPool::activate( const SphinxProject& project )
         emit logMessage( projectId, text );
     } );
     connect( client, &LspClient::diagnosticsReady, this,
-            [this, projectId]( const QString& source, const QVector< DiagnosticEntry >& entries ) {
-                emit diagnosticsReady( projectId, source, entries );
+            [this, projectId]( const QString& source, const QString& path,
+                              const QVector< DiagnosticEntry >& entries ) {
+                emit diagnosticsReady( projectId, source, path, entries );
             } );
     connect( client, &LspClient::completionsReady, this,
             [this, projectId]( int requestId, const QList< LspCompletionItem >& items ) {
