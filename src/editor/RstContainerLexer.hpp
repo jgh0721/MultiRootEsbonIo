@@ -69,6 +69,30 @@ struct Span
 
 [[nodiscard]] std::string extractDirectiveName( const std::string& label, const std::string& insertText );
 
+/// 한 줄의 접기 정보.
+///
+/// Scintilla 는 렉서가 줄마다 알려 준 깊이만으로 접기 구조를 만든다
+/// (SCI_SETFOLDLEVEL). 어떤 줄의 깊이가 다음 줄보다 얕으면 그 줄이 머리가 되고
+/// 더 깊은 줄들이 그 아래로 접힌다.
+struct FoldLine
+{
+    int  level = 0;        ///< 0 이 문서 최상위. SC_FOLDLEVELBASE 를 더해서 쓴다.
+    bool header = false;   ///< 이 줄에서 접기가 시작된다 (SC_FOLDLEVELHEADERFLAG)
+    bool blank = false;    ///< 빈 줄 (SC_FOLDLEVELWHITEFLAG)
+};
+
+/// reST 문서 구조를 접기 깊이로 옮긴다.
+///
+/// 두 가지 축을 함께 쓴다.
+///  * **섹션**: 제목 장식 문자가 처음 나온 순서가 곧 깊이다 (docutils 규칙).
+///    문서마다 `#`, `*`, `=` 중 무엇을 1단계로 쓸지 자유롭기 때문에 문자 자체에
+///    고정 깊이를 줄 수 없다.
+///  * **들여쓰기**: directive 본문, 리스트 계속 줄, 리터럴 블록이 여기 걸린다.
+///
+/// Lexilla 에 reST 렉서가 없어 이 계산도 우리가 한다. Qt 비의존이라 단위
+/// 테스트에서 그대로 돌릴 수 있다.
+[[nodiscard]] std::vector< FoldLine > computeFoldLevels( const std::string& utf8Text );
+
 class RstContainerLexer
 {
 public:

@@ -10,6 +10,7 @@
 #include <QEvent>
 #include <QFileInfo>
 #include <QKeyEvent>
+#include <QScopedValueRollback>
 #include <QTimer>
 
 namespace mrst {
@@ -84,6 +85,11 @@ CompletionCoordinator::CompletionCoordinator( QObject* parent )
             &CompletionCoordinator::insertCompletion );
     connect( popup_, &CompletionPopupWidget::currentItemChanged, this,
             &CompletionCoordinator::refreshDetailPopup );
+    // 목록은 Esc 키, 항목 확정, 필터 결과 없음 등 여러 경로로 스스로 숨는다.
+    // 그중 Esc 는 여기까지 알려 오는 길이 없어서 오른쪽 상세 패널만 화면에
+    // 남아 있었다. 숨김 자체를 신호로 받아 한 곳에서 정리한다.
+    connect( popup_, &CompletionPopupWidget::popupHidden, this,
+            &CompletionCoordinator::hidePopup );
 }
 
 CompletionCoordinator::~CompletionCoordinator()
@@ -316,6 +322,11 @@ bool CompletionCoordinator::isPopupVisible() const
 
 void CompletionCoordinator::hidePopup()
 {
+    // popup_->hide() 는 popupHidden 을 거쳐 이 함수로 되돌아온다. 한 번만 돈다.
+    if( hidingPopup_ )
+        return;
+    const QScopedValueRollback< bool > guard( hidingPopup_, true );
+
     debounce_->stop();
     pendingTrigger_.clear();
     pendingExplicit_ = false;
@@ -325,11 +336,10 @@ void CompletionCoordinator::hidePopup()
         detail_->hide();
 
     if( popup_ != nullptr && popup_->isVisible() )
-    {
         popup_->hide();
-        // 팝업이 없는 동안 모든 키 이벤트를 훑을 이유가 없다.
-        qApp->removeEventFilter( this );
-    }
+
+    // 팝업이 없는 동안 모든 키 이벤트를 훑을 이유가 없다.
+    qApp->removeEventFilter( this );
 }
 
 void CompletionCoordinator::requestExplicit()

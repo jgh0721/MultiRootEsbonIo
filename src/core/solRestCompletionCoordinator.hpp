@@ -123,6 +123,8 @@ private:
 
     QString                             pendingTrigger_;
     bool                                pendingExplicit_ = false;
+    /// hidePopup() 재진입 가드. 목록을 숨기면 popupHidden 이 다시 이리로 온다.
+    bool                                hidingPopup_ = false;
 
     PendingRequest                      inFlight_;
     /// 팝업을 띄운 시점의 컨텍스트. 확정할 때 몇 글자를 지울지 여기서 온다.

@@ -61,6 +61,15 @@ signals:
     void                                itemSelected( const QString& insertText );
     /// 강조된 항목이 바뀌었다. 상세 패널을 갱신하는 데 쓴다.
     void                                currentItemChanged( const CompletionDisplayItem& item );
+    /// 목록이 화면에서 사라졌다 (Esc, 항목 확정, 필터 결과 없음, 부모 창 파괴).
+    ///
+    /// 목록에 딸린 상세 패널은 **별도의 최상위 창**이라 목록이 숨어도 저절로
+    /// 따라 사라지지 않는다. 숨는 경로가 여러 곳이므로 개별 경로마다 상세
+    /// 패널을 닫는 대신 여기 한 곳으로 모은다.
+    void                                popupHidden();
+
+protected:
+    void                                hideEvent( QHideEvent* event ) override;
 
 private:
     void                                rebuild();

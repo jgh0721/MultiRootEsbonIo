@@ -6,13 +6,17 @@
 #include "core/solThemeManager.hpp"
 #include "MainWindow.hpp"
 
+// CMake 가 생성한다. app.rc 의 VERSIONINFO 와 같은 값을 쓴다.
+#include "mrst_version.h"
+
 int main( int argc, char* argv[] )
 {
     qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--no-sandbox");
     QApplication app( argc, argv );
     QApplication::setApplicationName( "MultiRoot reST Editor" );
     QApplication::setOrganizationName( "myHouse" );
-    QApplication::setApplicationVersion( "0.0.1" );
+    // 파일 속성의 버전과 어긋나지 않도록 리소스와 같은 값을 쓴다.
+    QApplication::setApplicationVersion( QStringLiteral( MRST_VERSION_STRING ) );
     // 창 / 작업 표시줄 / Alt+Tab 아이콘. 탐색기가 보여 주는 .exe 아이콘은
     // 이것과 별개로 resources/app.rc 의 ICON 리소스가 담당한다.
     QApplication::setWindowIcon( QIcon( QStringLiteral( ":/icons/app.png" ) ) );

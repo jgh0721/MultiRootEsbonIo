@@ -2,3 +2,44 @@
 // 첫 번째 ICON 리소스가 탐색기 / 작업 표시줄 / Alt+Tab 에서 .exe 를 대표한다.
 // 창 아이콘은 별도로 main.cpp 에서 QApplication::setWindowIcon 으로 지정한다.
 IDI_ICON1 ICON "MultiRoot-reST.ico"
+
+// 파일 속성 > 자세히 탭에 뜨는 버전 정보.
+// 숫자와 문자열은 CMake 의 project(VERSION ...) 에서 생성된 헤더에서 온다
+// (빌드 디렉터리에 mrst_version.h 로 만들어진다).
+#include <winver.h>
+#include "mrst_version.h"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION    MRST_VERSION_COMMA
+PRODUCTVERSION MRST_VERSION_COMMA
+FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+FILEFLAGS      VS_FF_DEBUG
+#else
+FILEFLAGS      0x0L
+#endif
+FILEOS         VOS_NT_WINDOWS32
+FILETYPE       VFT_APP
+FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        // 040904B0 = 영어(미국) + Unicode. 문자열을 ASCII 로만 적어 두면
+        // 코드 페이지가 다른 환경에서도 깨지지 않는다.
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      MRST_COMPANY_NAME
+            VALUE "FileDescription",  MRST_FILE_DESCRIPTION
+            VALUE "FileVersion",      MRST_VERSION_STRING
+            VALUE "InternalName",     MRST_INTERNAL_NAME
+            VALUE "LegalCopyright",   MRST_LEGAL_COPYRIGHT
+            VALUE "OriginalFilename", MRST_ORIGINAL_FILENAME
+            VALUE "ProductName",      MRST_PRODUCT_NAME
+            VALUE "ProductVersion",   MRST_VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

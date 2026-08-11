@@ -140,6 +140,17 @@ public:
 	[[nodiscard]] mrst::rst::RstMetadataCache* rstMetadataCache() const;
 	void restyleDocument();
 
+	// ── 코드 접기 ──
+	/// 그 문서 줄이 지금 화면에 보이는가 (접혀 있지 않은가).
+	[[nodiscard]] bool isLineVisible(int line) const;
+	/// 접혀서 안 보이는 줄이면 그 줄을 감추고 있는, 화면에 보이는 조상 줄.
+	/// 보이는 줄이면 그대로 돌려준다.
+	[[nodiscard]] int visibleAnchorLine(int line) const;
+	/// 그 줄이 접힌 블록 안에 있으면 펼쳐서 보이게 한다.
+	void ensureLineVisible(int line);
+	/// 전체 접기/펼치기. 개요나 단축키에서 부른다.
+	void foldAll(bool contract);
+
 signals:
 	void modificationChanged(bool modified);
 	void cursorPositionChanged(int line, int index);
@@ -169,6 +180,10 @@ private:
 	void applyRstSyntaxStyles();
 	void setKeywordsForLexer(const QString& lexerKey);
 	void handleStyleNeeded(int endPosition);
+	/// reST 는 Lexilla 렉서가 없어 접기 깊이도 우리가 계산해 넣는다.
+	/// 섹션 깊이는 문서 앞부분 전체에 의존하므로 문서 단위로 다시 센다.
+	void updateRstFoldLevels();
+	void scheduleRstFoldUpdate();
 
 	QPointer<ScintillaEditBase> m_editor;
 	std::unique_ptr<mrst::rst::RstContainerLexer> m_rstLexer;   // 컨테이너 렉싱 중에만 유효
@@ -182,5 +197,7 @@ private:
 	bool                m_forcedModified = false;
 	int                 m_lineNumberMarginDigits = 0;
 	int                 m_lastKnownLineCount = 1;
+	/// 편집 중에 매 글자 문서 전체의 접기 깊이를 다시 세지 않는다.
+	class QTimer*       m_rstFoldTimer = nullptr;
 };
 

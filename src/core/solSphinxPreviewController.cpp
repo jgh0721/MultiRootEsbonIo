@@ -264,6 +264,7 @@ void SphinxPreviewController::finishBuild( const int exitCode, const bool crashe
     const bool processOk = !crashed && exitCode == 0;
     PreviewBuildResult result = readReport( activeReportPath_ );
     result.projectId = QString::fromStdWString( active_.project.projectId );
+    result.sourceFile = active_.sourceFile;
     result.cancelled = cancelled;
     if( !processOk )
         result.ok = false;

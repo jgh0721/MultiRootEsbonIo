@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QFontMetrics>
 #include <QGuiApplication>
+#include <QHideEvent>
 #include <QKeyEvent>
 #include <QListWidget>
 #include <QPainter>
@@ -394,6 +395,12 @@ bool CompletionPopupWidget::acceptCurrent()
     hide();
     emit itemSelected( insertText );
     return true;
+}
+
+void CompletionPopupWidget::hideEvent( QHideEvent* event )
+{
+    QFrame::hideEvent( event );
+    emit popupHidden();
 }
 
 bool CompletionPopupWidget::handleKeyPress( QKeyEvent* event )

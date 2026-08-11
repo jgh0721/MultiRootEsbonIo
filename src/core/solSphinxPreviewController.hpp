@@ -35,6 +35,9 @@ struct PreviewBuildResult
     bool                                cancelled = false;
     QString                             projectId;
     QString                             htmlPath;
+    /// 이 결과를 만든 요청의 원본 파일. 요청과 결과를 짝지어야 "요청한 문서가
+    /// 정말 렌더됐는가" 를 판정할 수 있다 (빌더는 못 찾으면 root 문서로 물러선다).
+    QString                             sourceFile;
     QString                             primaryDocname;
     QStringList                         sources;            ///< data-mrr-src 인덱스와 순서가 같다
     QString                             sphinxVersion;

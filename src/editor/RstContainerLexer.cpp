@@ -152,7 +152,194 @@ void appendMatchSpans( const std::string& line,
     }
 }
 
+/// 줄 앞 공백의 시각적 폭. 탭은 docutils 와 같이 8칸으로 편다.
+/// 깊이 비교에만 쓰므로 정확한 폭보다 일관성이 중요하다.
+[[nodiscard]] int indentWidth( const std::string& line )
+{
+    int width = 0;
+    for( const char raw : line )
+    {
+        if( raw == ' ' )
+            ++width;
+        else if( raw == '\t' )
+            width += 8 - ( width % 8 );
+        else
+            break;
+    }
+    return width;
+}
+
+[[nodiscard]] bool isBlankLine( const std::string& line )
+{
+    return trim( line ).empty();
+}
+
+/// 제목 장식의 종류. 같은 문자라도 윗줄이 있는 제목과 없는 제목은
+/// docutils 가 서로 다른 단계로 센다.
+struct AdornmentStyle
+{
+    char character = '\0';
+    bool overlined = false;
+
+    [[nodiscard]] bool operator==( const AdornmentStyle& other ) const
+    {
+        return character == other.character && overlined == other.overlined;
+    }
+};
+
+/// 줄 하나의 접기 계산용 분류.
+enum class LineKind
+{
+    Blank,
+    TitleOverline,   ///< 윗줄 장식. 여기서 제목 묶음이 시작된다.
+    TitleText,
+    TitleUnderline,
+    Body,
+};
+
 }  // namespace
+
+std::vector< FoldLine > computeFoldLevels( const std::string& utf8Text )
+{
+    const std::vector< std::string > lines = splitLines( utf8Text );
+    const std::size_t count = lines.size();
+
+    std::vector< FoldLine > folds( count );
+    if( count == 0 )
+        return folds;
+
+    const auto lineAt = [ &lines, count ]( const std::size_t index ) -> const std::string& {
+        static const std::string empty;
+        return index < count ? lines[ index ] : empty;
+    };
+
+    // 장식 문자가 처음 나온 순서가 곧 섹션 깊이다.
+    std::vector< AdornmentStyle > sectionStack;
+    // 본문 들여쓰기 깊이. 섹션이 바뀌면 처음부터 다시 센다.
+    std::vector< int > indentStack{ 0 };
+
+    const auto depthForAdornment = [ &sectionStack ]( const AdornmentStyle& style ) -> int {
+        for( std::size_t i = 0; i < sectionStack.size(); ++i )
+        {
+            if( sectionStack[ i ] == style )
+            {
+                // 이미 본 단계다. 그 아래 단계들은 여기서 끝난다.
+                sectionStack.resize( i + 1 );
+                return static_cast< int >( i );
+            }
+        }
+        sectionStack.push_back( style );
+        return static_cast< int >( sectionStack.size() - 1 );
+    };
+
+    int sectionDepth = 0;       ///< 지금 열려 있는 섹션의 깊이
+    bool sawSection = false;    ///< 첫 제목 전의 본문은 깊이 0 이다
+    std::size_t skipUntil = 0;  ///< 제목 묶음을 한 번에 처리하고 건너뛴다
+
+    for( std::size_t i = 0; i < count; ++i )
+    {
+        const std::string& line = lines[ i ];
+
+        if( i < skipUntil )
+            continue;
+
+        if( isBlankLine( line ) )
+        {
+            folds[ i ].blank = true;
+            // 레벨은 뒤에서 앞 줄 것으로 채운다.
+            folds[ i ].level = -1;
+            continue;
+        }
+
+        LineKind kind = LineKind::Body;
+        AdornmentStyle style;
+        std::size_t titleSpan = 0;   // 이 제목 묶음이 차지하는 줄 수
+
+        if( std::regex_match( line, kTransitionRegex )
+            && isTitleAdornmentFor( lineAt( i + 2 ), lineAt( i + 1 ) )
+            && sameAdornmentChar( line, lineAt( i + 2 ) ) )
+        {
+            kind = LineKind::TitleOverline;
+            style = { trim( line ).front(), true };
+            titleSpan = 3;
+        }
+        else if( isTitleAdornmentFor( lineAt( i + 1 ), line ) )
+        {
+            kind = LineKind::TitleText;
+            style = { trim( lineAt( i + 1 ) ).front(), false };
+            titleSpan = 2;
+        }
+
+        if( kind == LineKind::Body )
+        {
+            // 제목이 하나도 없는 문서에서도 들여쓰기 접기는 살아 있어야 한다.
+            const int width = indentWidth( line );
+            while( indentStack.size() > 1 && width < indentStack.back() )
+                indentStack.pop_back();
+            if( width > indentStack.back() )
+                indentStack.push_back( width );
+
+            const int indentDepth = static_cast< int >( indentStack.size() ) - 1;
+            folds[ i ].level = sectionDepth + ( sawSection ? 1 : 0 ) + indentDepth;
+            continue;
+        }
+
+        // 제목 묶음. 세 줄(또는 두 줄) 전체가 섹션 자신의 깊이를 갖는다.
+        sectionDepth = depthForAdornment( style );
+        sawSection = true;
+        indentStack.assign( 1, 0 );
+
+        const std::size_t last = std::min( i + titleSpan, count );
+        for( std::size_t k = i; k < last; ++k )
+            folds[ k ].level = sectionDepth;
+        skipUntil = last;
+    }
+
+    // 빈 줄은 앞뒤 중 **더 깊은** 쪽에 붙인다.
+    //
+    // 앞쪽만 보면(Lexilla 의 fold.compact 방식) 제목 바로 아래 빈 줄이 제목과
+    // 같은 깊이가 된다. Scintilla 는 머리 플래그만으로 접기 마커를 그리지
+    // 않고 **바로 다음 줄**이 실제로 더 깊은지까지 확인하므로, 그러면 제목에
+    // 접기 마커가 아예 나타나지 않는다. reST 는 제목과 본문 사이에 빈 줄이
+    // 반드시 들어가므로 이 경우가 곧 모든 섹션이다.
+    //
+    // 뒤쪽만 보면 반대로 섹션 끝의 빈 줄이 다음 섹션 것으로 넘어가 접었을 때
+    // 빈 줄만 덩그러니 남는다. 더 깊은 쪽을 고르면 둘 다 해결된다.
+    std::vector< int > forward( count, 0 );
+    int carried = 0;
+    for( std::size_t i = 0; i < count; ++i )
+    {
+        if( folds[ i ].level >= 0 )
+            carried = folds[ i ].level;
+        forward[ i ] = carried;
+    }
+
+    int trailing = carried;
+    for( std::size_t i = count; i-- > 0; )
+    {
+        if( folds[ i ].level >= 0 )
+        {
+            trailing = folds[ i ].level;
+            continue;
+        }
+        folds[ i ].level = std::max( forward[ i ], trailing );
+    }
+
+    // 다음 비어 있지 않은 줄이 더 깊으면 이 줄이 접기 머리다.
+    int nextLevel = 0;
+    bool haveNext = false;
+    for( std::size_t i = count; i-- > 0; )
+    {
+        if( folds[ i ].blank )
+            continue;
+        if( haveNext && nextLevel > folds[ i ].level )
+            folds[ i ].header = true;
+        nextLevel = folds[ i ].level;
+        haveNext = true;
+    }
+
+    return folds;
+}
 
 int RstMetadataCache::directiveStyle( const std::string& name ) const
 {

@@ -153,7 +153,9 @@ private:
     // 에디터 -> 프리뷰, 프리뷰 -> 에디터 양방향. 어느 쪽이든 "기준 비율 위치에
     // 있는 줄" 을 상대편의 같은 비율 위치로 보낸다.
     void                                syncPreviewFromEditor();
-    void                                syncEditorFromPreview( int sourceIndex, double line, double ratio );
+    /// userInitiated 는 프리뷰를 직접 클릭한 이동. 왕복 방지 가드를 넘긴다.
+    void                                syncEditorFromPreview( int sourceIndex, double line, double ratio,
+                                                               bool userInitiated = false );
     [[nodiscard]] int                   sourceIndexForPath( const QString& path ) const;
     [[nodiscard]] QString               pathForSourceIndex( int sourceIndex ) const;
 
@@ -171,8 +173,17 @@ private:
     QString                             lspState_;
     QStringList                         previewSources_;      ///< data-mrr-src 인덱스 -> 원본 경로
     QStringList                         previewProcessedSources_;  ///< 이번 빌드가 다시 읽은 파일들
+    /// 마지막으로 빌드를 **요청한** 문서. 탭을 옮겼는데 프리뷰가 따라오지
+    /// 않은 상태를 알아채는 기준이다.
+    QString                             previewRequestedPath_;
+    /// 프리뷰에 실제로 **표시된** 문서.
+    QString                             previewPrimaryPath_;
     /// 한쪽이 유발한 스크롤이 되돌아와 무한 왕복하는 것을 막는다.
     qint64                              suppressSyncUntilMs_ = 0;
+    /// 에디터가 주도권을 쥔 구간. 이 동안 프리뷰의 스크롤 보고는 무시한다.
+    qint64                              previewDrivenIgnoreUntilMs_ = 0;
+    /// 가드에 걸려 버려진 에디터->프리뷰 동기화를 가드 해제 후 되살린다.
+    QTimer*                             previewSyncRetry_ = nullptr;
 
     // ── 프리뷰 핫스왑 상태 ──
     // 같은 문서를 다시 빌드했고 <head> 가 그대로면 전체 리로드 대신 body 만

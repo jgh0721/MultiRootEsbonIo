@@ -578,6 +578,26 @@ void MainWindow::createMenus()
     auto* viewMenu = menuBar()->addMenu( tr( "보기(&V)" ) );
     viewMenu->addAction( tr( "테마 전환" ), this, &MainWindow::onThemeToggle );
 
+    // 코드 접기. 마진의 [-] 를 하나씩 누르는 것 말고 문서 전체를 한 번에
+    // 여닫는 수단이 있어야 개요처럼 쓸 수 있다. 접기 자체를 켜고 끄는 것은
+    // 설정(텍스트 편집기 > 코드 폴딩)에 있다.
+    viewMenu->addSeparator();
+    auto* foldAllAction = viewMenu->addAction( tr( "모두 접기(&F)" ), this, [this] {
+        if( QTextView* view = textViewOf( currentView() ) )
+            view->foldAll( true );
+    } );
+    foldAllAction->setObjectName( QStringLiteral( "editor.foldAll" ) );
+    foldAllAction->setShortcut( QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_Minus ) );
+    foldAllAction->setShortcutContext( Qt::WindowShortcut );
+
+    auto* unfoldAllAction = viewMenu->addAction( tr( "모두 펼치기(&U)" ), this, [this] {
+        if( QTextView* view = textViewOf( currentView() ) )
+            view->foldAll( false );
+    } );
+    unfoldAllAction->setObjectName( QStringLiteral( "editor.unfoldAll" ) );
+    unfoldAllAction->setShortcut( QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_Plus ) );
+    unfoldAllAction->setShortcutContext( Qt::WindowShortcut );
+
     auto* settingsMenu = menuBar()->addMenu( tr( "설정(&S)" ) );
     auto* settingsAction = settingsMenu->addAction( tr( "설정(&I)..." ), this, &MainWindow::onSettings );
     settingsAction->setObjectName( QStringLiteral( "app.settings" ) );

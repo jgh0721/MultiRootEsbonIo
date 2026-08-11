@@ -982,6 +982,9 @@ void QTextView::goToPosition( int line, int column )
 
     const int safeLine = qBound( 1, line, lineCount() );
     const int safeColumn = qMax( 1, column );
+    // 개요·진단·검색으로 뛰어든 줄이 접혀 있을 수 있다. 그대로 캐럿만 옮기면
+    // 캐럿이 보이지 않는 곳에 놓인다. 먼저 그 블록을 펼친다.
+    m_editor->ensureLineVisible( safeLine - 1 );
     m_editor->setCursorPosition( safeLine - 1, safeColumn - 1 );
 }
 
@@ -1491,6 +1494,14 @@ void QTextView::setCodeFoldingEnabled( bool enabled )
 
     AppSettings settings;
     settings.setValue( "textView/showCodeFolding", enabled );
+}
+
+void QTextView::foldAll( const bool contract )
+{
+    if( !m_editor || !m_editorSettings.showCodeFolding )
+        return;
+
+    m_editor->foldAll( contract );
 }
 
 bool QTextView::isBraceHighlightEnabled() const

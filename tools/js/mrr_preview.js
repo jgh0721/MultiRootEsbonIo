@@ -233,6 +233,16 @@
     /// 프리뷰를 스크롤해 (src, line) 이 창의 ratio 위치에 오게 한다.
     function scrollToSourceLine(src, line, ratio) {
         invalidateIfResized();
+
+        // 에디터가 문서 맨 위다. 첫 기준점은 테마 헤더나 여백만큼 아래에 있어서
+        // 비율 보정을 태우면 0 보다 큰 값이 나오고, 그러면 제목이 화면 위로
+        // 잘려 나간다. 문서 시작은 문서 시작으로 맞춘다.
+        if (line <= 1) {
+            suppressUntil = now() + FEEDBACK_GUARD_MS;
+            window.scrollTo(0, 0);
+            return;
+        }
+
         var y = documentYForLine(src, line);
         if (y === null) {
             return;

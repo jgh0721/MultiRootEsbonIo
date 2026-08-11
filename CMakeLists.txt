@@ -21,6 +21,12 @@ set(MRST_LEXILLA_ROOT "${CMAKE_SOURCE_DIR}/third_party/scintilla/lexilla" CACHE 
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
+# ── 버전 헤더 ─────────────────────────────────────────────
+# C++ 과 리소스 컴파일러(app.rc 의 VERSIONINFO)가 같은 값을 쓰도록
+# project(VERSION ...) 을 헤더 하나로 흘려보낸다.
+configure_file("${CMAKE_SOURCE_DIR}/cmake/mrst_version.h.in"
+        "${CMAKE_BINARY_DIR}/mrst_version.h" @ONLY)
+
 # ── Qt 경로 설정 ──────────────────────────────────────────
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     list(PREPEND CMAKE_PREFIX_PATH "${MRST_QT_ROOT}")
@@ -137,6 +143,8 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE src/stdafx.h)
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_SOURCE_DIR}")
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_SOURCE_DIR}/uniqueLibs")
+# 생성된 mrst_version.h 를 C++ 과 RC 양쪽에서 찾을 수 있게 한다.
+target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_BINARY_DIR}")
 
 target_link_libraries(${PROJECT_NAME} PRIVATE dwmapi user32 windowsapp d3d11 dxgi runtimeobject)
 
@@ -180,6 +188,7 @@ if(MRST_BUILD_TESTS)
             tests/main.cpp
             tests/TestRunner.hpp
             tests/tst_RstContainerLexer.cpp
+            tests/tst_RstFolding.cpp
             tests/tst_LspMessageRouting.cpp
             tests/tst_ProjectResolution.cpp
             tests/tst_RstCompletionContext.cpp

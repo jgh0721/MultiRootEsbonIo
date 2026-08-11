@@ -134,6 +134,12 @@ WorkspaceController::WorkspaceController( QObject* parent )
     outlineDebounce_->setInterval( 650 );
     connect( outlineDebounce_, &QTimer::timeout, this, &WorkspaceController::refreshDocumentOutline );
 
+    // 왕복 방지 가드에 걸려 버려진 에디터->프리뷰 동기화를 되살린다.
+    // 가드가 풀린 뒤 한 번만 다시 보낸다.
+    previewSyncRetry_ = new QTimer( this );
+    previewSyncRetry_->setSingleShot( true );
+    connect( previewSyncRetry_, &QTimer::timeout, this, &WorkspaceController::syncPreviewFromEditor );
+
     connect( lspPool_, &LspServerPool::documentSymbolsReady, this,
             [this]( const QString& projectId, const QString& path,
                     const QList< LspDocumentSymbol >& symbols ) {
@@ -342,7 +348,7 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
     // 프리뷰 클릭 -> 에디터 이동 (클릭 지점 비율을 그대로 유지)
     connect( previewBridge_, &PreviewBridge::editorNavigationRequested, this,
             [this]( const int sourceIndex, const double line, const double ratio ) {
-                syncEditorFromPreview( sourceIndex, line, ratio );
+                syncEditorFromPreview( sourceIndex, line, ratio, true );
                 const QString path = pathForSourceIndex( sourceIndex );
                 if( !path.isEmpty() )
                     emit navigateRequested( path, static_cast< int >( line ), 1 );
@@ -375,8 +381,21 @@ void WorkspaceController::syncPreviewFromEditor()
 {
     if( previewBridge_ == nullptr || activeView_.isNull() )
         return;
-    if( QDateTime::currentMSecsSinceEpoch() < suppressSyncUntilMs_ )
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if( nowMs < suppressSyncUntilMs_ )
+    {
+        // 프리뷰가 방금 에디터를 움직였다. 지금 되돌려 보내면 왕복이 된다.
+        //
+        // 그렇다고 그냥 버리면 가드가 걸린 동안의 **마지막** 스크롤이 영영
+        // 반영되지 않는다. 문서 끝까지 굴렸다가 맨 위로 돌아오는 것처럼 큰
+        // 이동을 하면 프리뷰가 도중에 멈춰 첫 문단과 제목이 보이지 않는
+        // 상태로 남는다. 가드가 풀린 직후 현재 위치로 한 번 더 맞춘다.
+        if( !previewSyncRetry_->isActive() )
+            previewSyncRetry_->start( static_cast< int >( suppressSyncUntilMs_ - nowMs ) + 16 );
         return;
+    }
+    previewSyncRetry_->stop();
 
     DocumentContext* context = contextFor( activeView_ );
     if( context == nullptr || context->path.isEmpty() )
@@ -388,16 +407,34 @@ void WorkspaceController::syncPreviewFromEditor()
 
     // 에디터 창의 kAnchorRatio 높이에 실제로 보이는 (소수) 줄을 기준으로 삼는다.
     // 소수부는 에디터 쪽 자동 줄바꿈 안에서의 위치다.
-    const double anchorLine = activeView_->fractionalLineAtViewportRatio( kAnchorRatio );
+    //
+    // 단 에디터가 문서 맨 위에 붙어 있으면 비율 기준을 쓰지 않는다. 첫 문단이
+    // 여러 화면 줄로 접히면 창 한가운데 보이는 줄은 여전히 문서 앞쪽이라
+    // 프리뷰가 그 줄을 한가운데로 올리려다 제목을 화면 밖으로 밀어낸다.
+    // 맨 위는 맨 위로 맞추는 것이 사용자가 기대하는 결과다.
+    const double anchorLine = activeView_->firstVisibleLine() <= 1
+                                  ? 1.0
+                                  : activeView_->fractionalLineAtViewportRatio( kAnchorRatio );
+
+    // 이 순간부터 잠깐은 에디터가 주도권을 갖는다. 프리뷰가 (우리 때문에
+    // 움직여서) 보고해 오는 위치로 에디터를 되돌리면 스크롤이 튄다.
+    previewDrivenIgnoreUntilMs_ = QDateTime::currentMSecsSinceEpoch() + kSyncGuardMs;
 
     // 프리뷰가 우리 때문에 움직인 것을 다시 우리에게 보고하지 않도록 막는다.
     previewBridge_->suppressScrollFeedback( static_cast< int >( kSyncGuardMs ) );
     previewBridge_->requestScrollToLine( sourceIndex, anchorLine, kAnchorRatio );
 }
 
-void WorkspaceController::syncEditorFromPreview( const int sourceIndex, const double line, const double ratio )
+void WorkspaceController::syncEditorFromPreview( const int sourceIndex, const double line,
+                                                 const double ratio, const bool userInitiated )
 {
     if( activeView_.isNull() )
+        return;
+
+    // 에디터를 굴리는 중이라면 프리뷰의 보고는 우리가 방금 만든 결과다.
+    // 그것으로 에디터를 되돌리면 스크롤이 제자리에서 튄다.
+    // 프리뷰를 직접 클릭한 이동은 사용자의 뜻이므로 가드를 넘긴다.
+    if( !userInitiated && QDateTime::currentMSecsSinceEpoch() < previewDrivenIgnoreUntilMs_ )
         return;
 
     const QString path = pathForSourceIndex( sourceIndex );
@@ -488,6 +525,10 @@ void WorkspaceController::requestPreviewBuild( const bool immediate )
     request.sourceFile = context->path;
     request.shadowFile = writeShadowCopy( view, context->path );
 
+    // 실제로 요청을 보낸 문서만 기록한다. 위쪽 조기 반환들(런타임 미준비,
+    // 프로젝트 미해결)에서는 기록하지 않아야 준비가 끝난 뒤 다시 시도된다.
+    previewRequestedPath_ = request.sourceFile;
+
     if( immediate )
         previewController_->buildNow( request );
     else
@@ -502,8 +543,20 @@ void WorkspaceController::onPreviewFinished( const PreviewBuildResult& result )
     if( !result.ok || result.htmlPath.isEmpty() )
         return;
 
+    // 빌더는 요청한 문서를 못 찾으면 root 문서(보통 index)의 HTML 로 물러선다.
+    // .md 처럼 이 프로젝트가 원본으로 읽지 않는 파일을 열었을 때가 그렇다.
+    // 그 결과로 화면을 갈아치우면 방금까지 보던 문서가 엉뚱한 문서로 바뀐다.
+    // 프리뷰는 마지막으로 제대로 렌더된 문서를 그대로 유지한다.
+    if( !result.sourceFile.isEmpty() && result.primaryDocname.isEmpty() )
+    {
+        emit logMessage( tr( "프리뷰를 만들 수 없는 파일입니다(이 프로젝트의 원본이 아님): %1" )
+                            .arg( QFileInfo( result.sourceFile ).fileName() ) );
+        return;
+    }
+
     // data-mrr-src 인덱스를 실제 경로로 되돌리려면 빌더가 준 순서를 그대로 쓴다.
     previewSources_ = result.sources;
+    previewPrimaryPath_ = result.sourceFile;
 
     showPreviewHtml( result.htmlPath, result.projectId + QLatin1Char( '\x1f' ) + result.primaryDocname );
 }
@@ -988,6 +1041,12 @@ void WorkspaceController::setActiveDocument( QTextView* view )
     const bool projectChanged = ( context->projectId != activeProjectId_ );
     const bool documentChanged = ( previousView != view );
 
+    // 프리뷰가 지금 문서를 따라오지 못한 상태. 프리뷰를 만들 수 없는 파일
+    // (.md 등)을 거쳐 왔거나 그때의 빌드가 실패했다면 여기에 걸린다.
+    // 뷰 포인터 비교만으로는 그 경우를 잡지 못해 프리뷰가 옛 문서에 멈춘다.
+    const bool previewStale = !context->path.isEmpty()
+                              && context->path.compare( previewRequestedPath_, Qt::CaseInsensitive ) != 0;
+
     if( projectChanged )
     {
         activeProjectId_ = context->projectId;
@@ -997,7 +1056,7 @@ void WorkspaceController::setActiveDocument( QTextView* view )
                             .arg( activeProjectId_.isEmpty() ? unresolvedProjectLabel() : activeProjectId_ ) );
     }
 
-    if( !projectChanged && !documentChanged )
+    if( !projectChanged && !documentChanged && !previewStale )
         return;   // 같은 문서에 대한 중복 호출
 
     requestPreviewBuild( true );

@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QFontMetrics>
 #include <QTextStream>
+#include <QTimer>
 #include <QWidget>
 
 #include <ScintillaEditBase.h>
@@ -24,6 +25,18 @@ using MessageInt = unsigned int;
 constexpr sptr_t kInvalidPosition = static_cast<sptr_t>(-1);
 constexpr int kBraceHighlightIndicatorId = 24;
 constexpr int kBraceBadLightIndicatorId = 25;
+
+/// 편집 후 접기 깊이를 다시 세기까지 기다리는 시간.
+/// 문서 전체를 훑으므로 한 글자마다 돌면 큰 파일에서 타이핑이 끊긴다.
+constexpr int kRstFoldDebounceMs = 200;
+
+/// 이보다 긴 문서에서는 reST 접기를 포기한다. 전체 재계산 비용이 편집
+/// 반응성을 해치는 쪽이 접기가 없는 것보다 나쁘다.
+constexpr int kRstFoldMaxLines = 200000;
+
+/// Scintilla 접기 깊이는 12비트다. 실제 문서가 이만큼 중첩될 일은 없지만
+/// 깨진 입력으로 넘치는 것은 막아야 한다.
+constexpr int kMaxFoldDepth = 200;
 
 MessageInt sciMessage(int value)
 {
@@ -183,6 +196,9 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 	connect(m_editor, &ScintillaEditBase::notifyChange,
 			this, [this] {
 				syncLineCountState(true);
+				// 제목 장식 한 줄만 고쳐도 그 아래 섹션 깊이가 통째로 바뀐다.
+				// 구조 계산은 문서 단위라 디바운스해서 돌린다.
+				scheduleRstFoldUpdate();
 				emit textChanged();
 			});
 	connect(m_editor, &ScintillaEditBase::updateUi,
@@ -217,6 +233,9 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 					return;
 				const auto line = static_cast<sptr_t>(m_editor->send(sciMessage(SCI_LINEFROMPOSITION), position));
 				m_editor->send(sciMessage(SCI_TOGGLEFOLD), line);
+				// 접거나 펼치면 아래 내용이 통째로 올라오거나 내려간다.
+				// 프리뷰가 그대로 있으면 두 화면이 어긋나므로 알려 준다.
+				emit viewportScrolled();
 			});
 	m_lastKnownLineCount = lineCount();
 }
@@ -257,6 +276,9 @@ void ScintillaQtDirectBackend::applySettings(const ScintillaEditorSettings& sett
 		                  : static_cast<sptr_t>(Scintilla::Wrap::None));
 	m_codeFoldingEnabled = settings.showCodeFolding;
 	configureCodeFolding(m_codeFoldingEnabled);
+	// reST 는 렉서가 접기 깊이를 채워 주지 않는다. 설정을 켠 직후에도
+	// 마진에 마커가 나오려면 여기서 한 번 세어 둬야 한다.
+	updateRstFoldLevels();
 	const int currentChangeHistoryFlags = static_cast<int>(m_editor->send(sciMessage(SCI_GETCHANGEHISTORY)));
 	const int changeHistoryFlags = changeHistoryFlagsForMode(settings.changeHistoryMode);
 	if (currentChangeHistoryFlags == SC_CHANGE_HISTORY_DISABLED && changeHistoryFlags != SC_CHANGE_HISTORY_DISABLED) {
@@ -646,6 +668,11 @@ void ScintillaQtDirectBackend::scrollRangeToView(int startPos, int endPos)
 
 	const sptr_t start = qMax<sptr_t>(0, static_cast<sptr_t>(startPos));
 	const sptr_t end = qMax(start, static_cast<sptr_t>(endPos));
+	// 검색 결과가 접힌 블록 안이면 펼쳐야 보인다. SCI_SCROLLRANGE 는
+	// 접힌 줄을 펼치지 않아 "찾았다는데 아무것도 안 보이는" 상태가 된다.
+	ensureLineVisible(lineFromPosition(static_cast<int>(start)));
+	if (end != start)
+		ensureLineVisible(lineFromPosition(static_cast<int>(end)));
 	m_editor->send(sciMessage(SCI_SCROLLRANGE), start, end);
 }
 
@@ -754,8 +781,15 @@ void ScintillaQtDirectBackend::scrollFractionalLineToViewportRatio(const double 
 
 	const int totalLines = qMax(1, lineCount());
 	const double clamped = qBound(1.0, fractionalLine, static_cast<double>(totalLines));
-	const int docLine = qBound(0, static_cast<int>(clamped) - 1, totalLines - 1);
-	const double fraction = qBound(0.0, clamped - static_cast<int>(clamped), 0.999);
+	const int requestedLine = qBound(0, static_cast<int>(clamped) - 1, totalLines - 1);
+	double fraction = qBound(0.0, clamped - static_cast<int>(clamped), 0.999);
+
+	// 목표 줄이 접혀 있으면 화면 좌표가 없다. SCI_POINTYFROMPOSITION 이
+	// 엉뚱한 값을 내놓아 스크롤이 튀므로, 그 줄을 감추고 있는 머리 줄로
+	// 바꿔 잡는다. 접힌 블록 안에서의 위치는 화면에 존재하지 않으니 버린다.
+	const int docLine = visibleAnchorLine(requestedLine);
+	if (docLine != requestedLine)
+		fraction = 0.0;
 
 	const int height = qMax(1, m_editor->height());
 	const int rowHeight = qMax(1, textHeight(docLine));
@@ -1009,12 +1043,14 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 	if (lexerKey.compare(QStringLiteral("rst-container"), Qt::CaseInsensitive) == 0) {
 		m_rstLexer = std::make_unique<mrst::rst::RstContainerLexer>();
 		m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
-		m_editor->send(sciMessage(SCI_SETPROPERTY),
-			reinterpret_cast<uptr_t>("fold"),
-			reinterpret_cast<sptr_t>("0"));
+		// SCI_SETPROPERTY("fold") 는 Lexilla 렉서에게 주는 설정이다. 컨테이너
+		// 렉싱에는 렉서 자체가 없으므로 접기 깊이는 updateRstFoldLevels() 가
+		// 문서를 훑어 직접 넣는다.
 		m_currentLexerKey = lexerKey;
 		applySyntaxStyles(m_darkTheme);
 		m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
+		configureCodeFolding(m_codeFoldingEnabled);
+		updateRstFoldLevels();
 		writeLexerTrace(displayName, lexerKey, true);
 		return true;
 	}
@@ -1061,6 +1097,109 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 	const bool applied = m_currentLexer != nullptr;
 	writeLexerTrace(displayName, lexerKey, applied);
 	return applied;
+}
+
+void ScintillaQtDirectBackend::updateRstFoldLevels()
+{
+	if (!m_editor || !m_rstLexer)
+		return;
+
+	if (!m_codeFoldingEnabled) {
+		// 접기를 끄면 마진이 사라지므로 깊이는 그대로 둬도 화면에는 영향이 없다.
+		// 다만 접힌 채로 꺼 두면 본문이 영영 숨는다. 전부 펼쳐 둔다.
+		m_editor->send(sciMessage(SCI_FOLDALL), SC_FOLDACTION_EXPAND);
+		return;
+	}
+
+	const int totalLines = lineCount();
+	if (totalLines <= 0 || totalLines > kRstFoldMaxLines)
+		return;
+
+	const QByteArray text = textRangeUtf8(0, documentLength());
+	const std::vector<mrst::rst::FoldLine> folds =
+		mrst::rst::computeFoldLevels(std::string(text.constData(), static_cast<std::size_t>(text.size())));
+
+	const int lines = qMin(totalLines, static_cast<int>(folds.size()));
+	for (int line = 0; line < lines; ++line) {
+		const mrst::rst::FoldLine& fold = folds[static_cast<std::size_t>(line)];
+		int level = SC_FOLDLEVELBASE + qBound(0, fold.level, kMaxFoldDepth);
+		if (fold.header)
+			level |= SC_FOLDLEVELHEADERFLAG;
+		if (fold.blank)
+			level |= SC_FOLDLEVELWHITEFLAG;
+
+		// 값이 그대로면 보내지 않는다. SCI_SETFOLDLEVEL 은 값이 바뀔 때마다
+		// SC_MOD_CHANGEFOLD 통지와 마진 다시 그리기를 유발한다.
+		if (static_cast<int>(m_editor->send(sciMessage(SCI_GETFOLDLEVEL), line)) == level)
+			continue;
+		m_editor->send(sciMessage(SCI_SETFOLDLEVEL), line, level);
+	}
+}
+
+void ScintillaQtDirectBackend::scheduleRstFoldUpdate()
+{
+	if (!m_editor || !m_rstLexer)
+		return;
+
+	if (m_rstFoldTimer == nullptr) {
+		m_rstFoldTimer = new QTimer(this);
+		m_rstFoldTimer->setSingleShot(true);
+		m_rstFoldTimer->setInterval(kRstFoldDebounceMs);
+		connect(m_rstFoldTimer, &QTimer::timeout, this, &ScintillaQtDirectBackend::updateRstFoldLevels);
+	}
+	m_rstFoldTimer->start();
+}
+
+bool ScintillaQtDirectBackend::isLineVisible(int line) const
+{
+	if (!m_editor)
+		return true;
+
+	const sptr_t safeLine = qBound(sptr_t(0), static_cast<sptr_t>(line),
+								   static_cast<sptr_t>(qMax(0, lineCount() - 1)));
+	return m_editor->send(sciMessage(SCI_GETLINEVISIBLE), safeLine) != 0;
+}
+
+int ScintillaQtDirectBackend::visibleAnchorLine(int line) const
+{
+	if (!m_editor || isLineVisible(line))
+		return line;
+
+	// 접힌 줄에는 화면 좌표가 없다. 그 줄을 감추고 있는 머리 줄을 대신 쓴다.
+	sptr_t current = qBound(sptr_t(0), static_cast<sptr_t>(line),
+							static_cast<sptr_t>(qMax(0, lineCount() - 1)));
+	for (int guard = 0; guard < kMaxFoldDepth; ++guard) {
+		const sptr_t parent = m_editor->send(sciMessage(SCI_GETFOLDPARENT), current);
+		if (parent < 0 || parent == current)
+			break;
+		current = parent;
+		if (m_editor->send(sciMessage(SCI_GETLINEVISIBLE), current) != 0)
+			break;
+	}
+	return static_cast<int>(current);
+}
+
+void ScintillaQtDirectBackend::ensureLineVisible(int line)
+{
+	if (!m_editor)
+		return;
+
+	const sptr_t safeLine = qBound(sptr_t(0), static_cast<sptr_t>(line),
+								   static_cast<sptr_t>(qMax(0, lineCount() - 1)));
+	// ENFORCEPOLICY 를 쓰면 접힌 블록을 펼치면서 세로 정책(캐럿 여백)까지 지킨다.
+	m_editor->send(sciMessage(SCI_ENSUREVISIBLEENFORCEPOLICY), safeLine);
+}
+
+void ScintillaQtDirectBackend::foldAll(bool contract)
+{
+	if (!m_editor)
+		return;
+
+	m_editor->send(sciMessage(SCI_FOLDALL),
+				   contract ? SC_FOLDACTION_CONTRACT : SC_FOLDACTION_EXPAND);
+	// 접힘/펼침은 세로 스크롤을 바꾸지만 SCN_UPDATEUI 의 VScroll 로는 오지
+	// 않는 경우가 있다. 프리뷰가 따라오도록 직접 알린다.
+	emit viewportScrolled();
 }
 
 void ScintillaQtDirectBackend::configureCodeFolding(bool enabled)
@@ -1200,8 +1339,16 @@ void ScintillaQtDirectBackend::updateBraceHighlight()
 
 void ScintillaQtDirectBackend::clearLexer()
 {
-	if (!m_currentLexer)
+	// 컨테이너 렉서는 ILexer 가 아니어서 아래 조기 반환에 가려져 있었다.
+	// 남겨 두면 다른 언어로 바꾼 뒤에도 reST 접기 깊이를 계속 계산한다.
+	if (m_rstFoldTimer)
+		m_rstFoldTimer->stop();
+	m_rstLexer.reset();
+
+	if (!m_currentLexer) {
+		m_currentLexerKey.clear();
 		return;
+	}
 
 	// SCI_SETILEXER에 넘긴 lexer의 수명은 Scintilla가 관리한다.
 	// 백엔드는 편집기가 살아 있는 동안에만 분리 요청을 보내고,
@@ -1210,7 +1357,6 @@ void ScintillaQtDirectBackend::clearLexer()
 		m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
 	m_currentLexer = nullptr;
 	m_currentLexerKey.clear();
-	m_rstLexer.reset();
 }
 
 mrst::rst::RstMetadataCache* ScintillaQtDirectBackend::rstMetadataCache() const

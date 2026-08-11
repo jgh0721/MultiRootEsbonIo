@@ -1,0 +1,20 @@
+#pragma once
+
+// CMake 의 project(VERSION ...) 값을 C++ 과 리소스 컴파일러가 함께 쓴다.
+// 이 파일은 cmake/mrst_version.h.in 에서 생성되므로 직접 고치지 말 것.
+
+#define MRST_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define MRST_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define MRST_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define MRST_VERSION_BUILD 0
+
+// RC 의 FILEVERSION/PRODUCTVERSION 은 쉼표로 구분된 4개의 숫자를 받는다.
+#define MRST_VERSION_COMMA MRST_VERSION_MAJOR, MRST_VERSION_MINOR, MRST_VERSION_PATCH, MRST_VERSION_BUILD
+#define MRST_VERSION_STRING "@PROJECT_VERSION@.0"
+
+#define MRST_PRODUCT_NAME "MultiRoot reST Editor"
+#define MRST_FILE_DESCRIPTION "MultiRoot reStructuredText Editor"
+#define MRST_INTERNAL_NAME "@PROJECT_NAME@"
+#define MRST_ORIGINAL_FILENAME "@PROJECT_NAME@.exe"
+#define MRST_COMPANY_NAME "MultiRoot reST"
+#define MRST_LEGAL_COPYRIGHT "Copyright (C) 2026 MultiRoot reST"

@@ -131,6 +131,8 @@ public:
     // ── 코드 폴딩 ──
     bool isCodeFoldingEnabled() const;
     void setCodeFoldingEnabled( bool enabled );
+    /// 문서 전체를 접거나 펼친다. 접기가 꺼져 있으면 아무 일도 하지 않는다.
+    void foldAll( bool contract );
 
     // ── 괄호 강조 ──
     bool isBraceHighlightEnabled() const;
