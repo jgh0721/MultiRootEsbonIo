@@ -234,6 +234,9 @@ private:
     void applyHotExitSettingsFromPreferences();
 
     QPointer<ScintillaQtDirectBackend> m_editor = nullptr;
+    /// createToolBar() 가 만든 도구모음. 소유권은 이것을 받아 간 쪽(MainWindow)
+    /// 에 있고, 테마가 바뀔 때 라벨 색을 다시 칠하려고 들고만 있는다.
+    QPointer<QToolBar>  m_toolBar;
     class ColumnRulerWidget* m_ruler = nullptr;
     FindReplaceWidget* m_findWidget = nullptr;
     TextFileSession       m_fileSession;

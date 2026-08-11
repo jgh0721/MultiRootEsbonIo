@@ -25,7 +25,12 @@ public:
     static ThemeManager&                instance();
 
     Theme                               currentTheme() const;
+    /// 테마를 바꾸고 설정에 남긴다. 어느 경로("보기 > 테마 전환", 설정
+    /// 대화상자)로 바꾸든 다음 실행에 그대로 이어진다.
     void                                setTheme( Theme theme );
+    /// 설정에 남아 있는 테마. 값이 없거나 망가졌으면 기본(다크).
+    /// 위젯을 만들기 전인 main() 에서 쓰라고 정적 함수로 둔다.
+    static Theme                        savedTheme();
 
     QColor                              color( const QString& key ) const;
     bool                                hasColor( const QString& key ) const;

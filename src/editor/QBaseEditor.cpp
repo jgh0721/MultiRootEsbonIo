@@ -124,17 +124,35 @@ namespace
     ///
     /// 역할을 WindowText 로 되돌리고, 위젯이 Inactive/Disabled 그룹으로 해석돼
     /// secondaryColorDisabled(다크 #ffffff33)로 흐려지는 것까지 막는다.
+    ///
+    /// 테마가 바뀌면 도구모음이 다시 만들어지지만, 이미 만들어진 라벨도
+    /// 다시 칠할 수 있도록 이름을 붙여 둔다.
+    constexpr auto kToolBarLabelObjectName = "text.toolbar.label";
+
+    void applyToolBarLabelPalette( QLabel* label )
+    {
+        if( label == nullptr )
+            return;
+
+        label->setForegroundRole( QPalette::WindowText );
+
+        const QColor foreground = ThemeManager::instance().foregroundColor();
+        QPalette     pal        = label->palette();
+        pal.setColor( QPalette::All, QPalette::WindowText, foreground );
+        pal.setColor( QPalette::All, QPalette::ButtonText, foreground );
+        pal.setColor( QPalette::All, QPalette::Text, foreground );
+        label->setPalette( pal );
+    }
+
+    /// 색은 위젯 팔레트에서 읽지 않고 테마에서 직접 가져온다. 테마를 바꾸면
+    /// Qlementine 이 QApplication 팔레트를 갈아끼우는데, 그 시점과 우리가
+    /// 도구모음을 다시 만드는 시점의 순서가 보장되지 않는다. 팔레트에서 읽으면
+    /// 다크에서 만든 흰 글자가 라이트 배경에 그대로 남는 일이 생긴다.
     QLabel* makeToolBarLabel( QToolBar* toolBar, const QString& text )
     {
         auto* label = new QLabel( text, toolBar );
-        label->setForegroundRole( QPalette::WindowText );
-
-        QPalette     pal    = label->palette();
-        const QColor active = pal.color( QPalette::Active, QPalette::WindowText );
-        pal.setColor( QPalette::All, QPalette::WindowText, active );
-        pal.setColor( QPalette::All, QPalette::ButtonText, active );
-        pal.setColor( QPalette::All, QPalette::Text, active );
-        label->setPalette( pal );
+        label->setObjectName( kToolBarLabelObjectName );
+        applyToolBarLabelPalette( label );
         return label;
     }
 
@@ -1553,6 +1571,18 @@ void QTextView::setChangeHistoryMode( ScintillaEditorSettings::ChangeHistoryMode
 void QTextView::setTheme( Theme theme )
 {
     QBaseView::setTheme( theme );
+
+    // 도구모음 라벨은 글자색을 팔레트에 박아 두기 때문에(그러지 않으면
+    // Inactive/Disabled 색으로 흐려진다) 테마를 저절로 따라오지 않는다.
+    // 도구모음을 다시 만들지 않는 경로도 있으므로 여기서 직접 칠한다.
+    if( !m_toolBar.isNull() )
+    {
+        const auto labels =
+            m_toolBar->findChildren< QLabel* >( QLatin1String( kToolBarLabelObjectName ) );
+        for( QLabel* label : labels )
+            applyToolBarLabelPalette( label );
+    }
+
     if( m_editor )
     {
         m_editor->applyThemeColors( theme == Theme::Dark );
@@ -1568,6 +1598,8 @@ void QTextView::setTheme( Theme theme )
 QToolBar* QTextView::createToolBar()
 {
     auto* tb = QBaseView::createToolBar();
+    // 테마가 바뀌면 여기 담긴 라벨들을 다시 칠해야 한다 (setTheme 참고).
+    m_toolBar = tb;
     if( !m_editor )
         return tb;
 

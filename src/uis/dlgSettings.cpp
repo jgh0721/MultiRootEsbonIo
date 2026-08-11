@@ -1032,8 +1032,8 @@ void QSettingsDialog::applyThemePreview()
         return;
 
     const auto theme = static_cast<ThemeManager::Theme>(m_themeCombo->currentData().toInt());
-    AppSettings settings;
-    settings.setValue("theme", static_cast<int>(theme));
+    // 설정 저장은 setTheme() 이 한다. 여기서 또 쓰면 저장 지점이 둘이 되고,
+    // 나중에 키 이름이나 형식을 바꿀 때 한쪽만 고치기 쉽다.
     ThemeManager::instance().setTheme(theme);
     ThemeManager::instance().setColorOverrides(collectThemeColors());
     emit settingsApplied();

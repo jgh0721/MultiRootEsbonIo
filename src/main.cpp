@@ -1,7 +1,6 @@
 #include "stdafx.h"
 #include "main.hpp"
 
-#include "core/solAppSettings.hpp"
 #include "core/solQlementineTheme.hpp"
 #include "core/solThemeManager.hpp"
 #include "MainWindow.hpp"
@@ -32,9 +31,7 @@ int main( int argc, char* argv[] )
         // 한 Qt 는 위젯을 **생성 도중에** polish 하므로 qlementine v1.4.2 의
         // ComboboxItemViewFilter 재진입 버그로 첫 QComboBox 에서 스택 오버플로가 난다.
         // (기본값이 다크라 다크에서는 setTheme 이 조기 반환해 증상이 없었다.)
-        AppSettings settings;
-        const auto savedTheme = static_cast< ThemeManager::Theme >(
-            settings.value( "theme", static_cast< int >( ThemeManager::Dark ) ).toInt() );
+        const ThemeManager::Theme savedTheme = ThemeManager::savedTheme();
 
         // QStyle 은 위젯이 하나도 없을 때 갈아끼워야 한다.
         // 테마 리소스를 못 읽는 등으로 실패하면 예전처럼 Fusion 으로 돌아간다.

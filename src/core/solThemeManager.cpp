@@ -12,6 +12,9 @@ namespace
 {
     constexpr auto kThemeOverridesKey              = "theme/colorOverridesJson";
     constexpr auto kThemeOverridesSchemaVersionKey = "theme/colorOverridesSchemaVersion";
+    /// main() 이 시작할 때 읽는 키. 설정 대화상자와 "보기 > 테마 전환" 이
+    /// 같은 값을 써야 하므로 저장은 ThemeManager::setTheme() 한 곳에서만 한다.
+    constexpr auto kThemeKey                       = "theme";
     constexpr int  kThemeOverridesSchemaVersion    = 4;
 
     QJsonObject colorMapToJson( const QHash< QString, QColor >& colors )
@@ -58,10 +61,28 @@ ThemeManager::Theme ThemeManager::currentTheme() const
 
 void ThemeManager::setTheme( Theme theme )
 {
+    // 값이 같아도 저장까지 건너뛰지는 않는다. 설정 파일에 키가 아직 없을 수
+    // 있는데, "지금 기본값과 같으니 안 써도 된다" 고 두면 나중에 기본값이
+    // 바뀌었을 때 사용자가 고른 적 없는 테마로 조용히 바뀐다.
+    AppSettings settings;
+    settings.setValue( QString::fromLatin1( kThemeKey ), static_cast< int >( theme ) );
+
     if( m_theme == theme ) return;
     m_theme = theme;
     applyToApplication();
     emit themeChanged( theme );
+}
+
+ThemeManager::Theme ThemeManager::savedTheme()
+{
+    AppSettings settings;
+    const int stored =
+        settings.value( QString::fromLatin1( kThemeKey ), static_cast< int >( Dark ) ).toInt();
+
+    // 설정 파일은 사람이 고칠 수 있다. 범위를 벗어난 값을 그대로 enum 으로
+    // 캐스팅하면 색 조회가 전부 기본값(마젠타)으로 떨어진다.
+    return static_cast< Theme >(
+        qBound( static_cast< int >( Light ), stored, static_cast< int >( Dark ) ) );
 }
 
 QColor ThemeManager::color( const QString& key ) const
