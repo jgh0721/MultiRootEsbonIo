@@ -26,6 +26,8 @@
 #include <QThreadPool>
 #include <QTimer>
 #include <QUrl>
+#include <QWebEnginePage>
+#include <QWebEngineSettings>
 #include <QWebEngineView>
 
 namespace {
@@ -293,6 +295,7 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
 
     previewBridge_ = new PreviewBridge( this );
     previewBridge_->attachTo( previewView_ );
+    applyPreviewWebSettings();
 
     connect( previewView_, &QWebEngineView::loadFinished, this, [this]( const bool ok ) {
         previewLoadedOk_ = ok;
@@ -603,6 +606,45 @@ void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QStrin
     previewView_->load( url );
 }
 
+void WorkspaceController::applyPreviewWebSettings()
+{
+    if( previewView_ == nullptr || previewView_->page() == nullptr )
+        return;
+
+    // 프리뷰는 Sphinx 가 만든 HTML 을 file:// 로 읽는다. Chromium 은 file:// 문서가
+    // 원격 출처를 여는 것을 기본적으로 막으므로, sphinxcontrib-mermaid 처럼 CDN 에서
+    // 스크립트를 받아 그리는 확장은 요청 단계에서 차단되고 다이어그램이 원본
+    // 텍스트 블록으로 남는다. 그래서 이 속성이 mermaid 렌더링의 전제조건이다.
+    //
+    // 다만 켜 두면 문서에 적힌 임의의 원격 주소로도 요청이 나가므로, 폐쇄망이나
+    // 외부 요청을 원하지 않는 환경을 위해 설정으로 끌 수 있게 둔다.
+    const bool allowRemote =
+        AppSettings().value( QStringLiteral( "preview/allowRemoteContent" ), true ).toBool();
+    const int desired = allowRemote ? 1 : 0;
+    if( previewAllowRemote_ == desired )
+        return;
+
+    const bool firstApply = ( previewAllowRemote_ < 0 );
+    previewAllowRemote_   = desired;
+
+    previewView_->page()->settings()->setAttribute(
+        QWebEngineSettings::LocalContentCanAccessRemoteUrls, allowRemote );
+
+    emit logMessage( allowRemote
+                        ? tr( "프리뷰: 원격 리소스 허용 (mermaid 등 CDN 렌더링)" )
+                        : tr( "프리뷰: 원격 리소스 차단" ) );
+
+    // 이미 떠 있는 페이지의 스크립트는 바뀌기 전 설정으로 한 번 실패한 뒤다.
+    // 속성만 갈아도 다시 실행되지 않으므로 같은 문서를 다시 읽는다.
+    if( !firstApply && previewUrl_.isLocalFile() )
+    {
+        previewLoadedOk_ = false;
+        if( previewBridge_ != nullptr )
+            previewBridge_->resetReady();
+        previewView_->load( previewUrl_ );
+    }
+}
+
 void WorkspaceController::setLspStatus( const QString& state )
 {
     if( lspState_ == state )
@@ -882,6 +924,8 @@ void WorkspaceController::reloadSettings()
         lspPool_->setMaxProcesses(
             settings.value( QStringLiteral( "esbonio/maxLspProcesses" ), 3 ).toInt() );
     }
+
+    applyPreviewWebSettings();
 }
 
 void WorkspaceController::shutdown()
