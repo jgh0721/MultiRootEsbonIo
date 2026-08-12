@@ -120,6 +120,10 @@ private:
     void                                onPreviewFinished( const PreviewBuildResult& result );
     [[nodiscard]] QString               writeShadowCopy( QTextView* view, const QString& path ) const;
     void                                showPreviewHtml( const QString& htmlPath, const QString& documentKey );
+    /// 프리뷰 페이지의 원격 리소스 접근 허용 여부를 설정에서 읽어 적용한다.
+    /// 값이 바뀌었으면 이미 떠 있는 페이지를 다시 읽는다 (실패한 스크립트는
+    /// 설정만 바꿔서는 다시 실행되지 않는다).
+    void                                applyPreviewWebSettings();
     void                                refreshDiagnosticMarks( const QString& normalizedPath );
 
     // ── Esbonio ──
@@ -171,6 +175,9 @@ private:
     CompletionCoordinator*              completions_ = nullptr;
     GlossaryIndex*                      glossary_ = nullptr;
     QString                             lspState_;
+    /// 프리뷰의 원격 리소스 허용 상태. -1 은 아직 한 번도 적용하지 않은 것으로,
+    /// 첫 적용에서 불필요한 리로드를 하지 않기 위해 구분한다.
+    int                                 previewAllowRemote_ = -1;
     QStringList                         previewSources_;      ///< data-mrr-src 인덱스 -> 원본 경로
     QStringList                         previewProcessedSources_;  ///< 이번 빌드가 다시 읽은 파일들
     /// 마지막으로 빌드를 **요청한** 문서. 탭을 옮겼는데 프리뷰가 따라오지

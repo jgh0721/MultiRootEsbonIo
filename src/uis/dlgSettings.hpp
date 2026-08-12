@@ -37,11 +37,14 @@ private:
     QWidget*                            createGeneralPage();
     QWidget*                            createShortcutsPage();
     QWidget*                            createEditorPage();
+    QWidget*                            createPreviewPage();
     QWidget*                            createEsbonioPage();
     void                                loadShortcuts();
     void                                saveShortcuts();
     void                                loadTextViewerSettings();
     void                                saveTextViewerSettings();
+    void                                loadPreviewSettings();
+    void                                savePreviewSettings();
     void                                loadEsbonioSettings();
     void                                saveEsbonioSettings();
     void                                refreshEsbonioStatus();
@@ -90,6 +93,9 @@ private:
     QComboBox*                          m_textSaveBomCombo = nullptr;
     QCheckBox*                          m_textHotExitCheck = nullptr;
     QSpinBox*                           m_textLargeFileMBSpin = nullptr;
+
+    /// 프리뷰 페이지
+    QCheckBox*                          m_previewAllowRemoteCheck = nullptr;
 
     /// Python/Esbonio 페이지
     mrst::PythonEnvManager*             m_pythonEnvManager = nullptr;

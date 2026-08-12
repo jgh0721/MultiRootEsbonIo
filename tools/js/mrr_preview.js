@@ -320,6 +320,32 @@
         bridge.ready(PROTOCOL_VERSION);
     }
 
+    /// 핫스왑으로 들어온 다이어그램을 다시 그린다.
+    ///
+    /// 핫스왑은 <body> 만 갈아 끼운다. <head> 에 있는 mermaid 모듈 자체는 살아
+    /// 있지만 그것이 이미 그려 둔 SVG 는 옛 본문과 함께 사라지고, 새로 들어온
+    /// <pre class="mermaid"> 를 그려 주는 쪽은 아무도 없다 (mermaid 는
+    /// startOnLoad=false 로 초기화되고 load 이벤트는 다시 오지 않는다).
+    /// sphinxcontrib-mermaid 가 window 에 남겨 둔 재실행 훅을 직접 부른다.
+    function rerenderDiagrams() {
+        if (typeof window.runMermaid !== "function") {
+            return;
+        }
+        try {
+            var pending = window.runMermaid(true);
+            // 다이어그램이 그려지면 문서 높이가 달라진다. 스크롤 동기화가 쓰는
+            // 좌표 캐시는 그 뒤에 버려야 의미가 있다.
+            if (pending && typeof pending.then === "function") {
+                pending.then(invalidateCache, invalidateCache);
+            } else {
+                invalidateCache();
+            }
+        } catch (error) {
+            // 다이어그램을 못 그린 것과 본문 교체가 실패한 것은 다른 문제다.
+            // 여기서 실패해도 핫스왑 자체는 성공으로 보고한다.
+        }
+    }
+
     /// 전체 리로드 없이 body 만 교체한다.
     ///
     /// 재빌드마다 페이지를 새로 로드하면 흰 화면이 한 번 깜빡이고 스크롤이
@@ -356,6 +382,8 @@
 
             window.scrollTo(keepX, keepY);
             document.body.style.minHeight = previousMinHeight;
+
+            rerenderDiagrams();
 
             suppressUntil = now() + FEEDBACK_GUARD_MS;
             bridge.hotSwapResult(token, true, "");

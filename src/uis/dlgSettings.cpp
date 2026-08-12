@@ -246,6 +246,7 @@ void QSettingsDialog::on_btnApply_clicked( bool Checked )
     Q_UNUSED( Checked )
     saveShortcuts();
     saveTextViewerSettings();
+    savePreviewSettings();
     saveEsbonioSettings();
     refreshEsbonioStatus();
     emit settingsApplied();
@@ -318,11 +319,13 @@ void QSettingsDialog::setupUi()
     Ui.lstCate->addItem( tr( "공통" ) );
     Ui.lstCate->addItem( tr( "단축키" ) );
     Ui.lstCate->addItem( tr( "텍스트 뷰어" ) );
+    Ui.lstCate->addItem( tr( "프리뷰" ) );
     Ui.lstCate->addItem( tr( "Python/Esbonio" ) );
 
     Ui.stkWidget->addWidget( createGeneralPage() );
     Ui.stkWidget->addWidget( createShortcutsPage() );
     Ui.stkWidget->addWidget( createEditorPage() );
+    Ui.stkWidget->addWidget( createPreviewPage() );
     Ui.stkWidget->addWidget( createEsbonioPage() );
 
     Ui.btnApply->setText( tr( "적용(&A)" ) );
@@ -601,6 +604,66 @@ QWidget* QSettingsDialog::createEditorPage()
     layout->addRow( tr( "대용량 파일 기준:" ), m_textLargeFileMBSpin );
 
     return page;
+}
+
+QWidget* QSettingsDialog::createPreviewPage()
+{
+    auto* page   = new QWidget( this );
+    auto* layout = new QVBoxLayout( page );
+
+    auto* group       = new QGroupBox( tr( "외부 리소스" ), page );
+    auto* groupLayout = new QVBoxLayout( group );
+
+    m_previewAllowRemoteCheck =
+        new QCheckBox( tr( "인터넷에서 스크립트·스타일·이미지 불러오기" ), group );
+    m_previewAllowRemoteCheck->setToolTip(
+        tr( "끄면 프리뷰가 외부로 요청을 보내지 않습니다.\n"
+            "대신 CDN 스크립트로 그리는 다이어그램은 텍스트로 남습니다." ) );
+    groupLayout->addWidget( m_previewAllowRemoteCheck );
+
+    auto* hint = new QLabel(
+        tr( "mermaid 다이어그램처럼 CDN 스크립트가 그려 주는 요소는 이 항목이 켜져 "
+            "있어야 렌더링됩니다. 프리뷰 HTML 은 로컬 파일로 열리는데, 브라우저 "
+            "엔진은 로컬 문서가 외부 주소를 여는 것을 기본적으로 막기 때문입니다.\n\n"
+            "끄면 프리뷰는 로컬 파일만 읽습니다. 외부로 요청이 나가지 않는 대신 "
+            "그런 요소는 원본 텍스트 블록으로 남습니다 — 폐쇄망에서는 어차피 "
+            "받아올 수 없으므로 꺼 두는 편이 낫습니다." ),
+        group );
+    hint->setWordWrap( true );
+    groupLayout->addWidget( hint );
+
+    layout->addWidget( group );
+    layout->addStretch( 1 );
+
+    loadPreviewSettings();
+
+    // 켜고 끈 결과를 바로 확인할 수 있어야 한다. 저장한 뒤 곧장 알리면
+    // 컨트롤러가 프리뷰를 새 설정으로 다시 읽는다.
+    connect( m_previewAllowRemoteCheck, &QCheckBox::toggled, this, [this]( const bool checked ) {
+        AppSettings().setValue( QStringLiteral( "preview/allowRemoteContent" ), checked );
+        emit settingsApplied();
+    } );
+
+    return page;
+}
+
+void QSettingsDialog::loadPreviewSettings()
+{
+    if( m_previewAllowRemoteCheck == nullptr )
+        return;
+
+    const QSignalBlocker blocker( m_previewAllowRemoteCheck );
+    m_previewAllowRemoteCheck->setChecked(
+        AppSettings().value( QStringLiteral( "preview/allowRemoteContent" ), true ).toBool() );
+}
+
+void QSettingsDialog::savePreviewSettings()
+{
+    if( m_previewAllowRemoteCheck == nullptr )
+        return;
+
+    AppSettings().setValue( QStringLiteral( "preview/allowRemoteContent" ),
+                            m_previewAllowRemoteCheck->isChecked() );
 }
 
 QWidget* QSettingsDialog::createEsbonioPage()
