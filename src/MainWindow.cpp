@@ -383,7 +383,7 @@ MainWindow::MainWindow( QWidget* parent )
     // WA_OpaquePaintEvent 는 붙이지 않는다. QTabWidget 은 탭 베이스와 프레임만 그려
     // 자기 영역을 전부 채우지 않으므로, 배경 지우기를 끄면 리사이즈 때 잔상이 남는다.
 
-    Ui.webEngineView->setHtml( QStringLiteral( "<h1>MultiRoot reST C++ Port</h1><p>C++/Qt 전환 셸이 시작되었습니다.</p>" ) );
+    Ui.webEngineView->setHtml( QStringLiteral( "<h1>MultiRoot reST</h1><p>셸이 시작되었습니다.</p>" ) );
 
     Ui.splFolderWithOutlineOnSide->setMinimumWidth( 200 );
     Ui.frmBottom->setMinimumHeight( 150 );
@@ -1384,9 +1384,9 @@ void MainWindow::updateTitle()
 {
     auto* v = currentView();
     if( v )
-        setWindowTitle( QStringLiteral( "iMonFTS Multi Viewer — %1" ).arg( v->title() ) );
+        setWindowTitle( QStringLiteral( "MultiRoot reST Editor — %1" ).arg( v->title() ) );
     else
-        setWindowTitle( tr( "iMonFTS Multi Viewer" ) );
+        setWindowTitle( tr( "MultiRoot reST Editor" ) );
 }
 
 void MainWindow::updateTabDecoration( QBaseView* view )
