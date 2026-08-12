@@ -21,6 +21,9 @@ public:
 signals:
     void                                settingsApplied();
 
+protected:
+    void                                showEvent( QShowEvent* Event ) override;
+
 private slots:
     void                                on_btnOK_clicked( bool Checked = false );
     void                                on_btnCancel_clicked( bool Checked = false );
@@ -30,6 +33,7 @@ private slots:
 
 private:
     void                                setupUi();
+    void                                applyTitleBarTheme();
     QWidget*                            createGeneralPage();
     QWidget*                            createShortcutsPage();
     QWidget*                            createEditorPage();

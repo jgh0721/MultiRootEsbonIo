@@ -55,10 +55,17 @@ QToolBar* QBaseView::createToolBar()
     // 간격은 QStyle 의 pixelMetric 이 정한다. Qlementine 은 항목 4px / 여백 8px /
     // 구분선 16px 이라 항목이 넷뿐인 이 도구모음에서는 지나치게 성기게 보인다.
     // 레이아웃에 직접 값을 주면 스타일 값을 덮어쓴다.
+    //
+    // 여백은 **사방을 같은 값으로** 줘야 한다. QToolBarLayout 은 배치할 때
+    // margin() 하나(왼쪽 값)만 읽어 위아래에도 그대로 쓰는데, 높이는
+    // QLayout::totalSizeHint 가 실제 위/아래 여백으로 계산한다. 좌우와 상하를
+    // 다르게 주면 항목이 왼쪽 여백만큼 아래로 밀린 채 도구모음 높이는 그대로라
+    // 콤보박스 아랫부분이 잘린다. 4px 는 Qlementine 의 포커스 테두리(항목
+    // 위아래로 4px 씩 번진다)가 잘리지 않는 최소값이다.
     if( QLayout* layout = tb->layout() )
     {
         layout->setSpacing( 2 );
-        layout->setContentsMargins( 6, 1, 6, 1 );
+        layout->setContentsMargins( 4, 4, 4, 4 );
     }
     m_toolBar = tb;
     connect( tb, &QObject::destroyed, this, [this, tb] {

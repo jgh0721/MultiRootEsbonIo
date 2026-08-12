@@ -6,6 +6,7 @@
 #include "core/solThemeManager.hpp"
 #include "core/solShadowBackupStore.hpp"
 #include "uniqueLibs/solEncodingDetector.hpp"
+#include "utils/DwmTitleBar.hpp"
 
 #include <ILexer.h>
 #include <Lexilla.h>
@@ -140,6 +141,31 @@ QSettingsDialog::QSettingsDialog( QWidget* Parent )
     Ui.setupUi( this );
 
     setupUi();
+
+    // 여기서 테마를 바꾸면(미리보기 포함) 제목 표시줄도 같이 따라가야 한다.
+    connect( &ThemeManager::instance(), &ThemeManager::themeChanged, this,
+            [this]( ThemeManager::Theme ) { applyTitleBarTheme(); } );
+
+    // 네이티브 창을 미리 만들어 두면 첫 표시 전에 DWM 속성을 걸 수 있다.
+    // (창이 뜬 뒤에 걸면 밝은 제목 표시줄이 한 번 번쩍인다.)
+    createWinId();
+    applyTitleBarTheme();
+}
+
+void QSettingsDialog::showEvent( QShowEvent* Event )
+{
+    QDialog::showEvent( Event );
+
+    // 창을 닫았다 다시 여는 사이에 테마가 바뀌었을 수 있다.
+    applyTitleBarTheme();
+}
+
+void QSettingsDialog::applyTitleBarTheme()
+{
+    auto& themeManager = ThemeManager::instance();
+    DwmTitleBar::applyTheme( this,
+                            themeManager.currentTheme() == ThemeManager::Dark,
+                            themeManager.toolBarColor() );
 }
 
 QList< ShortcutItem > QSettingsDialog::DefaultShortcuts()
