@@ -28,6 +28,10 @@ public:
 	QAbstractScrollArea* scrollArea() const;
 
 	void applySettings(const ScintillaEditorSettings& settings);
+	/// 자동 줄넘김 관련 메시지만 보낸다. applySettings() 는 끝에서 문서 전체를
+	/// 다시 렉싱하므로(SCI_COLOURISE + 접기 깊이 재계산) 줄넘김만 바뀌는
+	/// 경로에서 그 비용을 치를 이유가 없다.
+	void applyWrapSettings(const ScintillaEditorSettings& settings);
 	void setText(const QString& text);
 	QString text() const;
 	void clear();
@@ -88,6 +92,9 @@ public:
 	QFont editorFont() const;
 
 	int firstVisibleLine() const;
+	/// 화면 맨 위 행이 속한 문서 줄 (0-based). 줄넘김이 켜져 있어도 창 폭에
+	/// 흔들리지 않으므로 세션/핫 엑시트 저장에는 이 값을 쓴다.
+	int topDocumentLine() const;
 	void setFirstVisibleLine(int line);
 	int linesOnScreen() const;
 

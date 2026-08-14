@@ -86,6 +86,11 @@ private:
     QCheckBox*                          m_textIndentGuidesCheck = nullptr;
     QComboBox*                          m_textIndentGuideStyleCombo = nullptr;
     QCheckBox*                          m_textWhitespaceCheck = nullptr;
+    QComboBox*                          m_textWrapModeCombo = nullptr;
+    QCheckBox*                          m_textWrapFlagEndCheck = nullptr;
+    QCheckBox*                          m_textWrapFlagStartCheck = nullptr;
+    QCheckBox*                          m_textWrapFlagMarginCheck = nullptr;
+    QComboBox*                          m_textWrapIndentCombo = nullptr;
     QComboBox*                          m_textChangeHistoryCombo = nullptr;
     QCheckBox*                          m_textCodeFoldingCheck = nullptr;
     QCheckBox*                          m_textBraceHighlightCheck = nullptr;

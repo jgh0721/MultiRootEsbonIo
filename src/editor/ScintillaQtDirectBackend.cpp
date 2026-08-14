@@ -271,9 +271,7 @@ void ScintillaQtDirectBackend::applySettings(const ScintillaEditorSettings& sett
 	m_editor->send(sciMessage(SCI_SETTABINDENTS), settings.autoIndent ? 1 : 0);
 	m_editor->send(sciMessage(SCI_SETBACKSPACEUNINDENTS), settings.autoIndent ? 1 : 0);
 	m_editor->send(sciMessage(SCI_SETREADONLY), settings.readOnly ? 1 : 0);
-	m_editor->send(sciMessage(SCI_SETWRAPMODE),
-		settings.wordWrap ? static_cast<sptr_t>(Scintilla::Wrap::Word)
-		                  : static_cast<sptr_t>(Scintilla::Wrap::None));
+	applyWrapSettings(settings);
 	m_codeFoldingEnabled = settings.showCodeFolding;
 	configureCodeFolding(m_codeFoldingEnabled);
 	// reST 는 렉서가 접기 깊이를 채워 주지 않는다. 설정을 켠 직후에도
@@ -314,6 +312,28 @@ void ScintillaQtDirectBackend::applySettings(const ScintillaEditorSettings& sett
 	// 설정 변경 후 전체 화면 갱신 (탭 폭 등 즉시 반영)
 	m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
 	m_editor->update();
+}
+
+void ScintillaQtDirectBackend::applyWrapSettings(const ScintillaEditorSettings& settings)
+{
+	if (!m_editor)
+		return;
+
+	// 줄넘김을 켜고 끄면 문서 전체가 다시 배치되면서 화면이 튄다. 화면 맨 위에
+	// 있던 **문서 줄**을 기억해 두었다가 그 줄로 되돌린다. 이것이 없으면
+	// Alt+Z 한 번에 프리뷰 동기화까지 엉뚱한 곳으로 끌려간다.
+	const sptr_t topDocLine = m_editor->send(sciMessage(SCI_DOCLINEFROMVISIBLE),
+		m_editor->send(sciMessage(SCI_GETFIRSTVISIBLELINE)));
+
+	// Scintilla 는 세 메시지 모두 값이 실제로 바뀔 때만 무효화하므로
+	// 매번 셋 다 보내도 낭비가 없다.
+	m_editor->send(sciMessage(SCI_SETWRAPMODE), static_cast<sptr_t>(settings.wrapMode));
+	m_editor->send(sciMessage(SCI_SETWRAPVISUALFLAGS),
+		static_cast<sptr_t>(settings.wrapVisualFlags & ScintillaEditorSettings::WrapFlagMask));
+	m_editor->send(sciMessage(SCI_SETWRAPINDENTMODE), static_cast<sptr_t>(settings.wrapIndentMode));
+
+	m_editor->send(sciMessage(SCI_SETFIRSTVISIBLELINE),
+		m_editor->send(sciMessage(SCI_VISIBLEFROMDOCLINE), topDocLine));
 }
 
 void ScintillaQtDirectBackend::setText(const QString& text)
@@ -732,6 +752,17 @@ int ScintillaQtDirectBackend::firstVisibleLine() const
 	return m_editor ? static_cast<int>(m_editor->send(sciMessage(SCI_GETFIRSTVISIBLELINE))) : 0;
 }
 
+int ScintillaQtDirectBackend::topDocumentLine() const
+{
+	if (!m_editor)
+		return 0;
+
+	// 화면 맨 위 행이 속한 **문서 줄** (0-based). 자동 줄넘김이 켜져 있으면
+	// 화면 행 번호는 창 폭에 따라 달라지므로, 저장/복원에는 이 값을 써야 한다.
+	return static_cast<int>(m_editor->send(sciMessage(SCI_DOCLINEFROMVISIBLE),
+		m_editor->send(sciMessage(SCI_GETFIRSTVISIBLELINE))));
+}
+
 void ScintillaQtDirectBackend::setFirstVisibleLine(int line)
 {
 	if (!m_editor)
@@ -983,8 +1014,12 @@ void ScintillaQtDirectBackend::restoreViewState(int caretPosition, int firstVisi
 	const sptr_t safeCaret = qBound<sptr_t>(0, static_cast<sptr_t>(caretPosition), documentLength);
 	m_editor->send(sciMessage(SCI_GOTOPOS), safeCaret);
 
-	const int currentFirstVisibleLine = static_cast<int>(m_editor->send(sciMessage(SCI_GETFIRSTVISIBLELINE)));
-	m_editor->send(sciMessage(SCI_LINESCROLL), 0, qMax(0, firstVisibleLine) - currentFirstVisibleLine);
+	// 인자는 **문서 줄**이다. 화면 행으로 저장하면 자동 줄넘김이 켜져 있을 때
+	// 창 폭에 따라 값이 달라져, 창 크기를 바꾸고 재시작하면 엉뚱한 곳이 열린다.
+	const sptr_t targetVisible = m_editor->send(sciMessage(SCI_VISIBLEFROMDOCLINE),
+		qMax(0, firstVisibleLine));
+	const sptr_t currentFirstVisibleLine = m_editor->send(sciMessage(SCI_GETFIRSTVISIBLELINE));
+	m_editor->send(sciMessage(SCI_LINESCROLL), 0, targetVisible - currentFirstVisibleLine);
 	updateBraceHighlight();
 	emitCursorAndSelectionState();
 }

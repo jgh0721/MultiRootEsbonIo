@@ -933,6 +933,11 @@ void MainWindow::applySettingsToAllViews()
             textView->setIndentationGuidesVisible( s.value( "textView/showIndentationGuides", true ).toBool() );
             textView->setIndentGuideStyle( static_cast< ScintillaEditorSettings::IndentGuideStyle >(
                 qBound( 1, s.value( "textView/indentGuideStyle", 1 ).toInt(), 3 ) ) );
+            textView->setWordWrapMode( static_cast< ScintillaEditorSettings::WrapMode >(
+                qBound( 0, s.value( "textView/wordWrapMode", 2 ).toInt(), 3 ) ) );
+            textView->setWrapVisualFlags( s.value( "textView/wrapVisualFlags", 1 ).toInt() );
+            textView->setWrapIndentMode( static_cast< ScintillaEditorSettings::WrapIndentMode >(
+                qBound( 0, s.value( "textView/wrapIndentMode", 1 ).toInt(), 3 ) ) );
             textView->setWhitespaceVisible( s.value( "textView/showWhitespace", false ).toBool() );
             textView->setCodeFoldingEnabled( s.value( "textView/showCodeFolding", true ).toBool() );
             textView->setBraceHighlightEnabled( s.value( "textView/braceHighlight", true ).toBool() );
@@ -2410,7 +2415,9 @@ void MainWindow::saveWorkspaceSessionNow()
         document.path = QFileInfo( view->currentFilePath() ).absoluteFilePath();
         document.caretLine = view->caretLine();
         document.caretColumn = view->caretColumn();
-        document.firstVisibleLine = view->firstVisibleLine();
+        // 복원 쪽(scrollToLine)이 문서 줄로 해석하므로 저장도 문서 줄로 해야 한다.
+        // 화면 행을 넣으면 자동 줄넘김이 켜졌을 때 크게 어긋난다.
+        document.firstVisibleLine = view->topDocumentLine();
 
         if( m_tabWidget->currentIndex() == index )
             session.activeIndex = static_cast< int >( session.documents.size() );

@@ -245,6 +245,15 @@ QTextView::QTextView( QWidget* parent )
     goToLineAction->setShortcut( QKeySequence( Qt::CTRL | Qt::Key_G ) );
     connect( goToLineAction, &QAction::triggered, this, &QTextView::showGoToLineDialog );
     addAction( goToLineAction );
+
+    // 자동 줄넘김 전환. 같은 단축키를 MainWindow 메뉴에도 두면 편집기가 포커스를
+    // 가진 동안 두 액션이 동시에 활성이 되어 Qt 가 모호한 단축키로 보고 **둘 다**
+    // 발동하지 않는다. 그래서 뷰 쪽에만 둔다.
+    auto* wordWrapAction = new QAction( this );
+    wordWrapAction->setObjectName( QStringLiteral( "text.wordWrap" ) );
+    wordWrapAction->setShortcut( QKeySequence( Qt::ALT | Qt::Key_Z ) );
+    connect( wordWrapAction, &QAction::triggered, this, &QTextView::toggleWordWrap );
+    addAction( wordWrapAction );
 }
 
 QTextView::~QTextView() = default;
@@ -915,7 +924,7 @@ void QTextView::writeHotExitBackupNow( bool synchronous )
     snapshot.detectedEncoding = m_detectedEncoding;
     snapshot.lineEnding = m_document.lineEnding();
     snapshot.caretPosition = m_editor->currentPos();
-    snapshot.firstVisibleLine = m_editor->firstVisibleLine();
+    snapshot.firstVisibleLine = m_editor->topDocumentLine();
     snapshot.originalSize = !isUntitled && fileInfo.exists() ? fileInfo.size() : -1;
     snapshot.originalLastModifiedUtcMs = !isUntitled && fileInfo.exists()
         ? fileInfo.lastModified().toUTC().toMSecsSinceEpoch()
@@ -1055,6 +1064,11 @@ int QTextView::caretColumn() const
 int QTextView::firstVisibleLine() const
 {
     return m_editor ? m_editor->firstVisibleLine() + 1 : 1;
+}
+
+int QTextView::topDocumentLine() const
+{
+    return m_editor ? m_editor->topDocumentLine() + 1 : 1;
 }
 
 void QTextView::scrollToLine( int line, double viewportRatio )
@@ -1434,17 +1448,100 @@ void QTextView::setLineEnding( LineEnding e )
     emit statusChanged();
 }
 
-bool QTextView::isWordWrapEnabled() const
+ScintillaEditorSettings::WrapMode QTextView::wordWrapMode() const
 {
-    return m_editorSettings.wordWrap;
+    return m_editorSettings.wrapMode;
 }
 
-void QTextView::setWordWrap( bool enabled )
+void QTextView::setWordWrapMode( ScintillaEditorSettings::WrapMode mode )
 {
-    if( m_editorSettings.wordWrap == enabled )
+    mode = static_cast< ScintillaEditorSettings::WrapMode >(
+        qBound( static_cast< int >( ScintillaEditorSettings::WrapNone ),
+                static_cast< int >( mode ),
+                static_cast< int >( ScintillaEditorSettings::WrapWhitespace ) ) );
+    if( m_editorSettings.wrapMode == mode )
         return;
-    m_editorSettings.wordWrap = enabled;
-    applyEditorSettings();
+
+    m_editorSettings.wrapMode = mode;
+    applyWrapSettingsToEditor();
+
+    AppSettings settings;
+    settings.setValue( "textView/wordWrapMode", static_cast< int >( mode ) );
+    if( mode != ScintillaEditorSettings::WrapNone )
+    {
+        m_lastWrapMode = mode;
+        settings.setValue( "textView/wordWrapLastMode", static_cast< int >( mode ) );
+    }
+
+    emit sigWordWrapModeChanged( static_cast< int >( mode ) );
+    emit statusChanged();
+}
+
+void QTextView::toggleWordWrap()
+{
+    if( m_editorSettings.wrapMode != ScintillaEditorSettings::WrapNone )
+    {
+        setWordWrapMode( ScintillaEditorSettings::WrapNone );
+        return;
+    }
+
+    setWordWrapMode( m_lastWrapMode != ScintillaEditorSettings::WrapNone
+                        ? m_lastWrapMode
+                        : ScintillaEditorSettings::WrapChar );
+}
+
+int QTextView::wrapVisualFlags() const
+{
+    return m_editorSettings.wrapVisualFlags;
+}
+
+void QTextView::setWrapVisualFlags( int flags )
+{
+    flags &= ScintillaEditorSettings::WrapFlagMask;
+    if( m_editorSettings.wrapVisualFlags == flags )
+        return;
+
+    m_editorSettings.wrapVisualFlags = flags;
+    applyWrapSettingsToEditor();
+
+    AppSettings settings;
+    settings.setValue( "textView/wrapVisualFlags", flags );
+}
+
+ScintillaEditorSettings::WrapIndentMode QTextView::wrapIndentMode() const
+{
+    return m_editorSettings.wrapIndentMode;
+}
+
+void QTextView::setWrapIndentMode( ScintillaEditorSettings::WrapIndentMode mode )
+{
+    mode = static_cast< ScintillaEditorSettings::WrapIndentMode >(
+        qBound( static_cast< int >( ScintillaEditorSettings::WrapIndentFixed ),
+                static_cast< int >( mode ),
+                static_cast< int >( ScintillaEditorSettings::WrapIndentDeepIndent ) ) );
+    if( m_editorSettings.wrapIndentMode == mode )
+        return;
+
+    m_editorSettings.wrapIndentMode = mode;
+    applyWrapSettingsToEditor();
+
+    AppSettings settings;
+    settings.setValue( "textView/wrapIndentMode", static_cast< int >( mode ) );
+}
+
+void QTextView::applyWrapSettingsToEditor()
+{
+    if( !m_editor )
+        return;
+
+    m_editor->applyWrapSettings( m_editorSettings );
+
+    // 줄넘김을 켜면 Scintilla 는 xOffset 을 0 으로 만들지만(Editor.cxx 의
+    // Message::SetWrapMode) Qt 스크롤바의 value 는 그대로 남는다. 눈금자는
+    // valueChanged 로만 오프셋을 받으므로 여기서 직접 되돌리지 않으면
+    // 열 번호가 옛 가로 스크롤 위치에 머문다.
+    if( m_ruler && m_editorSettings.wrapMode != ScintillaEditorSettings::WrapNone )
+        m_ruler->setScrollOffset( 0 );
 }
 
 ScintillaEditorSettings::FontRenderingMode QTextView::fontRenderingMode() const
@@ -1650,10 +1747,40 @@ QToolBar* QTextView::createToolBar()
     auto* tabSpin = new QSpinBox( tb );
     tabSpin->setRange( 1, 16 );
     tabSpin->setValue( tabWidth() );
-    tabSpin->setPrefix( tr( "Tab: " ) );
+    tabSpin->setMaximumWidth( 70 );
     tabSpin->setToolTip( tr( "탭 간격 (칸)" ) );
     connect( tabSpin, QOverload<int>::of( &QSpinBox::valueChanged ), this, &QTextView::setTabWidth );
+    tb->addWidget( makeToolBarLabel( tb, tr( "탭 간격:" ) ) );
     tb->addWidget( tabSpin );
+
+    tb->addWidget( makeToolBarSpacer( tb ) );
+
+    // 자동 줄넘김. 라벨을 "줄넘김:" 으로만 쓰면 바로 앞 EOL 콤보의 "줄바꿈:" 과
+    // 헷갈리므로, 단축키 설명과 같은 "자동 줄넘김" 용어를 그대로 쓴다.
+    auto* wrapCombo = new QComboBox( tb );
+    wrapCombo->addItem( tr( "줄넘김 없음" ), ScintillaEditorSettings::WrapNone );
+    wrapCombo->addItem( tr( "단어 단위" ), ScintillaEditorSettings::WrapWord );
+    wrapCombo->addItem( tr( "문자 단위" ), ScintillaEditorSettings::WrapChar );
+    wrapCombo->addItem( tr( "공백 단위" ), ScintillaEditorSettings::WrapWhitespace );
+    wrapCombo->setMaximumWidth( 120 );
+    wrapCombo->setToolTip( tr( "자동 줄넘김 (Alt+Z)" ) );
+    // setCurrentIndex 는 반드시 connect 앞에 온다. 도구모음은 탭을 전환할 때마다
+    // 다시 만들어지므로, 순서가 반대면 전환할 때마다 setWordWrapMode 가 불려
+    // 설정 파일에 쓰기가 발생한다 (언어/인코딩 콤보도 같은 순서다).
+    wrapCombo->setCurrentIndex( wrapCombo->findData( wordWrapMode() ) );
+    connect( wrapCombo, QOverload<int>::of( &QComboBox::currentIndexChanged ), this,
+            [this, wrapCombo]( int idx ) {
+                setWordWrapMode( static_cast< ScintillaEditorSettings::WrapMode >(
+                    wrapCombo->itemData( idx ).toInt() ) );
+            } );
+    // Alt+Z 나 설정 대화상자로 모드가 바뀌면 콤보도 따라온다. context object 를
+    // 콤보로 주었으므로 도구모음이 파괴될 때 연결도 함께 끊긴다.
+    connect( this, &QTextView::sigWordWrapModeChanged, wrapCombo, [wrapCombo]( int mode ) {
+        const QSignalBlocker blocker( wrapCombo );
+        wrapCombo->setCurrentIndex( wrapCombo->findData( mode ) );
+    } );
+    tb->addWidget( makeToolBarLabel( tb, tr( "자동 줄넘김:" ) ) );
+    tb->addWidget( wrapCombo );
 
     //tb->addSeparator();
 
@@ -1667,10 +1794,6 @@ QToolBar* QTextView::createToolBar()
 
     //// 읽기 전용
     //tb->addSeparator();
-    //auto* wrapAction = MV_CREATE_TOOLBAR_ACTION( tb, "text.wordWrap" );
-    //wrapAction->setChecked( isWordWrapEnabled() );
-    //connect( wrapAction, &QAction::toggled, this, &QTextView::setWordWrap );
-
     //auto* foldingAction = MV_CREATE_TOOLBAR_ACTION( tb, "text.codeFolding" );
     //foldingAction->setChecked( isCodeFoldingEnabled() );
     //connect( foldingAction, &QAction::toggled, this, &QTextView::setCodeFoldingEnabled );
@@ -1814,6 +1937,19 @@ bool QTextView::ensureEditorBackend()
 void QTextView::loadPersistedEditorPreferences()
 {
     applyPersistedEditorPreferences( m_editorSettings );
+
+    // Alt+Z 의 복귀 대상. applyPersistedEditorPreferences() 는 const 라
+    // 멤버를 건드릴 수 없어 여기서 읽는다.
+    AppSettings persisted;
+    const int lastWrapValue = persisted.value( "textView/wordWrapLastMode",
+                                               static_cast< int >( ScintillaEditorSettings::WrapChar ) ).toInt();
+    const auto lastWrapMode = static_cast< ScintillaEditorSettings::WrapMode >(
+        qBound( static_cast< int >( ScintillaEditorSettings::WrapNone ),
+                lastWrapValue,
+                static_cast< int >( ScintillaEditorSettings::WrapWhitespace ) ) );
+    m_lastWrapMode = lastWrapMode != ScintillaEditorSettings::WrapNone
+        ? lastWrapMode
+        : ScintillaEditorSettings::WrapChar;
 }
 
 void QTextView::applyPersistedEditorPreferences( ScintillaEditorSettings& settings ) const
@@ -1845,6 +1981,24 @@ void QTextView::applyPersistedEditorPreferences( ScintillaEditorSettings& settin
         qBound( static_cast< int >( ScintillaEditorSettings::ChangeHistoryOff ),
                 changeHistoryValue,
                 static_cast< int >( ScintillaEditorSettings::ChangeHistoryBoth ) ) );
+
+    // 줄넘김을 여기서 읽지 않으면 파일을 열 때마다(m_editorSettings 를 통째로
+    // 다시 만드는 경로가 넷이다) 기본값으로 되돌아간다.
+    const int wrapModeValue = persisted.value( "textView/wordWrapMode",
+                                               static_cast< int >( ScintillaEditorSettings::WrapChar ) ).toInt();
+    settings.wrapMode = static_cast< ScintillaEditorSettings::WrapMode >(
+        qBound( static_cast< int >( ScintillaEditorSettings::WrapNone ),
+                wrapModeValue,
+                static_cast< int >( ScintillaEditorSettings::WrapWhitespace ) ) );
+    settings.wrapVisualFlags = persisted.value( "textView/wrapVisualFlags",
+                                                ScintillaEditorSettings::WrapFlagEnd ).toInt()
+        & ScintillaEditorSettings::WrapFlagMask;
+    const int wrapIndentValue = persisted.value( "textView/wrapIndentMode",
+                                                 static_cast< int >( ScintillaEditorSettings::WrapIndentSame ) ).toInt();
+    settings.wrapIndentMode = static_cast< ScintillaEditorSettings::WrapIndentMode >(
+        qBound( static_cast< int >( ScintillaEditorSettings::WrapIndentFixed ),
+                wrapIndentValue,
+                static_cast< int >( ScintillaEditorSettings::WrapIndentDeepIndent ) ) );
 }
 
 void QTextView::applyEditorSettings()

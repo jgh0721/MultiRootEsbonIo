@@ -561,6 +561,47 @@ QWidget* QSettingsDialog::createEditorPage()
     indentGuideRow->addWidget( m_textIndentGuideStyleCombo, 1 );
     layout->addRow( tr( "Indent Guide:" ), indentGuideRow );
 
+    // 자동 줄넘김
+    m_textWrapModeCombo = new QComboBox( page );
+    m_textWrapModeCombo->addItem( tr( "없음" ), 0 );
+    m_textWrapModeCombo->addItem( tr( "단어 단위" ), 1 );
+    m_textWrapModeCombo->addItem( tr( "문자 단위" ), 2 );
+    m_textWrapModeCombo->addItem( tr( "공백 단위" ), 3 );
+    m_textWrapModeCombo->setToolTip( tr( "창 폭에 맞춰 긴 줄을 접어서 보여 줍니다. 편집기에서 Alt+Z 로도 켜고 끌 수 있습니다." ) );
+    layout->addRow( tr( "자동 줄넘김:" ), m_textWrapModeCombo );
+
+    // 줄넘김 표시 (SC_WRAPVISUALFLAG_* 비트 조합)
+    auto* wrapFlagRow = new QHBoxLayout;
+    m_textWrapFlagEndCheck = new QCheckBox( tr( "줄 끝" ), page );
+    m_textWrapFlagStartCheck = new QCheckBox( tr( "줄 시작" ), page );
+    m_textWrapFlagMarginCheck = new QCheckBox( tr( "여백" ), page );
+    wrapFlagRow->addWidget( m_textWrapFlagEndCheck );
+    wrapFlagRow->addWidget( m_textWrapFlagStartCheck );
+    wrapFlagRow->addWidget( m_textWrapFlagMarginCheck );
+    wrapFlagRow->addStretch( 1 );
+    layout->addRow( tr( "줄넘김 표시:" ), wrapFlagRow );
+
+    // 줄넘김 들여쓰기
+    m_textWrapIndentCombo = new QComboBox( page );
+    m_textWrapIndentCombo->addItem( tr( "고정 (0열)" ), 0 );
+    m_textWrapIndentCombo->addItem( tr( "원래 들여쓰기 유지" ), 1 );
+    m_textWrapIndentCombo->addItem( tr( "한 단계 더" ), 2 );
+    m_textWrapIndentCombo->addItem( tr( "두 단계 더" ), 3 );
+    m_textWrapIndentCombo->setToolTip( tr( "접힌 뒷행의 시작 위치입니다. reST 는 들여쓰기가 문법이라 '원래 들여쓰기 유지'를 권합니다. '고정'은 열 눈금자와 화면 열이 계속 일치한다는 장점이 있습니다." ) );
+    layout->addRow( tr( "줄넘김 들여쓰기:" ), m_textWrapIndentCombo );
+
+    // 줄넘김이 꺼져 있으면 하위 두 행은 의미가 없다.
+    const auto updateWrapRowsEnabled = [this] {
+        const bool wrapOn = m_textWrapModeCombo->currentData().toInt() != 0;
+        m_textWrapFlagEndCheck->setEnabled( wrapOn );
+        m_textWrapFlagStartCheck->setEnabled( wrapOn );
+        m_textWrapFlagMarginCheck->setEnabled( wrapOn );
+        m_textWrapIndentCombo->setEnabled( wrapOn );
+    };
+    connect( m_textWrapModeCombo, QOverload<int>::of( &QComboBox::currentIndexChanged ), this,
+            [updateWrapRowsEnabled]( int ) { updateWrapRowsEnabled(); } );
+    updateWrapRowsEnabled();
+
     // 제어문자 표시
     m_textWhitespaceCheck = new QCheckBox( tr( "표시" ), page );
     layout->addRow( tr( "제어문자 표시:" ), m_textWhitespaceCheck );
@@ -957,6 +998,14 @@ void QSettingsDialog::loadTextViewerSettings()
     m_textIndentGuidesCheck->setChecked( s.value( "textView/showIndentationGuides", true ).toBool() );
     m_textIndentGuideStyleCombo->setCurrentIndex(
         m_textIndentGuideStyleCombo->findData( s.value( "textView/indentGuideStyle", 1 ).toInt() ) );
+    m_textWrapModeCombo->setCurrentIndex(
+        m_textWrapModeCombo->findData( s.value( "textView/wordWrapMode", 2 ).toInt() ) );
+    const int wrapFlags = s.value( "textView/wrapVisualFlags", 1 ).toInt();
+    m_textWrapFlagEndCheck->setChecked( ( wrapFlags & 0x1 ) != 0 );
+    m_textWrapFlagStartCheck->setChecked( ( wrapFlags & 0x2 ) != 0 );
+    m_textWrapFlagMarginCheck->setChecked( ( wrapFlags & 0x4 ) != 0 );
+    m_textWrapIndentCombo->setCurrentIndex(
+        m_textWrapIndentCombo->findData( s.value( "textView/wrapIndentMode", 1 ).toInt() ) );
     m_textWhitespaceCheck->setChecked( s.value( "textView/showWhitespace", false ).toBool() );
     m_textChangeHistoryCombo->setCurrentIndex(
         m_textChangeHistoryCombo->findData( s.value( "textView/changeHistoryMode", 3 ).toInt() ) );
@@ -987,6 +1036,16 @@ void QSettingsDialog::saveTextViewerSettings()
     s.setValue( "textView/useTabs", m_textUseTabsCheck->isChecked() );
     s.setValue( "textView/showIndentationGuides", m_textIndentGuidesCheck->isChecked() );
     s.setValue( "textView/indentGuideStyle", m_textIndentGuideStyleCombo->currentData().toInt() );
+    const int wrapMode = m_textWrapModeCombo->currentData().toInt();
+    s.setValue( "textView/wordWrapMode", wrapMode );
+    // Alt+Z 의 복귀 대상. "없음" 은 담지 않는다.
+    if( wrapMode != 0 )
+        s.setValue( "textView/wordWrapLastMode", wrapMode );
+    s.setValue( "textView/wrapVisualFlags",
+               ( m_textWrapFlagEndCheck->isChecked() ? 0x1 : 0 )
+               | ( m_textWrapFlagStartCheck->isChecked() ? 0x2 : 0 )
+               | ( m_textWrapFlagMarginCheck->isChecked() ? 0x4 : 0 ) );
+    s.setValue( "textView/wrapIndentMode", m_textWrapIndentCombo->currentData().toInt() );
     s.setValue( "textView/showWhitespace", m_textWhitespaceCheck->isChecked() );
     s.setValue( "textView/changeHistoryMode", m_textChangeHistoryCombo->currentData().toInt() );
     s.setValue( "textView/showCodeFolding", m_textCodeFoldingCheck->isChecked() );

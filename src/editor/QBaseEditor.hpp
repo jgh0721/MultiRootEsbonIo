@@ -110,11 +110,19 @@ public:
     void showFindBar( bool replaceMode = false );
     void hideFindBar();
 
-    // ── 줄바꿈 ──
+    // ── 줄바꿈(EOL) ──
     LineEnding detectedLineEnding() const;
     void       setLineEnding( LineEnding ending );
-    bool       isWordWrapEnabled() const;
-    void       setWordWrap( bool enabled );
+
+    // ── 자동 줄넘김(wrap) ──
+    ScintillaEditorSettings::WrapMode wordWrapMode() const;
+    void setWordWrapMode( ScintillaEditorSettings::WrapMode mode );
+    /// Alt+Z. 켜져 있으면 끄고, 꺼져 있으면 마지막으로 고른 모드로 되돌린다.
+    void toggleWordWrap();
+    int  wrapVisualFlags() const;
+    void setWrapVisualFlags( int flags );
+    ScintillaEditorSettings::WrapIndentMode wrapIndentMode() const;
+    void setWrapIndentMode( ScintillaEditorSettings::WrapIndentMode mode );
 
     // ── 폰트 렌더링 ──
     ScintillaEditorSettings::FontRenderingMode fontRenderingMode() const;
@@ -159,6 +167,9 @@ public:
     [[nodiscard]] int     caretLine() const;
     [[nodiscard]] int     caretColumn() const;
     [[nodiscard]] int     firstVisibleLine() const;
+    /// 화면 맨 위에 보이는 **문서** 줄 (1-based). firstVisibleLine() 은 화면 행이라
+    /// 자동 줄넘김이 켜지면 창 폭에 따라 달라진다. 세션에 저장할 값은 이쪽이다.
+    [[nodiscard]] int     topDocumentLine() const;
     void                  scrollToLine( int line, double viewportRatio = 0.35 );
     /// 창 세로 ratio 위치에 실제로 보이는 줄 (1-based, 소수).
     /// 12.5 는 12번 줄의 세로 중간을 뜻한다 — 자동 줄바꿈으로 여러 행을
@@ -200,6 +211,9 @@ signals:
     void sigRoleHovered( const QString& role, const QString& target, const QPoint& globalPos );
     /// 호버가 끝났다 (마우스가 움직였거나 편집기를 벗어났다).
     void sigRoleHoverEnded();
+    /// 자동 줄넘김 모드가 바뀌었다 (ScintillaEditorSettings::WrapMode).
+    /// 도구모음 콤보가 Alt+Z / 설정 변경을 따라오게 하는 용도.
+    void sigWordWrapModeChanged( int mode );
 
 private:
     struct SearchOptions
@@ -219,6 +233,8 @@ private:
     void loadPersistedEditorPreferences();
     void applyPersistedEditorPreferences( ScintillaEditorSettings& settings ) const;
     void applyEditorSettings();
+    /// 줄넘김 3종만 편집기에 밀어 넣고 열 눈금자를 되맞춘다.
+    void applyWrapSettingsToEditor();
     void showGoToLineDialog();
     void updateMetrics();
     static ScintillaDocument::LineEnding toDocumentLineEnding( LineEnding ending );
@@ -242,6 +258,8 @@ private:
     TextFileSession       m_fileSession;
     ScintillaDocument     m_document;
     ScintillaEditorSettings m_editorSettings;
+    /// Alt+Z 로 줄넘김을 껐을 때 되돌아갈 모드. WrapNone 은 담기지 않는다.
+    ScintillaEditorSettings::WrapMode m_lastWrapMode = ScintillaEditorSettings::WrapChar;
 
     QString             m_encoding;
     QString             m_detectedEncoding;
