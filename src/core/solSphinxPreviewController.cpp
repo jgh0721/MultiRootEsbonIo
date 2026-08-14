@@ -3,7 +3,6 @@
 
 #include "solUvTaskRunner.hpp"
 
-#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -16,15 +15,6 @@ namespace mrst {
 namespace {
 
 constexpr int kDefaultDebounceMs = 350;
-
-/// 출력 디렉터리 이름의 랜덤 부분. uuid 32자를 그대로 쓰면 깊은 docname 과
-/// 합쳐져 Windows MAX_PATH 에 걸린다.
-QString shortToken( const QString& seed, const int serial )
-{
-    const QByteArray digest = QCryptographicHash::hash(
-        ( seed + QString::number( serial ) ).toUtf8(), QCryptographicHash::Sha1 );
-    return QString::fromLatin1( digest.toHex().left( 8 ) );
-}
 
 DiagnosticEntry diagnosticFromJson( const QJsonObject& object )
 {
@@ -121,23 +111,21 @@ QString SphinxPreviewController::writeShadowCopy() const
     return pending_.shadowFile;   // 호출 측이 이미 파일로 만들어 넘긴다.
 }
 
-QString SphinxPreviewController::allocateOutputDir()
+QString SphinxPreviewController::outputDir() const
 {
+    // 출력 디렉터리를 빌드마다 새로 만들면 Sphinx 의 HTML 빌더가 mtime 을 비교할
+    // <outdir>/<docname>.html 이 없어 **매번 전 문서를 다시 쓴다**. doctree 를
+    // 공유해 읽기를 증분으로 만들어도 쓰기가 전량이면 소용이 없다. Breathe 로
+    // API 문서를 싣는 프로젝트에서는 그 재작성만 60초를 넘긴다(실측: HTML 36MB,
+    // 그중 한 파일이 22MB). 디렉터리를 고정해야 증분 판정이 살아난다.
     const QString buildRoot = toCanonicalQString( active_.project.buildPath );
     const QString previewRoot = QDir( buildRoot ).filePath( QStringLiteral( "preview-html" ) );
-    QDir().mkpath( previewRoot );
-
-    const QString name = QStringLiteral( "build-%1-%2" )
-                             .arg( buildSerial_, 4, 10, QLatin1Char( '0' ) )
-                             .arg( shortToken( previewRoot, buildSerial_ ) );
-    ++buildSerial_;
-
-    const QString outDir = QDir( previewRoot ).filePath( name );
+    const QString outDir = QDir( previewRoot ).filePath( QStringLiteral( "html" ) );
     QDir().mkpath( outDir );
     return outDir;
 }
 
-void SphinxPreviewController::cleanupOldOutputDirs( const QString& keepDir ) const
+void SphinxPreviewController::cleanupStaleOutputDirs( const QString& keepDir ) const
 {
     const QString buildRoot = toCanonicalQString( active_.project.buildPath );
     QDir previewRoot( QDir( buildRoot ).filePath( QStringLiteral( "preview-html" ) ) );
@@ -161,12 +149,16 @@ void SphinxPreviewController::startBuild()
     if( !hasPending_ )
         return;
 
-    // 이미 도는 중이면 취소하고, 끝난 뒤 재무장한다.
+    // 이미 도는 중이면 **취소하지 않고** 그대로 둔다. hasPending_ 가 남아 있으므로
+    // finishBuild() 가 끝난 뒤 이어서 처리한다.
+    //
+    // 예전에는 여기서 취소했다. 빌드가 몇 초로 끝나던 시절에는 최신 요청을 빨리
+    // 반영하는 쪽이 이득이었지만, 세션 복원으로 탭 여러 개가 순차로 열리거나
+    // 편집·탭 전환이 이어지면 진행 중인 빌드가 계속 리셋되어 프리뷰가 영영 뜨지
+    // 않는다. 게다가 고정 출력 디렉터리에서는 중단된 빌드가 **쓰다 만 HTML** 을
+    // 남긴다(회수는 빌더 쪽 sentinel 이 한다).
     if( isBuilding() )
-    {
-        task_->cancel();
         return;
-    }
 
     const bool continuingFallback = usedFallbackPython_;
     active_ = pending_;
@@ -187,12 +179,12 @@ void SphinxPreviewController::startBuild()
     }
 
     const QString buildRoot = toCanonicalQString( active_.project.buildPath );
-    activeOutDir_ = allocateOutputDir();
+    activeOutDir_ = outputDir();
     activeReportPath_ = QDir( activeOutDir_ ).filePath( QStringLiteral( ".mrr-build.json" ) );
+    ++buildSerial_;
 
-    // doctree 는 회전시키지 않고 프로젝트당 하나로 공유한다. 원본은 회전하는
-    // out-dir 안에 두어 매 빌드마다 전체 재파싱을 했다. _static 잠금 문제는
-    // 출력 디렉터리에만 해당하고, 빌드는 직렬화되므로 공유가 안전하다.
+    // doctree 는 프로젝트당 하나로 공유한다. 원본은 회전하는 out-dir 안에 두어
+    // 매 빌드마다 전체 재파싱을 했다. 빌드는 직렬화되므로 공유가 안전하다.
     const QString doctreeDir = QDir( buildRoot ).filePath( QStringLiteral( "preview/doctrees" ) );
     QDir().mkpath( doctreeDir );
 
@@ -265,6 +257,7 @@ void SphinxPreviewController::finishBuild( const int exitCode, const bool crashe
     PreviewBuildResult result = readReport( activeReportPath_ );
     result.projectId = QString::fromStdWString( active_.project.projectId );
     result.sourceFile = active_.sourceFile;
+    result.serial = buildSerial_;
     result.cancelled = cancelled;
     if( !processOk )
         result.ok = false;
@@ -272,7 +265,8 @@ void SphinxPreviewController::finishBuild( const int exitCode, const bool crashe
     if( result.ok && !result.htmlPath.isEmpty() && QFileInfo::exists( result.htmlPath ) )
     {
         lastHtmlPath_ = result.htmlPath;
-        cleanupOldOutputDirs( activeOutDir_ );
+        // 회전하던 시절의 build-NNNN-xxxx 디렉터리를 첫 성공 빌드에서 걷어낸다.
+        cleanupStaleOutputDirs( activeOutDir_ );
     }
     else if( !cancelled )
     {
@@ -283,7 +277,7 @@ void SphinxPreviewController::finishBuild( const int exitCode, const bool crashe
     {
         // 진단보다 먼저 "무엇이 다시 읽혔는지" 를 알려야 소비자가 교체 범위를
         // 정할 수 있다.
-        emit processedSourcesKnown( result.sources );
+        emit processedSourcesKnown( result.processedSources );
         emit diagnosticsReady( QStringLiteral( "sphinx-build" ), result.diagnostics );
 
         if( !result.missingExtensions.isEmpty() || !result.missingThemes.isEmpty() )
@@ -326,6 +320,14 @@ PreviewBuildResult SphinxPreviewController::readReport( const QString& reportPat
     const QJsonArray sources = root.value( QStringLiteral( "sources" ) ).toArray();
     for( const QJsonValue& value : sources )
         result.sources << value.toString();
+
+    const QJsonArray processed = root.value( QStringLiteral( "processedSources" ) ).toArray();
+    for( const QJsonValue& value : processed )
+        result.processedSources << value.toString();
+    // 예전 스키마의 리포트에는 processedSources 가 없다. 그때는 sources 가 곧
+    // "이번에 처리한 것" 이었으므로 그대로 쓴다.
+    if( result.processedSources.isEmpty() )
+        result.processedSources = result.sources;
 
     const QJsonArray diagnostics = root.value( QStringLiteral( "diagnostics" ) ).toArray();
     for( const QJsonValue& value : diagnostics )

@@ -239,6 +239,8 @@ WorkspaceController::WorkspaceController( QObject* parent )
             &WorkspaceController::refreshDiagnosticMarks );
     connect( previewController_, &SphinxPreviewController::missingDependenciesDetected, this,
             &WorkspaceController::missingDependenciesDetected );
+    connect( previewController_, &SphinxPreviewController::buildStarted, this,
+            [this]( const QString& ) { setPreviewStatus( tr( "프리뷰 빌드 중..." ) ); } );
     connect( previewController_, &SphinxPreviewController::buildFinished, this,
             &WorkspaceController::onPreviewFinished );
 
@@ -297,11 +299,21 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
     previewBridge_->attachTo( previewView_ );
     applyPreviewWebSettings();
 
+    // 큰 문서는 빌드가 끝난 뒤에도 WebEngine 이 읽는 데 오래 걸린다(이 저장소의
+    // Breathe API 페이지는 HTML 하나가 22MB 다). 그 구간을 비워 두면 빌드가
+    // 끝났는데도 화면이 안 바뀌는 것처럼 보이므로 진행률을 그대로 내보낸다.
+    connect( previewView_, &QWebEngineView::loadProgress, this, [this]( const int percent ) {
+        if( previewStatus_.isEmpty() )
+            return;   // 사용자가 프리뷰 안에서 링크를 눌러 이동한 경우
+        setPreviewStatus( tr( "프리뷰 로딩 중... %1%" ).arg( percent ) );
+    } );
+
     connect( previewView_, &QWebEngineView::loadFinished, this, [this]( const bool ok ) {
         previewLoadedOk_ = ok;
         if( !ok )
         {
             emit logMessage( tr( "프리뷰 HTML 로드 실패" ) );
+            setPreviewStatus( {} );
             return;
         }
         previewUrl_ = previewView_->url();
@@ -309,6 +321,10 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
         // fileName() 이 의미 없는 조각을 내놓으므로 로그를 남기지 않는다.
         if( previewUrl_.isLocalFile() )
             emit logMessage( tr( "프리뷰 표시: %1" ).arg( previewUrl_.fileName() ) );
+
+        // 표시 해제의 기준은 bridgeReady 다. 다만 스크립트가 붙지 않는 페이지도
+        // 있으므로(리소스 로드 실패 등) 여기서도 한 번 걷어 준다.
+        setPreviewStatus( {} );
     } );
 
     // 핫스왑 실패는 조용히 넘어가면 안 된다. 화면이 낡은 채로 남기 때문에
@@ -320,6 +336,7 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
 
                 if( ok )
                 {
+                    setPreviewStatus( {} );
                     syncPreviewFromEditor();
                     return;
                 }
@@ -327,16 +344,22 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
                 emit logMessage( tr( "프리뷰 부분 교체 실패, 전체 다시 로드: %1" ).arg( message ) );
                 if( !pendingFullLoadPath_.isEmpty() )
                 {
-                    previewUrl_ = QUrl::fromLocalFile( pendingFullLoadPath_ );
+                    setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
+                    previewUrl_ = pendingFullLoadUrl_;
                     previewLoadedOk_ = false;
                     previewBridge_->resetReady();
                     previewView_->load( previewUrl_ );
+                }
+                else
+                {
+                    setPreviewStatus( {} );
                 }
             } );
 
     // 페이지가 준비되면 현재 에디터 위치로 맞춘다.
     connect( previewBridge_, &PreviewBridge::bridgeReady, this, [this] {
         emit logMessage( tr( "프리뷰 동기화 준비됨" ) );
+        setPreviewStatus( {} );
         // 페이지가 다시 로드된 직후이므로, 여기서 맞춰주면 재빌드 후에도
         // 스크롤 위치가 에디터와 어긋나지 않는다.
         syncPreviewFromEditor();
@@ -532,6 +555,10 @@ void WorkspaceController::requestPreviewBuild( const bool immediate )
     // 프로젝트 미해결)에서는 기록하지 않아야 준비가 끝난 뒤 다시 시도된다.
     previewRequestedPath_ = request.sourceFile;
 
+    // 여기서부터는 결과가 나올 때까지 시간이 걸린다. 조기 반환들을 모두 통과한
+    // 뒤에만 표시를 켠다 — 프리뷰를 만들 수 없는 파일에서 켜면 영영 남는다.
+    setPreviewStatus( tr( "프리뷰 준비 중..." ) );
+
     if( immediate )
         previewController_->buildNow( request );
     else
@@ -540,11 +567,20 @@ void WorkspaceController::requestPreviewBuild( const bool immediate )
 
 void WorkspaceController::onPreviewFinished( const PreviewBuildResult& result )
 {
+    // 취소된 결과로는 화면을 건드리지 않는다. 다만 뒤이어 다른 빌드가 도는 것이
+    // 아니라면 표시가 남으므로, 큐가 비었을 때만 걷는다.
     if( result.cancelled || previewView_ == nullptr )
+    {
+        if( previewController_ == nullptr || !previewController_->isBuilding() )
+            setPreviewStatus( {} );
         return;
+    }
 
     if( !result.ok || result.htmlPath.isEmpty() )
+    {
+        setPreviewStatus( {} );
         return;
+    }
 
     // 빌더는 요청한 문서를 못 찾으면 root 문서(보통 index)의 HTML 로 물러선다.
     // .md 처럼 이 프로젝트가 원본으로 읽지 않는 파일을 열었을 때가 그렇다.
@@ -554,6 +590,7 @@ void WorkspaceController::onPreviewFinished( const PreviewBuildResult& result )
     {
         emit logMessage( tr( "프리뷰를 만들 수 없는 파일입니다(이 프로젝트의 원본이 아님): %1" )
                             .arg( QFileInfo( result.sourceFile ).fileName() ) );
+        setPreviewStatus( {} );
         return;
     }
 
@@ -561,49 +598,91 @@ void WorkspaceController::onPreviewFinished( const PreviewBuildResult& result )
     previewSources_ = result.sources;
     previewPrimaryPath_ = result.sourceFile;
 
-    showPreviewHtml( result.htmlPath, result.projectId + QLatin1Char( '\x1f' ) + result.primaryDocname );
+    showPreviewHtml( result.htmlPath, result.projectId + QLatin1Char( '\x1f' ) + result.primaryDocname,
+                     result.serial );
 }
 
-void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QString& documentKey )
+void WorkspaceController::setPreviewStatus( const QString& text )
 {
-    QFile file( htmlPath );
-    if( !file.open( QIODevice::ReadOnly ) )
+    if( previewStatus_ == text )
         return;
 
-    const QByteArray raw = file.readAll();
-    file.close();
+    previewStatus_ = text;
+    emit previewStatusChanged( text, !text.isEmpty() );
+}
 
-    const QString html = QString::fromUtf8( raw );
-    const QString headSignature = previewHeadSignature( html );
-    const QUrl url = QUrl::fromLocalFile( htmlPath );
+void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QString& documentKey,
+                                           const int buildSerial )
+{
+    const qint64 size = QFileInfo( htmlPath ).size();
+    if( size <= 0 )
+    {
+        setPreviewStatus( {} );
+        return;
+    }
+
+    // 출력 디렉터리가 프로젝트당 하나로 고정이라 같은 문서의 URL 은 매번 같다.
+    // 그대로 다시 load() 하면 Chromium 이 이전 내용을 캐시에서 낼 수 있으므로
+    // 빌드 일련번호를 쿼리에 실어 다른 URL 로 만든다. file:// 에서 쿼리는 파일
+    // 탐색에 쓰이지 않고, _static 같은 상대 경로 해석에도 영향이 없다.
+    QUrl url = QUrl::fromLocalFile( htmlPath );
+    url.setQuery( QStringLiteral( "b=%1" ).arg( buildSerial ) );
+
+    const auto loadFullPage = [this, &url] {
+        setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
+        previewUrl_ = url;
+        previewLoadedOk_ = false;
+        if( previewBridge_ != nullptr )
+            previewBridge_->resetReady();
+        previewView_->load( url );
+    };
 
     // 핫스왑은 아래 조건이 전부 맞을 때만 한다. 하나라도 어긋나면 전체 리로드가
     // 맞다 — 스타일이 바뀌었는데 body 만 갈면 깨진 화면이 남는다.
     const bool sameDocument = ( documentKey == previewDocumentKey_ );
-    const bool sameHead = ( !headSignature.isEmpty() && headSignature == previewHeadSignature_ );
     const bool bridgeUsable = ( previewBridge_ != nullptr && previewBridge_->isReady() );
     const bool userStayedOnPage = ( previewView_->url() == previewUrl_ );
-    const bool sizeOk = ( raw.size() <= kHotSwapMaxBytes );
 
     previewDocumentKey_ = documentKey;
-    previewHeadSignature_ = headSignature;
 
-    if( sameDocument && sameHead && bridgeUsable && userStayedOnPage && previewLoadedOk_ && sizeOk )
+    // 상한을 넘는 문서는 어차피 핫스왑하지 않으므로 내용을 읽을 이유가 없다.
+    // Breathe 로 만든 API 페이지는 하나가 22MB 라, <head> 서명 계산에만 쓰고 버릴
+    // QString 을 GUI 스레드에서 만드는 비용이 그대로 멈춤으로 보인다.
+    if( size > kHotSwapMaxBytes )
     {
-        emit logMessage( tr( "프리뷰 부분 교체(핫스왑)" ) );
-        // 상대 경로(_static, 이미지)가 새 출력 디렉터리를 가리키게 해야 한다.
-        const QString baseUrl = QUrl::fromLocalFile( QFileInfo( htmlPath ).absolutePath()
-                                                     + QLatin1Char( '/' ) ).toString();
-        pendingFullLoadPath_ = htmlPath;
-        previewBridge_->requestHotSwap( html, baseUrl, ++hotSwapToken_ );
+        // 서명을 모르는 상태이므로 다음 비교가 낡은 값을 믿지 않게 지운다.
+        previewHeadSignature_.clear();
+        loadFullPage();
         return;
     }
 
-    previewUrl_ = url;
-    previewLoadedOk_ = false;
-    if( previewBridge_ != nullptr )
-        previewBridge_->resetReady();
-    previewView_->load( url );
+    QFile file( htmlPath );
+    if( !file.open( QIODevice::ReadOnly ) )
+    {
+        setPreviewStatus( {} );
+        return;
+    }
+
+    const QString html = QString::fromUtf8( file.readAll() );
+    file.close();
+
+    const QString headSignature = previewHeadSignature( html );
+    const bool sameHead = ( !headSignature.isEmpty() && headSignature == previewHeadSignature_ );
+    previewHeadSignature_ = headSignature;
+
+    if( !sameDocument || !sameHead || !bridgeUsable || !userStayedOnPage || !previewLoadedOk_ )
+    {
+        loadFullPage();
+        return;
+    }
+
+    emit logMessage( tr( "프리뷰 부분 교체(핫스왑)" ) );
+    // 상대 경로(_static, 이미지)가 출력 디렉터리를 가리키게 해야 한다.
+    const QString baseUrl = QUrl::fromLocalFile( QFileInfo( htmlPath ).absolutePath()
+                                                 + QLatin1Char( '/' ) ).toString();
+    pendingFullLoadPath_ = htmlPath;
+    pendingFullLoadUrl_ = url;
+    previewBridge_->requestHotSwap( html, baseUrl, ++hotSwapToken_ );
 }
 
 void WorkspaceController::applyPreviewWebSettings()
@@ -638,6 +717,7 @@ void WorkspaceController::applyPreviewWebSettings()
     // 속성만 갈아도 다시 실행되지 않으므로 같은 문서를 다시 읽는다.
     if( !firstApply && previewUrl_.isLocalFile() )
     {
+        setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
         previewLoadedOk_ = false;
         if( previewBridge_ != nullptr )
             previewBridge_->resetReady();

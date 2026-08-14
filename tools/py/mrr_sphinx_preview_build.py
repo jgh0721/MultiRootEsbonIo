@@ -35,6 +35,20 @@ except Exception:  # noqa: BLE001 - 런타임이 덜 갖춰진 경우를 명시�
 
 REPORT_SCHEMA = 1
 
+# 빌드가 도는 동안만 존재하는 표식. 출력 디렉터리는 프로젝트당 하나로 고정이므로
+# (회전시키면 Sphinx 가 <outdir>/<docname>.html 로 증분을 판정하지 못한다) 빌드가
+# 중간에 죽으면 **쓰다 만 HTML 이 최신 mtime 으로** 남아 영영 다시 쓰이지 않는다.
+# 시작할 때 이 표식이 남아 있으면 직전 빌드가 중단된 것으로 보고 HTML 을 걷어낸다.
+BUILDING_SENTINEL = ".mrr-building"
+
+# data-mrr-src 인덱스 <-> 원본 경로 대응표. 출력 디렉터리와 수명을 같이한다.
+SOURCE_MAP_NAME = ".mrr-sources.json"
+
+# 진단은 로그 패널과 진단 테이블에 그대로 실린다. breathe 가 doxygen 의 namespace 를
+# 문서마다 다시 등록하면서 내는 Duplicate ID 경고는 같은 (파일,줄,메시지)가 수천 번
+# 반복된다(실측 5911건 -> 사이드카 JSON 1.5MB). 중복은 정보가 아니므로 접는다.
+MAX_DIAGNOSTICS = 2000
+
 # Sphinx 경고의 표준 출력 형식: "<path>:<line>: WARNING: <message>"
 WARNING_RE = re.compile(
     r"^(?P<path>.+?):(?P<line>\d+):\s*(?P<level>WARNING|ERROR|CRITICAL|SEVERE):\s*(?P<message>.*)$"
@@ -86,10 +100,22 @@ def _install_starttag_passthrough() -> None:
 class SourceLineStamper:
     """doctree 노드에 원본 (파일, 시작줄, 끝줄) 을 심는다."""
 
-    def __init__(self) -> None:
+    def __init__(self, known_sources: list[str] | None = None) -> None:
+        # HTML 에 심는 data-mrr-src 는 이 목록의 **인덱스**다. 증분 빌드에서는 이번에
+        # 다시 쓰이지 않은 문서의 HTML 이 그대로 남으므로, 그 안의 인덱스가 계속
+        # 같은 파일을 가리키려면 목록이 빌드마다 흔들리면 안 된다. 그래서 목록을
+        # 출력 디렉터리에 남겨 두고 이어받으며, **추가만** 하고 재배열하지 않는다.
         self.sources: list[str] = []
         self._source_index: dict[str, int] = {}
         self._line_counts: dict[str, int] = {}
+        # 이번 빌드에서 실제로 스탬프된 파일. 진단 교체 범위를 정하는 데 쓴다.
+        self.touched: list[str] = []
+        self._touched_seen: set[str] = set()
+
+        for path in known_sources or []:
+            if isinstance(path, str) and path and path not in self._source_index:
+                self._source_index[path] = len(self.sources)
+                self.sources.append(path)
 
     def source_index(self, path: str | None) -> int:
         if not path:
@@ -98,6 +124,9 @@ class SourceLineStamper:
         if resolved not in self._source_index:
             self._source_index[resolved] = len(self.sources)
             self.sources.append(resolved)
+        if resolved not in self._touched_seen:
+            self._touched_seen.add(resolved)
+            self.touched.append(resolved)
         return self._source_index[resolved]
 
     def line_count(self, path: str) -> int:
@@ -204,6 +233,23 @@ def _mark_first_anchor_per_line(entries: list[dict]) -> None:
 
 def _parse_warnings(text: str) -> list[dict]:
     diagnostics: list[dict] = []
+    seen: set[tuple[str, int, str, str]] = set()
+    dropped = 0
+
+    def add(path: str, line: int, severity: str, message: str) -> None:
+        nonlocal dropped
+        key = (path, line, severity, message)
+        if key in seen:
+            dropped += 1
+            return
+        seen.add(key)
+        if len(diagnostics) >= MAX_DIAGNOSTICS:
+            dropped += 1
+            return
+        diagnostics.append(
+            {"path": path, "line": line, "severity": severity, "message": message}
+        )
+
     for raw_line in ANSI_RE.sub("", text).splitlines():
         line = raw_line.strip()
         if not line:
@@ -211,26 +257,33 @@ def _parse_warnings(text: str) -> list[dict]:
 
         match = WARNING_RE.match(line)
         if match:
-            diagnostics.append(
-                {
-                    "path": match.group("path"),
-                    "line": int(match.group("line")),
-                    "severity": match.group("level").lower(),
-                    "message": match.group("message").strip(),
-                }
+            add(
+                match.group("path"),
+                int(match.group("line")),
+                match.group("level").lower(),
+                match.group("message").strip(),
             )
             continue
 
         match = WARNING_NO_LINE_RE.match(line)
         if match and not match.group("path").upper().startswith("WARNING"):
-            diagnostics.append(
-                {
-                    "path": match.group("path"),
-                    "line": 1,
-                    "severity": match.group("level").lower(),
-                    "message": match.group("message").strip(),
-                }
+            add(
+                match.group("path"),
+                1,
+                match.group("level").lower(),
+                match.group("message").strip(),
             )
+
+    if dropped and diagnostics:
+        # 접힌 것이 있다는 사실 자체는 남긴다. 조용히 자르면 "경고가 없다" 로 읽힌다.
+        diagnostics.append(
+            {
+                "path": diagnostics[0]["path"],
+                "line": 1,
+                "severity": "warning",
+                "message": f"(중복·초과 진단 {dropped}건을 접었습니다)",
+            }
+        )
     return diagnostics
 
 
@@ -321,6 +374,71 @@ def _shadow_source_reader(app: Sphinx, shadow: dict[str, Path]):
     return replace_source
 
 
+def _claim_out_dir(out_dir: Path) -> None:
+    """중단된 직전 빌드의 잔해를 걷어내고 이번 빌드의 표식을 남긴다.
+
+    표식이 남아 있다는 것은 이전 프로세스가 HTML 을 쓰는 도중에 죽었다는 뜻이다.
+    그 파일들은 내용이 잘렸는데 mtime 은 최신이라 Sphinx 가 최신으로 판정한다.
+    지워 두면 다음 빌드가 doctree 를 다시 읽지 않고 쓰기만 다시 한다.
+    """
+    sentinel = out_dir / BUILDING_SENTINEL
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        if sentinel.exists():
+            for stale in out_dir.glob("*.html"):
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass
+        sentinel.write_text("", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _release_out_dir(out_dir: Path) -> None:
+    try:
+        (out_dir / BUILDING_SENTINEL).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _load_source_map(out_dir: Path) -> list[str]:
+    try:
+        data = json.loads((out_dir / SOURCE_MAP_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, str)]
+    return []
+
+
+def _save_source_map(out_dir: Path, sources: list[str]) -> None:
+    try:
+        (out_dir / SOURCE_MAP_NAME).write_text(
+            json.dumps(sources, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _trim_builder_output(app: Sphinx) -> None:
+    """프리뷰에 쓰이지 않는 산출물을 끈다.
+
+    검색 인덱스( searchindex.js — 이 저장소 실측 5MB )와 전역 색인
+    ( genindex.html — 2.3MB )은 프리뷰에서 아무도 열지 않는데, 문서를 쓸 때마다
+    indexer.feed() 가 함께 돌고 finish 단계에서 매번 다시 만들어진다.
+
+    conf 값( html_use_index )이 아니라 **빌더 인스턴스 속성**을 바꾼다. confval 을
+    건드리면 .buildinfo 의 config 해시가 달라져 전 문서가 한 번 더 재작성된다.
+    """
+    builder = getattr(app, "builder", None)
+    if builder is None:
+        return
+    if hasattr(builder, "search"):
+        builder.search = False
+    if hasattr(builder, "use_index"):
+        builder.use_index = False
+
+
 def _write_report(path: Path, payload: dict) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -353,6 +471,7 @@ def main(argv: list[str] | None = None) -> int:
         "htmlPath": "",
         "primaryDocname": "",
         "sources": [],
+        "processedSources": [],
         "diagnostics": [],
         "missingExtensions": [],
         "missingThemes": [],
@@ -373,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
     warning_stream = io.StringIO()
     status_stream = io.StringIO()
 
+    _claim_out_dir(args.out_dir)
+
     try:
         _install_starttag_passthrough()
 
@@ -391,17 +512,24 @@ def main(argv: list[str] | None = None) -> int:
         if shadow:
             app.connect("source-read", _shadow_source_reader(app, shadow))
 
-        stamper = SourceLineStamper()
+        _trim_builder_output(app)
+
+        stamper = SourceLineStamper(_load_source_map(args.out_dir))
         app.connect("doctree-resolved",
                     lambda _app, doctree, _docname: stamper.stamp_doctree(doctree))
         app.build()
+        _save_source_map(args.out_dir, stamper.sources)
 
         # app.config.version 은 "프로젝트" 버전이다. Sphinx 자체 버전이 필요하다.
         import sphinx
 
         report["sphinxVersion"] = sphinx.__version__
         report["htmlTheme"] = getattr(app.config, "html_theme", "")
+        # sources 는 data-mrr-src 인덱스를 되돌리기 위한 **누적** 대응표이고,
+        # processedSources 는 이번 빌드가 실제로 건드린 파일이다. 증분 빌드에서는
+        # 둘이 다르며, 진단 교체 범위는 후자여야 다른 파일의 진단이 사라지지 않는다.
         report["sources"] = stamper.sources
+        report["processedSources"] = stamper.touched
 
         if args.primary is not None:
             try:
@@ -453,6 +581,12 @@ def _finish(report: dict, warning_stream: io.StringIO, status_stream: io.StringI
     sys.stderr.write(warnings_text)
 
     _write_report(report_path, report)
+
+    # 여기까지 왔으면 출력 디렉터리는 온전하다. 프로세스가 이 앞에서 죽으면 표식이
+    # 남아 다음 빌드가 HTML 을 걷어낸다.
+    out_dir = report.get("outDir")
+    if out_dir:
+        _release_out_dir(Path(out_dir))
 
 
 if __name__ == "__main__":  # pragma: no cover

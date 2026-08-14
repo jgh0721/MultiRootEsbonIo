@@ -209,6 +209,9 @@ private:
     mrst::WorkspaceController*          controller_ = nullptr;
     mrst::PythonEnvManager*             pythonEnv_ = nullptr;
     QLabel*                             envStatusLabel_ = nullptr;   // 상태 표시줄 환경 칩
+    /// 상태 표시줄 프리뷰 칩. 빌드부터 HTML 로드 완료까지가 한 구간이라,
+    /// 그동안 아무 표시가 없으면 사용자에게는 고장으로 보인다.
+    QLabel*                             previewStatusLabel_ = nullptr;
     QWidget*                            missingDepBar_ = nullptr;
     QLabel*                             missingDepLabel_ = nullptr;
     QStringList                         missingDepPending_;

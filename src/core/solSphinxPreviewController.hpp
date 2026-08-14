@@ -35,11 +35,19 @@ struct PreviewBuildResult
     bool                                cancelled = false;
     QString                             projectId;
     QString                             htmlPath;
+    /// 이 결과를 만든 빌드의 일련번호. 출력 디렉터리가 고정이라 HTML 경로가
+    /// 매번 같으므로, 이 값을 URL 쿼리에 실어 Chromium 캐시를 무효화한다.
+    int                                 serial = 0;
     /// 이 결과를 만든 요청의 원본 파일. 요청과 결과를 짝지어야 "요청한 문서가
     /// 정말 렌더됐는가" 를 판정할 수 있다 (빌더는 못 찾으면 root 문서로 물러선다).
     QString                             sourceFile;
     QString                             primaryDocname;
-    QStringList                         sources;            ///< data-mrr-src 인덱스와 순서가 같다
+    /// data-mrr-src 인덱스와 순서가 같다. 증분 빌드에서도 인덱스가 흔들리지 않도록
+    /// 빌더가 출력 디렉터리에 누적해 두는 대응표라, 이번 빌드가 건드리지 않은
+    /// 파일도 들어 있다.
+    QStringList                         sources;
+    /// 이번 빌드가 실제로 다시 처리한 원본. 진단 교체 범위는 이쪽을 써야 한다.
+    QStringList                         processedSources;
     QString                             sphinxVersion;
     QString                             htmlTheme;
     QVector< DiagnosticEntry >          diagnostics;
@@ -92,8 +100,9 @@ private:
     void                                startBuild();
     void                                finishBuild( int exitCode, bool crashed, bool cancelled );
     [[nodiscard]] PreviewBuildResult    readReport( const QString& reportPath ) const;
-    [[nodiscard]] QString               allocateOutputDir();
-    void                                cleanupOldOutputDirs( const QString& keepDir ) const;
+    /// 프로젝트당 고정된 출력 디렉터리. 회전시키면 Sphinx 의 증분 판정이 죽는다.
+    [[nodiscard]] QString               outputDir() const;
+    void                                cleanupStaleOutputDirs( const QString& keepDir ) const;
     [[nodiscard]] QString               writeShadowCopy() const;
 
     PreviewBuildRequest                 pending_;

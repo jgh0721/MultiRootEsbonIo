@@ -2606,9 +2606,26 @@ void MainWindow::setupPythonEnvironment()
     if( controller_ != nullptr )
         controller_->setPythonEnvironment( pythonEnv_ );
 
+    // 프리뷰 칩이 환경 칩보다 왼쪽에 오도록 먼저 붙인다.
+    previewStatusLabel_ = new QLabel( this );
+    previewStatusLabel_->setContentsMargins( 8, 0, 8, 0 );
+    previewStatusLabel_->setVisible( false );
+    statusBar()->addPermanentWidget( previewStatusLabel_ );
+
     envStatusLabel_ = new QLabel( this );
     envStatusLabel_->setContentsMargins( 8, 0, 8, 0 );
     statusBar()->addPermanentWidget( envStatusLabel_ );
+
+    if( controller_ != nullptr )
+    {
+        connect( controller_, &mrst::WorkspaceController::previewStatusChanged, this,
+                [this]( const QString& text, const bool busy ) {
+                    if( previewStatusLabel_ == nullptr )
+                        return;
+                    previewStatusLabel_->setText( text );
+                    previewStatusLabel_->setVisible( busy );
+                } );
+    }
 
     connect( pythonEnv_, &mrst::PythonEnvManager::bootstrapLog, this, &MainWindow::appendLog );
     connect( pythonEnv_, &mrst::PythonEnvManager::stateChanged, this,

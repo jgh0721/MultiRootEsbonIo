@@ -100,6 +100,10 @@ signals:
                                                                      const QStringList& distributions,
                                                                      const QStringList& themes );
     void                                lspStatusChanged( const QString& projectId, const QString& state );
+    /// 프리뷰가 준비되는 동안의 상태. busy=false 면 text 는 비어 있고 표시를 지운다.
+    /// 빌드뿐 아니라 HTML 로드 구간까지 덮는다 — 큰 문서는 빌드가 끝난 뒤에도
+    /// WebEngine 이 읽는 데 시간이 걸려서, 그 사이가 비어 있으면 고장으로 보인다.
+    void                                previewStatusChanged( const QString& text, bool busy );
 
     // ── 개요 ──
     /// 활성 문서의 섹션 개요. 먼저 정규식 폴백으로 한 번, LSP 응답이 오면 다시.
@@ -119,7 +123,10 @@ private:
     void                                logProjectList();
     void                                onPreviewFinished( const PreviewBuildResult& result );
     [[nodiscard]] QString               writeShadowCopy( QTextView* view, const QString& path ) const;
-    void                                showPreviewHtml( const QString& htmlPath, const QString& documentKey );
+    void                                showPreviewHtml( const QString& htmlPath, const QString& documentKey,
+                                                          int buildSerial );
+    /// 같은 문구를 반복 발신하지 않는다. text 가 비면 표시를 지운다.
+    void                                setPreviewStatus( const QString& text );
     /// 프리뷰 페이지의 원격 리소스 접근 허용 여부를 설정에서 읽어 적용한다.
     /// 값이 바뀌었으면 이미 떠 있는 페이지를 다시 읽는다 (실패한 스크립트는
     /// 설정만 바꿔서는 다시 실행되지 않는다).
@@ -201,6 +208,10 @@ private:
     bool                                previewLoadedOk_ = false;
     int                                 hotSwapToken_ = 0;
     QString                             pendingFullLoadPath_;
+    /// 핫스왑이 실패했을 때 되돌아갈 URL. 캐시 무효화 쿼리까지 포함해야 한다.
+    QUrl                                pendingFullLoadUrl_;
+    /// 마지막으로 내보낸 프리뷰 상태 문구. 비어 있으면 "표시 없음".
+    QString                             previewStatus_;
 
     // ── 개요 상태 ──
     QTimer*                             outlineDebounce_ = nullptr;
