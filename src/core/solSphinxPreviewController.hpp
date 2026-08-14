@@ -26,6 +26,10 @@ struct PreviewBuildRequest
     QString                             builderScript;      ///< mrr_sphinx_preview_build.py 절대 경로
     QString                             sourceFile;         ///< 편집 중인 원본 (htmlPath 계산용)
     QString                             shadowFile;         ///< 미저장 버퍼 사본. 없으면 빈 문자열
+    /// 직전 빌드의 재파싱 시간이 이 값(ms)을 넘는 문서에는 사본을 적용하지 않는다.
+    /// 음수면 제한 없음. 사본을 반영하려면 그 문서를 매번 다시 읽어야 하는데,
+    /// Breathe 문서는 그 비용이 수십 초라 편집이 멈춰 버린다.
+    int                                 shadowMaxReadMs = -1;
 };
 
 /// 빌더가 남긴 사이드카 JSON 을 그대로 옮긴 결과.

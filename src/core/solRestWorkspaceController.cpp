@@ -549,7 +549,9 @@ void WorkspaceController::requestPreviewBuild( const bool immediate )
     request.fallbackPythonExe = pythonEnv_->pythonExe();
     request.builderScript = pythonEnv_->previewBuilderScript();
     request.sourceFile = context->path;
-    request.shadowFile = writeShadowCopy( view, context->path );
+    request.shadowFile = previewApplyUnsavedEdits_ ? writeShadowCopy( view, context->path )
+                                                   : QString();
+    request.shadowMaxReadMs = previewUnsavedMaxReadMs_;
 
     // 실제로 요청을 보낸 문서만 기록한다. 위쪽 조기 반환들(런타임 미준비,
     // 프로젝트 미해결)에서는 기록하지 않아야 준비가 끝난 뒤 다시 시도된다.
@@ -1004,6 +1006,12 @@ void WorkspaceController::reloadSettings()
         lspPool_->setMaxProcesses(
             settings.value( QStringLiteral( "esbonio/maxLspProcesses" ), 3 ).toInt() );
     }
+
+    previewApplyUnsavedEdits_ =
+        settings.value( QStringLiteral( "preview/applyUnsavedEdits" ), true ).toBool();
+    // 0 은 "제한 없음" 이다. 빌더는 음수를 그 뜻으로 받는다.
+    const int maxReadMs = settings.value( QStringLiteral( "preview/unsavedEditMaxReadMs" ), 2000 ).toInt();
+    previewUnsavedMaxReadMs_ = ( maxReadMs > 0 ) ? maxReadMs : -1;
 
     applyPreviewWebSettings();
 }

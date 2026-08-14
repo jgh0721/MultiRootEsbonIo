@@ -185,6 +185,11 @@ private:
     /// 프리뷰의 원격 리소스 허용 상태. -1 은 아직 한 번도 적용하지 않은 것으로,
     /// 첫 적용에서 불필요한 리로드를 하지 않기 위해 구분한다.
     int                                 previewAllowRemote_ = -1;
+    /// 저장하지 않은 편집을 프리뷰에 반영할지 (설정 preview/applyUnsavedEdits).
+    bool                                previewApplyUnsavedEdits_ = true;
+    /// 직전 빌드의 재파싱 시간이 이 값을 넘는 문서는 반영에서 제외한다.
+    /// 음수면 제한 없음. Breathe 문서처럼 재파싱이 수십 초인 경우를 막는다.
+    int                                 previewUnsavedMaxReadMs_ = 2000;
     QStringList                         previewSources_;      ///< data-mrr-src 인덱스 -> 원본 경로
     QStringList                         previewProcessedSources_;  ///< 이번 빌드가 다시 읽은 파일들
     /// 마지막으로 빌드를 **요청한** 문서. 탭을 옮겼는데 프리뷰가 따라오지

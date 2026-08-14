@@ -20,6 +20,7 @@ import io
 import json
 import re
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -43,6 +44,13 @@ BUILDING_SENTINEL = ".mrr-building"
 
 # data-mrr-src 인덱스 <-> 원본 경로 대응표. 출력 디렉터리와 수명을 같이한다.
 SOURCE_MAP_NAME = ".mrr-sources.json"
+
+# 문서별 읽기(파싱) 소요 ms. 미저장 편집을 반영할지 판정하는 근거다.
+READ_COST_NAME = ".mrr-readcost.json"
+
+# 직전 빌드에서 미저장 사본을 적용한 docname 목록. 사본이 사라졌을 때
+# doctree 에 남은 편집 내용을 원본으로 되돌리는 데 쓴다.
+SHADOWED_NAME = ".mrr-shadowed.json"
 
 # 진단은 로그 패널과 진단 테이블에 그대로 실린다. breathe 가 doxygen 의 namespace 를
 # 문서마다 다시 등록하면서 내는 Duplicate ID 경고는 같은 (파일,줄,메시지)가 수천 번
@@ -357,13 +365,9 @@ def _parse_shadow_sources(values: list[str]) -> dict[str, Path]:
     return shadow
 
 
-def _shadow_source_reader(app: Sphinx, shadow: dict[str, Path]):
+def _shadow_source_reader(shadow_by_docname: dict[str, Path]):
     def replace_source(_app: Sphinx, docname: str, source: list[str]) -> None:
-        try:
-            doc_path = str(Path(_app.env.doc2path(docname)).resolve())
-        except Exception:  # noqa: BLE001
-            return
-        replacement = shadow.get(doc_path)
+        replacement = shadow_by_docname.get(docname)
         if replacement is None:
             return
         try:
@@ -372,6 +376,95 @@ def _shadow_source_reader(app: Sphinx, shadow: dict[str, Path]):
             pass
 
     return replace_source
+
+
+def _plan_shadow(app: Sphinx, args, read_costs: dict[str, int],
+                 status: io.StringIO) -> tuple[dict[str, Path], list[str]]:
+    """미저장 사본을 어느 문서에 적용할지 정하고, 재읽기 상태를 맞춘다.
+
+    Sphinx 는 **원본 파일의 mtime** 으로만 재읽기를 판정하는데(get_outdated_files),
+    사본을 써도 원본 mtime 은 그대로라 그 문서가 outdated 로 잡히지 않는다. 그러면
+    source-read 훅 자체가 호출되지 않아 사본이 반영될 길이 없다. 그래서 적용 대상은
+    reread_always 에 넣어 강제로 다시 읽게 한다.
+
+    되돌리는 쪽도 함께 처리해야 한다. all_docs 에 들어가는 값은 원본 mtime 이 아니라
+    **읽은 시각**이라(builders/__init__.py 의 all_docs[docname] = time_ns), 사본으로
+    한 번 읽고 나면 원본 mtime 이 항상 그보다 과거가 된다. 저장하지 않고 편집을
+    되돌리면 그 문서는 영영 다시 읽히지 않고 사라진 편집 내용이 프리뷰에 남는다.
+    직전에 사본이 걸렸다가 이번에 빠진 문서는 all_docs 에서 빼서 강제로 원본을
+    다시 읽게 한다.
+
+    Returns (docname -> 사본 경로, 비용 때문에 건너뛴 docname 목록).
+    """
+    shadow_by_path = _parse_shadow_sources(args.shadow)
+    limit = args.shadow_max_read_ms
+
+    applied: dict[str, Path] = {}
+    skipped: list[str] = []
+    for source_path, replacement in shadow_by_path.items():
+        try:
+            docname = app.env.path2doc(source_path)
+        except Exception:  # noqa: BLE001
+            docname = None
+        if not docname:
+            continue
+
+        # 비용을 아직 모르는 문서는 **적용하지 않는다.** 일단 적용해 보고 재는
+        # 쪽은 그 한 번이 수십 초일 수 있어서, 하필 사용자가 처음 타이핑한
+        # 순간에 멈춘다. 비용은 전량 빌드나 저장 시 재읽기에서 채워지므로,
+        # 한 번 읽히고 나면 다음 편집부터 정상적으로 반영된다.
+        cost = read_costs.get(docname)
+        if limit >= 0:
+            if cost is None:
+                skipped.append(docname)
+                status.write(
+                    f"미저장 편집을 건너뜁니다(재파싱 시간을 아직 모름): {docname}\n")
+                continue
+            if cost > limit:
+                skipped.append(docname)
+                status.write(
+                    f"미저장 편집을 건너뜁니다(재파싱 {cost}ms > {limit}ms): {docname}\n")
+                continue
+        applied[docname] = replacement
+
+    previous = _load_json(args.out_dir / SHADOWED_NAME, [])
+    for docname in previous:
+        if not isinstance(docname, str) or docname in applied:
+            continue
+        # 사본이 빠졌다 -> 원본을 한 번 강제로 다시 읽어야 한다.
+        app.env.reread_always.discard(docname)
+        app.env.all_docs.pop(docname, None)
+
+    for docname in applied:
+        app.env.reread_always.add(docname)
+
+    return applied, skipped
+
+
+def _install_read_cost_meter(app: Sphinx, costs: dict[str, int]) -> None:
+    """문서별 읽기(파싱) 소요 시간을 ms 로 잰다.
+
+    미저장 편집을 반영하려면 그 문서를 **매번 다시 읽어야** 하는데, breathe 처럼
+    디렉티브 하나가 doxygen XML 수백 개를 훑는 문서는 재파싱만 수십 초가 걸린다.
+    그런 문서까지 반영하면 타이핑할 때마다 프리뷰가 멈춰 버리므로, 직전 빌드에서
+    잰 값으로 다음 빌드에서 반영할지 말지를 정한다.
+
+    Sphinx 자체 sphinx.ext.duration 과 같은 방식이다(source-read ~ doctree-read).
+    """
+    started: dict[str, float] = {}
+
+    def on_source_read(_app: Sphinx, docname: str, _source: list[str]) -> None:
+        started[docname] = time.perf_counter()
+
+    def on_doctree_read(_app: Sphinx, _doctree: nodes.document) -> None:
+        docname = _app.env.docname
+        begin = started.pop(docname, None)
+        if begin is not None:
+            costs[docname] = int((time.perf_counter() - begin) * 1000)
+
+    # 치환보다 먼저 걸어야 사본을 읽는 시간까지 비용에 포함된다.
+    app.connect("source-read", on_source_read, priority=100)
+    app.connect("doctree-read", on_doctree_read)
 
 
 def _claim_out_dir(out_dir: Path) -> None:
@@ -420,6 +513,20 @@ def _save_source_map(out_dir: Path, sources: list[str]) -> None:
         pass
 
 
+def _load_json(path: Path, default):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+def _save_json(path: Path, payload) -> None:
+    try:
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _trim_builder_output(app: Sphinx) -> None:
     """프리뷰에 쓰이지 않는 산출물을 끈다.
 
@@ -458,6 +565,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="편집 중인 원본 파일. htmlPath 계산에 쓴다.")
     parser.add_argument("--shadow", action="append", default=[], metavar="SRC=TMP",
                         help="원본 파일의 내용을 임시 파일 내용으로 대체 (미저장 버퍼 반영).")
+    parser.add_argument("--shadow-max-read-ms", type=int, default=-1, metavar="MS",
+                        help="직전 빌드의 읽기 시간이 이 값을 넘는 문서에는 --shadow 를 "
+                             "적용하지 않는다. 음수면 제한 없음.")
     parser.add_argument("--auto-fix-legacy-conf", action="store_true",
                         help="html_style='' 을 감지해 None 으로 override.")
     parser.add_argument("--define", action="append", default=[], metavar="KEY=VALUE")
@@ -472,6 +582,8 @@ def main(argv: list[str] | None = None) -> int:
         "primaryDocname": "",
         "sources": [],
         "processedSources": [],
+        "shadowApplied": [],
+        "shadowSkipped": [],
         "diagnostics": [],
         "missingExtensions": [],
         "missingThemes": [],
@@ -508,9 +620,18 @@ def main(argv: list[str] | None = None) -> int:
             warning=warning_stream,
         )
 
-        shadow = _parse_shadow_sources(args.shadow)
-        if shadow:
-            app.connect("source-read", _shadow_source_reader(app, shadow))
+        read_costs: dict[str, int] = {
+            name: int(value)
+            for name, value in _load_json(args.out_dir / READ_COST_NAME, {}).items()
+            if isinstance(value, (int, float))
+        }
+        _install_read_cost_meter(app, read_costs)
+
+        applied, skipped = _plan_shadow(app, args, read_costs, status_stream)
+        if applied:
+            app.connect("source-read", _shadow_source_reader(applied))
+        report["shadowApplied"] = sorted(applied)
+        report["shadowSkipped"] = sorted(skipped)
 
         _trim_builder_output(app)
 
@@ -519,6 +640,8 @@ def main(argv: list[str] | None = None) -> int:
                     lambda _app, doctree, _docname: stamper.stamp_doctree(doctree))
         app.build()
         _save_source_map(args.out_dir, stamper.sources)
+        _save_json(args.out_dir / READ_COST_NAME, read_costs)
+        _save_json(args.out_dir / SHADOWED_NAME, sorted(applied))
 
         # app.config.version 은 "프로젝트" 버전이다. Sphinx 자체 버전이 필요하다.
         import sphinx

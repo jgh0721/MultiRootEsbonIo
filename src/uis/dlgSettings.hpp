@@ -96,6 +96,8 @@ private:
 
     /// 프리뷰 페이지
     QCheckBox*                          m_previewAllowRemoteCheck = nullptr;
+    QCheckBox*                          m_previewUnsavedCheck = nullptr;
+    QSpinBox*                           m_previewUnsavedMaxReadSpin = nullptr;
 
     /// Python/Esbonio 페이지
     mrst::PythonEnvManager*             m_pythonEnvManager = nullptr;

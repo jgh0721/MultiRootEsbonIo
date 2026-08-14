@@ -202,7 +202,9 @@ void SphinxPreviewController::startBuild()
     if( !active_.shadowFile.isEmpty() && !active_.sourceFile.isEmpty() )
     {
         arguments << QStringLiteral( "--shadow" )
-                  << QStringLiteral( "%1=%2" ).arg( active_.sourceFile, active_.shadowFile );
+                  << QStringLiteral( "%1=%2" ).arg( active_.sourceFile, active_.shadowFile )
+                  << QStringLiteral( "--shadow-max-read-ms" )
+                  << QString::number( active_.shadowMaxReadMs );
     }
 
     UvTask::Request request;

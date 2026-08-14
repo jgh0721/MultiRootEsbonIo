@@ -633,6 +633,39 @@ QWidget* QSettingsDialog::createPreviewPage()
     groupLayout->addWidget( hint );
 
     layout->addWidget( group );
+
+    auto* unsavedGroup  = new QGroupBox( tr( "미저장 편집" ), page );
+    auto* unsavedLayout = new QVBoxLayout( unsavedGroup );
+
+    m_previewUnsavedCheck =
+        new QCheckBox( tr( "저장하지 않은 편집을 프리뷰에 반영" ), unsavedGroup );
+    unsavedLayout->addWidget( m_previewUnsavedCheck );
+
+    auto* limitRow    = new QWidget( unsavedGroup );
+    auto* limitLayout = new QHBoxLayout( limitRow );
+    limitLayout->setContentsMargins( 0, 0, 0, 0 );
+    limitLayout->addWidget( new QLabel( tr( "재파싱 허용 시간:" ), limitRow ) );
+    m_previewUnsavedMaxReadSpin = new QSpinBox( limitRow );
+    m_previewUnsavedMaxReadSpin->setRange( 0, 60000 );
+    m_previewUnsavedMaxReadSpin->setSingleStep( 100 );
+    m_previewUnsavedMaxReadSpin->setSuffix( tr( " ms" ) );
+    m_previewUnsavedMaxReadSpin->setToolTip(
+        tr( "0 이면 제한하지 않습니다." ) );
+    limitLayout->addWidget( m_previewUnsavedMaxReadSpin );
+    limitLayout->addStretch( 1 );
+    unsavedLayout->addWidget( limitRow );
+
+    auto* unsavedHint = new QLabel(
+        tr( "켜면 저장하기 전의 편집 내용이 프리뷰에 바로 나타납니다. 다만 그러려면 "
+            "그 문서를 편집할 때마다 다시 파싱해야 합니다.\n\n"
+            "Breathe 로 C++ API 를 싣는 문서처럼 디렉티브 하나가 doxygen XML 수백 개를 "
+            "훑는 경우 재파싱만 수십 초가 걸립니다. 직전 빌드에서 잰 파싱 시간이 위 "
+            "값을 넘는 문서는 자동으로 제외되어 **저장할 때만** 갱신됩니다." ),
+        unsavedGroup );
+    unsavedHint->setWordWrap( true );
+    unsavedLayout->addWidget( unsavedHint );
+
+    layout->addWidget( unsavedGroup );
     layout->addStretch( 1 );
 
     loadPreviewSettings();
@@ -643,6 +676,16 @@ QWidget* QSettingsDialog::createPreviewPage()
         AppSettings().setValue( QStringLiteral( "preview/allowRemoteContent" ), checked );
         emit settingsApplied();
     } );
+    connect( m_previewUnsavedCheck, &QCheckBox::toggled, this, [this, limitRow]( const bool checked ) {
+        limitRow->setEnabled( checked );
+        AppSettings().setValue( QStringLiteral( "preview/applyUnsavedEdits" ), checked );
+        emit settingsApplied();
+    } );
+    connect( m_previewUnsavedMaxReadSpin, &QSpinBox::valueChanged, this, [this]( const int value ) {
+        AppSettings().setValue( QStringLiteral( "preview/unsavedEditMaxReadMs" ), value );
+        emit settingsApplied();
+    } );
+    limitRow->setEnabled( m_previewUnsavedCheck->isChecked() );
 
     return page;
 }
@@ -652,9 +695,24 @@ void QSettingsDialog::loadPreviewSettings()
     if( m_previewAllowRemoteCheck == nullptr )
         return;
 
-    const QSignalBlocker blocker( m_previewAllowRemoteCheck );
-    m_previewAllowRemoteCheck->setChecked(
-        AppSettings().value( QStringLiteral( "preview/allowRemoteContent" ), true ).toBool() );
+    const AppSettings settings;
+    {
+        const QSignalBlocker blocker( m_previewAllowRemoteCheck );
+        m_previewAllowRemoteCheck->setChecked(
+            settings.value( QStringLiteral( "preview/allowRemoteContent" ), true ).toBool() );
+    }
+    if( m_previewUnsavedCheck != nullptr )
+    {
+        const QSignalBlocker blocker( m_previewUnsavedCheck );
+        m_previewUnsavedCheck->setChecked(
+            settings.value( QStringLiteral( "preview/applyUnsavedEdits" ), true ).toBool() );
+    }
+    if( m_previewUnsavedMaxReadSpin != nullptr )
+    {
+        const QSignalBlocker blocker( m_previewUnsavedMaxReadSpin );
+        m_previewUnsavedMaxReadSpin->setValue(
+            settings.value( QStringLiteral( "preview/unsavedEditMaxReadMs" ), 2000 ).toInt() );
+    }
 }
 
 void QSettingsDialog::savePreviewSettings()
@@ -662,8 +720,19 @@ void QSettingsDialog::savePreviewSettings()
     if( m_previewAllowRemoteCheck == nullptr )
         return;
 
-    AppSettings().setValue( QStringLiteral( "preview/allowRemoteContent" ),
-                            m_previewAllowRemoteCheck->isChecked() );
+    AppSettings settings;
+    settings.setValue( QStringLiteral( "preview/allowRemoteContent" ),
+                       m_previewAllowRemoteCheck->isChecked() );
+    if( m_previewUnsavedCheck != nullptr )
+    {
+        settings.setValue( QStringLiteral( "preview/applyUnsavedEdits" ),
+                           m_previewUnsavedCheck->isChecked() );
+    }
+    if( m_previewUnsavedMaxReadSpin != nullptr )
+    {
+        settings.setValue( QStringLiteral( "preview/unsavedEditMaxReadMs" ),
+                           m_previewUnsavedMaxReadSpin->value() );
+    }
 }
 
 QWidget* QSettingsDialog::createEsbonioPage()
