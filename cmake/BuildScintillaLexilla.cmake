@@ -4,8 +4,8 @@ include(FetchContent)
 set(MV_ENABLE_SCINTILLA_DIRECT_BACKEND ON CACHE BOOL "Build the direct Scintilla/Lexilla backend" FORCE)
 set(MV_DIRECT_SCINTILLA_LINK_LEXILLA_LEXERS ON CACHE BOOL "Link Lexilla lexer implementations into the app" FORCE)
 
-set(MV_SCINTILLA_GIT_TAG "rel-5-6-5" CACHE STRING "Scintilla git tag for the direct backend")
-set(MV_LEXILLA_GIT_TAG "rel-5-5-2" CACHE STRING "Lexilla git tag for the direct backend")
+set(MV_SCINTILLA_GIT_TAG "rel-5-6-6" CACHE STRING "Scintilla git tag for the direct backend")
+set(MV_LEXILLA_GIT_TAG "rel-5-5-3" CACHE STRING "Lexilla git tag for the direct backend")
 
 FetchContent_Declare(
     mv_scintilla_src
