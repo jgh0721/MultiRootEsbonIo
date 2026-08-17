@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "editor/CompletionDetailPopup.hpp"
 #include "editor/CompletionPopupWidget.hpp"

@@ -1,4 +1,4 @@
-// Qt 비의존 순수 모듈이다. stdafx.h 를 포함하지 않으므로 테스트 타깃에서
+﻿// Qt 비의존 순수 모듈이다. stdafx.h 를 포함하지 않으므로 테스트 타깃에서
 // Qt Widgets/WebEngine 없이 그대로 컴파일할 수 있다.
 #include "RstContainerLexer.hpp"
 

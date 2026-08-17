@@ -1,4 +1,4 @@
-#include "TestRunner.hpp"
+﻿#include "TestRunner.hpp"
 
 #include "core/solWorkspaceSearch.hpp"
 #include "core/solWorkspaceSession.hpp"
