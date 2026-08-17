@@ -10,7 +10,14 @@
 
 // RC 의 FILEVERSION/PRODUCTVERSION 은 쉼표로 구분된 4개의 숫자를 받는다.
 #define MRST_VERSION_COMMA MRST_VERSION_MAJOR, MRST_VERSION_MINOR, MRST_VERSION_PATCH, MRST_VERSION_BUILD
-#define MRST_VERSION_STRING "@PROJECT_VERSION@.0"
+
+// 문자열 버전은 3자리로 둔다. 자동 업데이트가 이 값을 릴리스 태그(v0.2.0),
+// 배포 ZIP 이름, 매니페스트의 version 필드와 그대로 대조하므로 네 번째 자리
+// (항상 0 이라 아무 정보도 없다)를 붙이면 전부 어긋난다.
+// 구버전이 남긴 "0.2.0.0" 과의 비교는 QVersionNumber 가 뒤쪽 0 세그먼트를
+// 무시하므로 그대로 성립한다.
+#define MRST_VERSION_STRING "@PROJECT_VERSION@"
+#define MRST_VERSION_TAG "v@PROJECT_VERSION@"
 
 #define MRST_PRODUCT_NAME "MultiRoot reST Editor"
 #define MRST_FILE_DESCRIPTION "MultiRoot reStructuredText Editor"

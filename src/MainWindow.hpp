@@ -30,7 +30,9 @@ class QVBoxLayout;
 
 namespace mrst {
 class PythonEnvManager;
+class UpdateService;
 class WorkspaceController;
+struct UpdateInfo;
 }
 
 class MainWindow final : public QMainWindow
@@ -196,6 +198,16 @@ private:
     void                                setupMissingDependencyBar();
     void                                showMissingDependencies( const QStringList& distributions );
 
+    // ── 자동 업데이트 ──
+    /// 새 버전을 알리는 비모달 바. missingDepBar_ 와 생김새는 같지만 자리가
+    /// 다르다 — 업데이트는 프리뷰가 아니라 앱 전역의 사건이라 창 폭 전체를 쓴다.
+    void                                setupUpdateBar();
+    void                                setupUpdateService();
+    void                                showUpdateAvailable( const mrst::UpdateInfo& info );
+    void                                showUpdateReady( const QString& version );
+    /// 설치를 확인받고 앱을 닫는다. 실제 교체는 종료 경로 끝에서 시작된다.
+    void                                confirmInstallNow();
+
     // ── 세션 영속성 ──
     /// 지금 워크스페이스의 열린 탭/캐럿/스플리터를 <root>/.multiroot/workspace.json 에 쓴다.
     void                                saveWorkspaceSessionNow();
@@ -216,6 +228,19 @@ private:
     QLabel*                             missingDepLabel_ = nullptr;
     QStringList                         missingDepPending_;
     QStringList                         missingDepDismissed_;        // 이번 세션에 거절한 것
+
+    mrst::UpdateService*                updateService_ = nullptr;
+    QWidget*                            updateBar_ = nullptr;
+    QLabel*                             updateLabel_ = nullptr;
+    QPushButton*                        updateActionButton_ = nullptr;   // [내려받기] / [지금 재시작]
+    QPushButton*                        updateNotesButton_ = nullptr;
+    QPushButton*                        updateSkipButton_ = nullptr;
+    QPushButton*                        updateLaterButton_ = nullptr;
+    QLabel*                             updateStatusLabel_ = nullptr;    // 상태 표시줄 업데이트 칩
+    QString                             updateDismissedVersion_;         // "나중에" 는 이번 세션만
+    /// 종료 경로 끝에서 업데이터를 띄울지. closeEvent 가 저장 확인에서 되돌아가면
+    /// 반드시 다시 false 로 만든다 — 아니면 다음 종료 때 설치가 시작된다.
+    bool                                pendingInstall_ = false;
 
     QString                             workspaceRoot_;
 

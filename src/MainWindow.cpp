@@ -10,6 +10,7 @@
 #include "core/solWorkspaceSession.hpp"
 #include "core/solThemeManager.hpp"
 #include "core/solShadowBackupStore.hpp"
+#include "core/solUpdateService.hpp"
 #include "editor/QBaseEditor.hpp"
 #include "uis/dlgSettings.hpp"
 #include "utils/DwmTitleBar.hpp"
@@ -294,6 +295,12 @@ namespace
     constexpr int kLoadingAnimationIntervalMs = 90;
     constexpr qreal kPi = 3.14159265358979323846;
 
+    /// 창이 뜨고 나서 업데이트를 확인하기까지의 여유.
+    /// 첫 페인트와 파이썬 부트스트랩 시작이 먼저 지나가게 둔다.
+    constexpr int kUpdateFirstCheckDelayMs = 5000;
+    /// 며칠씩 켜 두는 앱이라 기동 시 한 번만 보면 주기 설정이 무의미해진다.
+    constexpr int kUpdateHeartbeatMs = 6 * 60 * 60 * 1000;
+
     QIcon loadingTabIcon( const QIcon& baseIcon, const QPalette& palette, int frame )
     {
         constexpr int canvasSize = 18;
@@ -469,6 +476,8 @@ MainWindow::MainWindow( QWidget* parent )
     setupWorkspaceSearchTab();
     setupMissingDependencyBar();
     setupPythonEnvironment();
+    setupUpdateBar();
+    setupUpdateService();
 
     connect( controller_, &mrst::WorkspaceController::missingDependenciesDetected, this,
             [this]( const QString&, const QStringList& distributions, const QStringList& themes ) {
@@ -1299,6 +1308,9 @@ void MainWindow::closeEvent( QCloseEvent* event )
                         QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel );
                     if( btn == QMessageBox::Cancel )
                     {
+                        // 종료를 되돌리면 설치 예약도 함께 취소해야 한다. 남겨 두면
+                        // 다음 종료 때 사용자가 요청하지 않은 설치가 시작된다.
+                        pendingInstall_ = false;
                         event->ignore();
                         return;
                     }
@@ -1306,6 +1318,7 @@ void MainWindow::closeEvent( QCloseEvent* event )
                     {
                         if( !saveView( view, true ) )
                         {
+                            pendingInstall_ = false;
                             event->ignore();
                             return;
                         }
@@ -1318,6 +1331,19 @@ void MainWindow::closeEvent( QCloseEvent* event )
     saveWorkspaceSessionNow();
 
     shutdownUi();
+
+    // 여기까지 왔으면 저장 확인을 모두 통과했고, shutdownUi() 가 LSP/프리뷰/
+    // WebEngine 자식 프로세스를 정리했다(Job Object 덕에 손자 sphinx_agent 까지).
+    // 즉 교체 대상 파일에 우리가 건 잠금이 남아 있지 않다.
+    if( pendingInstall_ && updateService_ != nullptr )
+    {
+        if( !updateService_->launchInstaller() )
+        {
+            // staging 은 그대로 두므로 다음 실행에서 다시 설치할 수 있다.
+            appendLog( tr( "업데이터를 시작하지 못했습니다. 다음 실행 때 다시 시도합니다." ) );
+        }
+    }
+
     QMainWindow::closeEvent( event );
 }
 
@@ -1381,7 +1407,18 @@ void MainWindow::onSettings()
         // 스캐너 제외 목록 / 최대 Esbonio 프로세스 수 등도 즉시 반영한다.
         if( controller_ != nullptr )
             controller_->reloadSettings();
+        if( updateService_ != nullptr )
+            updateService_->reloadSettings();
     } );
+    if( updateService_ != nullptr )
+    {
+        // 대화상자는 UpdateService 를 소유하지 않는다. 요청만 넘기고, 상태가
+        // 바뀌면 "마지막 확인" 라벨을 다시 읽게 한다.
+        connect( &dlg, &QSettingsDialog::updateCheckRequested, this,
+                [this] { updateService_->checkAsync( /*userInitiated=*/true ); } );
+        connect( updateService_, &mrst::UpdateService::stateChanged, &dlg,
+                &QSettingsDialog::refreshUpdateStatus );
+    }
     dlg.exec();
 }
 
@@ -2663,6 +2700,187 @@ void MainWindow::setupPythonEnvironment()
     // startup 을 막지 않는다. 창이 뜬 뒤에 백그라운드로 시작한다.
     if( pythonEnv_->autoBootstrap() && !pythonEnv_->isReady() )
         QTimer::singleShot( 0, this, [this] { pythonEnv_->ensureEnvironmentAsync(); } );
+}
+
+void MainWindow::setupUpdateBar()
+{
+    // missingDepBar_ 는 Ui.frmWebPreview 안에 있어 프리뷰 위에만 뜬다. 업데이트는
+    // 앱 전역의 사건이므로 도구모음 슬롯 바로 아래, 창 폭 전체를 쓰는 자리에 둔다.
+    auto* containerLayout = qobject_cast< QVBoxLayout* >(
+        m_centralContainer != nullptr ? m_centralContainer->layout() : nullptr );
+    if( containerLayout == nullptr )
+        return;
+
+    updateBar_ = new QWidget( m_centralContainer );
+    updateBar_->setVisible( false );
+    updateBar_->setAutoFillBackground( true );
+    updateBar_->setStyleSheet(
+        QStringLiteral( "background-color: palette(alternate-base); border-bottom: 1px solid palette(mid);" ) );
+
+    auto* layout = new QHBoxLayout( updateBar_ );
+    layout->setContentsMargins( 8, 4, 8, 4 );
+
+    updateLabel_ = new QLabel( updateBar_ );
+    updateLabel_->setWordWrap( true );
+    layout->addWidget( updateLabel_, 1 );
+
+    updateNotesButton_  = new QPushButton( tr( "릴리스 노트" ), updateBar_ );
+    updateActionButton_ = new QPushButton( updateBar_ );
+    updateSkipButton_   = new QPushButton( tr( "이 버전 건너뛰기" ), updateBar_ );
+    updateLaterButton_  = new QPushButton( tr( "나중에" ), updateBar_ );
+    layout->addWidget( updateNotesButton_ );
+    layout->addWidget( updateActionButton_ );
+    layout->addWidget( updateSkipButton_ );
+    layout->addWidget( updateLaterButton_ );
+
+    connect( updateActionButton_, &QPushButton::clicked, this, [this] {
+        if( updateService_ == nullptr )
+            return;
+        // 진행 상황은 상태 표시줄 칩이 보여 준다. 바는 접는다.
+        updateBar_->setVisible( false );
+        if( updateService_->state() == mrst::UpdateService::State::ReadyToInstall )
+            confirmInstallNow();
+        else
+            updateService_->downloadAsync();
+    } );
+    connect( updateLaterButton_, &QPushButton::clicked, this, [this] {
+        // 이번 세션만 조용히 한다. 다음 실행에서는 다시 알린다.
+        if( updateService_ != nullptr )
+            updateDismissedVersion_ = updateService_->available().version;
+        updateBar_->setVisible( false );
+    } );
+    connect( updateSkipButton_, &QPushButton::clicked, this, [this] {
+        if( updateService_ != nullptr )
+            updateService_->skipAvailableVersion();
+        updateBar_->setVisible( false );
+    } );
+    connect( updateNotesButton_, &QPushButton::clicked, this, [this] {
+        if( updateService_ == nullptr )
+            return;
+        const QUrl notes = updateService_->available().notesUrl;
+        if( notes.isValid() )
+            QDesktopServices::openUrl( notes );
+    } );
+
+    // index 0 은 뷰어 도구모음 슬롯이다. 그 바로 아래에 끼운다.
+    containerLayout->insertWidget( 1, updateBar_ );
+}
+
+void MainWindow::setupUpdateService()
+{
+    updateService_ = new mrst::UpdateService( this );
+
+    updateStatusLabel_ = new QLabel( this );
+    updateStatusLabel_->setContentsMargins( 8, 0, 8, 0 );
+    updateStatusLabel_->setVisible( false );
+    statusBar()->addPermanentWidget( updateStatusLabel_ );
+
+    connect( updateService_, &mrst::UpdateService::logMessage, this, &MainWindow::appendLog );
+    connect( updateService_, &mrst::UpdateService::updateFound, this, &MainWindow::showUpdateAvailable );
+    connect( updateService_, &mrst::UpdateService::readyToInstall, this,
+            [this]( const mrst::UpdateInfo& info ) { showUpdateReady( info.version ); } );
+    connect( updateService_, &mrst::UpdateService::progressChanged, this,
+            [this]( const int percent, const QString& phase ) {
+                if( updateStatusLabel_ == nullptr )
+                    return;
+                updateStatusLabel_->setVisible( true );
+                updateStatusLabel_->setText( percent < 0
+                                                ? tr( "업데이트: %1" ).arg( phase )
+                                                : tr( "업데이트: %1 (%2%)" ).arg( phase ).arg( percent ) );
+            } );
+    connect( updateService_, &mrst::UpdateService::stateChanged, this,
+            [this]( mrst::UpdateService::State ) {
+                if( updateStatusLabel_ != nullptr && !updateService_->isBusy() )
+                    updateStatusLabel_->setVisible( false );
+            } );
+    connect( updateService_, &mrst::UpdateService::upToDate, this, [this]( const bool userInitiated ) {
+        if( userInitiated )
+            statusBar()->showMessage( tr( "최신 버전을 사용하고 있습니다." ), 4000 );
+    } );
+    connect( updateService_, &mrst::UpdateService::failed, this,
+            [this]( const QString& message, const bool silent ) {
+                if( !silent )
+                    QMessageBox::warning( this, tr( "업데이트" ), message );
+            } );
+    connect( updateService_, &mrst::UpdateService::installOutcomeReported, this,
+            [this]( const bool succeeded, const QString& version, const QString& message ) {
+                if( succeeded )
+                    statusBar()->showMessage( tr( "%1 로 업데이트했습니다." ).arg( version ), 8000 );
+                else
+                    QMessageBox::warning( this, tr( "업데이트" ),
+                                         tr( "업데이트를 적용하지 못했습니다.\n%1" ).arg( message ) );
+            } );
+
+    // startup 을 막지 않는다 (setupPythonEnvironment 와 같은 관용구).
+    // 지난 설치 결과 확인과 뒷정리는 먼저, 네트워크 점검은 조금 뒤에 한다 —
+    // 파이썬 부트스트랩이 수백 MB 를 받는 중이면 대역폭을 나눠 쓰게 된다.
+    QTimer::singleShot( 0, this, [this] { updateService_->reconcileAfterRestart(); } );
+    QTimer::singleShot( kUpdateFirstCheckDelayMs, this, [this] {
+        if( updateService_->isDueForCheck() )
+            updateService_->checkAsync( /*userInitiated=*/false );
+    } );
+
+    // 편집기는 며칠씩 켜 두는 앱이다. 기동 시 한 번만 보면 "7일마다" 라는 설정이
+    // 사실상 "실행할 때마다" 가 된다.
+    auto* heartbeat = new QTimer( this );
+    heartbeat->setInterval( kUpdateHeartbeatMs );
+    connect( heartbeat, &QTimer::timeout, this, [this] {
+        if( !updateService_->isBusy() && updateService_->isDueForCheck() )
+            updateService_->checkAsync( /*userInitiated=*/false );
+    } );
+    heartbeat->start();
+}
+
+void MainWindow::showUpdateAvailable( const mrst::UpdateInfo& info )
+{
+    if( updateBar_ == nullptr )
+        return;
+    // 이번 세션에 "나중에" 를 누른 버전은 다시 띄우지 않는다.
+    if( !updateDismissedVersion_.isEmpty() && updateDismissedVersion_ == info.version )
+        return;
+
+    updateLabel_->setText( tr( "새 버전 %1 이 있습니다 (약 %2MB)." )
+                              .arg( info.version )
+                              .arg( info.asset.size / 1048576.0, 0, 'f', 0 ) );
+    updateActionButton_->setText( tr( "내려받기" ) );
+    updateNotesButton_->setVisible( info.notesUrl.isValid() );
+    updateSkipButton_->setVisible( true );
+    updateBar_->setVisible( true );
+}
+
+void MainWindow::showUpdateReady( const QString& version )
+{
+    if( updateBar_ == nullptr )
+        return;
+
+    updateLabel_->setText( tr( "%1 설치 준비가 끝났습니다. 앱을 다시 시작하면 적용됩니다." )
+                              .arg( version ) );
+    updateActionButton_->setText( tr( "지금 재시작" ) );
+    updateNotesButton_->setVisible( false );
+    // 이미 내려받아 둔 것을 건너뛰게 하면 그 파일이 갈 곳이 없다.
+    updateSkipButton_->setVisible( false );
+    updateBar_->setVisible( true );
+}
+
+void MainWindow::confirmInstallNow()
+{
+    if( updateService_ == nullptr )
+        return;
+
+    const auto answer = QMessageBox::question(
+        this, tr( "업데이트 설치" ),
+        tr( "새 버전 %1 을 설치할 준비가 되었습니다.\n\n"
+            "앱을 닫고 파일을 교체한 뒤 다시 실행합니다.\n"
+            "저장하지 않은 문서가 있으면 먼저 물어봅니다. 계속할까요?" )
+           .arg( updateService_->available().version ),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No );
+    if( answer != QMessageBox::Yes )
+        return;
+
+    // 업데이터를 여기서 띄우면 안 된다. closeEvent 의 저장 확인에서 사용자가
+    // 취소할 수 있고, 그러면 업데이터는 죽지 않을 pid 를 90초 동안 기다린다.
+    pendingInstall_ = true;
+    close();
 }
 
 void MainWindow::updateEnvStatusChip()

@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "product": "@MRST_PRODUCT@",
+  "channel": "stable",
+  "version": "@MRST_VERSION@",
+  "tag": "v@MRST_VERSION@",
+  "releasedAt": "@MRST_RELEASED_AT@",
+  "commit": "@MRST_COMMIT@",
+  "mandatory": false,
+  "minimumFromVersion": "@MRST_MIN_FROM_VERSION@",
+  "notesUrl": "https://github.com/@MRST_REPO_SLUG@/releases/tag/v@MRST_VERSION@",
+  "assets": [
+    {
+      "id": "app",
+      "kind": "zip",
+      "platform": "windows",
+      "arch": "x64",
+      "url": "https://github.com/@MRST_REPO_SLUG@/releases/download/v@MRST_VERSION@/@MRST_ZIP_NAME@",
+      "rootDir": "@MRST_STAGE_NAME@",
+      "size": @MRST_ZIP_SIZE@,
+      "sha256": "@MRST_ZIP_SHA256@",
+      "entryCount": @MRST_ENTRY_COUNT@
+    }
+  ],
+  "removals": [@MRST_REMOVALS_JSON@]
+}
