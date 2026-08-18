@@ -109,6 +109,101 @@ def _install_starttag_passthrough() -> None:
     base._mrr_patched = True
 
 
+# ── C++ 상호참조: 반드시 실패할 조회 건너뛰기 ────────────────────────────────
+
+# `nsAit::Foo` 같은 대상에서 선행 식별자(`nsAit`)만 뽑는다. 평범한 식별자가
+# 아니면(연산자, 소멸자, 템플릿 등) None 을 내어 **건너뛰지 않게** 한다.
+_LEADING_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _leading_identifier(target: str) -> str | None:
+    head = target.strip()
+    if head.startswith("::"):
+        head = head[2:]
+    head = head.split("::", 1)[0]
+    for stop in "<([{ \t*&":
+        index = head.find(stop)
+        if index >= 0:
+            head = head[:index]
+    return head if _LEADING_IDENT_RE.match(head) else None
+
+
+def _declared_cpp_identifiers(root_symbol) -> set[str]:
+    """C++ 심볼 트리에 **선언된 모든 식별자 이름**.
+
+    연산자 등 ASTIdentifier 가 아닌 것은 담지 않는다. 담지 않으면 그 이름은
+    "선언되지 않은 것" 으로 보여 건너뛰기 대상이 되는데, 아래 호출측이 평범한
+    식별자만 판정에 쓰므로 문제가 되지 않는다.
+    """
+    names: set[str] = set()
+    stack = [root_symbol]
+    while stack:
+        symbol = stack.pop()
+        name = getattr(getattr(symbol, "identOrOp", None), "name", None)
+        if isinstance(name, str) and name:
+            names.add(name)
+        children = getattr(symbol, "_children", None)
+        if children:
+            stack.extend(children)
+    return names
+
+
+def _install_cpp_xref_shortcut(app: Sphinx) -> None:
+    """해석될 수 없는 C++ 상호참조를 심볼 테이블 스캔 없이 즉시 포기한다.
+
+    왜: 실측(iMonAIT/docs, code-libs 재빌드)에서 `CPPDomain._resolve_xref_inner`
+    가 31.1초를 썼다. 그 중 **실패 8,203회가 17.8초**(성공 7,888회는 3.8초)다.
+    실패가 4.6배 비싼 이유는, 조회가 안쪽 스코프에서 루트까지 거슬러 올라가며
+    끝까지 못 찾으면 심볼 테이블 **전체**를 훑기 때문이다. 그리고 실패 대상은
+    `std`(3,136회), `std::string`, `std::wstring`, `uint32_t`, `QString`,
+    `ULONG` 처럼 이 프로젝트에 문서화되지 않은 외부 타입이다.
+
+    안전한 근거: C++ 조회는 스코프를 안에서 밖으로 훑으므로, 어떤 이름이 트리
+    **어디에도** 선언돼 있지 않으면 어느 스코프에서도 찾을 수 없다. 그래서 이
+    단축은 원래도 반드시 실패했을 조회만 없앤다. 실패의 결과물도 바뀌지 않는다 —
+    Sphinx 는 해석 실패 시 pending_xref 를 내용 노드로 그대로 대체한다
+    (transforms/post_transforms/__init__.py 의 `new_nodes = [contnode]`).
+    즉 링크가 걸리던 것은 그대로 걸리고, 안 걸리던 것은 그대로 안 걸린다.
+
+    형제 스코프에 `nsAit::detail::std` 같은 것이 있다면 그 이름이 집합에 들어
+    있으므로 건너뛰지 않는다. 판정은 안전한 쪽으로 실패한다.
+
+    Sphinx 내부에 의존하므로 어느 단계에서든 실패하면 원래 동작으로 돌아간다.
+    """
+    # Sphinx 내부를 건드리므로 끌 수단을 둔다. 산출물이 달라 보이는 일이 생기면
+    # 이 변수로 원래 동작과 바로 비교할 수 있다(개발 중 A/B 검증에도 쓴다).
+    if os.environ.get("MRST_NO_CPP_XREF_SHORTCUT"):
+        return
+
+    try:
+        from sphinx.domains.cpp import CPPDomain
+    except Exception:  # noqa: BLE001
+        return
+
+    if getattr(CPPDomain, "_mrr_xref_shortcut", False):
+        return
+
+    original_inner = CPPDomain._resolve_xref_inner
+
+    def _resolve_xref_inner(self, env, fromdocname, builder, typ, target, node, contnode):
+        try:
+            leading = _leading_identifier(target)
+            if leading is not None:
+                declared = getattr(self, "_mrr_declared_idents", None)
+                if declared is None:
+                    root = self.data.get("root_symbol")
+                    declared = _declared_cpp_identifiers(root) if root is not None else set()
+                    self._mrr_declared_idents = declared
+                if declared and leading not in declared:
+                    return None, None
+        except Exception:  # noqa: BLE001
+            pass   # 판정에 실패하면 그냥 원래 조회를 한다
+        return original_inner(self, env, fromdocname, builder, typ, target, node, contnode)
+
+    CPPDomain._resolve_xref_inner = _resolve_xref_inner
+    CPPDomain._mrr_xref_shortcut = True
+
+
 # ── 줄 번호 스탬핑 ───────────────────────────────────────────────────────────
 
 class SourceLineStamper:
@@ -758,6 +853,7 @@ def main(argv: list[str] | None = None) -> int:
         report["shadowSkipped"] = sorted(skipped)
 
         _trim_builder_output(app)
+        _install_cpp_xref_shortcut(app)
 
         stamper = SourceLineStamper(_load_source_map(args.out_dir))
         app.connect("doctree-resolved",
