@@ -239,6 +239,10 @@
         <source>대/소문자 구분</source>
         <translation type="unfinished">Match case</translation>
     </message>
+    <message>
+        <source>도움말(&amp;H)</source>
+        <translation type="unfinished">&amp;Help</translation>
+    </message>
     <message numerus="yes">
         <source>드롭한 항목 %n개를 처리했습니다.</source>
         <translation type="unfinished">
@@ -481,6 +485,10 @@ You will be asked about any unsaved documents first. Continue?</translation>
         <translation type="unfinished">Regular expression</translation>
     </message>
     <message>
+        <source>정보(&amp;A)...</source>
+        <translation type="unfinished">&amp;About...</translation>
+    </message>
+    <message>
         <source>제어문자 숨김</source>
         <translation type="unfinished">Control characters hidden</translation>
     </message>
@@ -663,6 +671,66 @@ Open it as text anyway?
     <message>
         <source>활성 프로젝트에 reST 문서가 없습니다.</source>
         <translation type="unfinished">The active project has no reST documents.</translation>
+    </message>
+</context>
+<context>
+    <name>QAboutDialog</name>
+    <message>
+        <source>%1 (새 버전이 있습니다)</source>
+        <translation type="unfinished">%1 (new version available)</translation>
+    </message>
+    <message>
+        <source>%1 (최신 버전입니다)</source>
+        <translation type="unfinished">%1 (up to date)</translation>
+    </message>
+    <message>
+        <source>%1 정보</source>
+        <extracomment>정보 대화상자의 제목. %1 은 제품 이름이다.</extracomment>
+        <translation type="unfinished">About %1</translation>
+    </message>
+    <message>
+        <source>(없음)</source>
+        <translation type="unfinished">(none)</translation>
+    </message>
+    <message>
+        <source>마지막 확인: %1</source>
+        <translation type="unfinished">Last checked: %1</translation>
+    </message>
+    <message>
+        <source>배포된 릴리스가 없습니다</source>
+        <translation type="unfinished">No release has been published yet</translation>
+    </message>
+    <message>
+        <source>저장소:</source>
+        <translation type="unfinished">Repository:</translation>
+    </message>
+    <message>
+        <source>지금 확인</source>
+        <translation type="unfinished">Check now</translation>
+    </message>
+    <message>
+        <source>최신 버전:</source>
+        <translation type="unfinished">Latest version:</translation>
+    </message>
+    <message>
+        <source>현재 버전:</source>
+        <translation type="unfinished">Current version:</translation>
+    </message>
+    <message>
+        <source>확인 중...</source>
+        <translation type="unfinished">Checking...</translation>
+    </message>
+    <message>
+        <source>확인(&amp;O)</source>
+        <translation type="unfinished">&amp;OK</translation>
+    </message>
+    <message>
+        <source>확인하지 못했습니다</source>
+        <translation type="unfinished">Could not check</translation>
+    </message>
+    <message>
+        <source>확인하지 않음</source>
+        <translation type="unfinished">Not checked</translation>
     </message>
 </context>
 <context>

@@ -12,6 +12,7 @@
 #include "core/solShadowBackupStore.hpp"
 #include "core/solUpdateService.hpp"
 #include "editor/QBaseEditor.hpp"
+#include "uis/dlgAbout.hpp"
 #include "uis/dlgSettings.hpp"
 #include "utils/DwmTitleBar.hpp"
 #include "utils/solBackgroundWork.hpp"
@@ -728,14 +729,23 @@ void MainWindow::createMenus()
     settingsAction->setShortcut( QKeySequence( Qt::CTRL | Qt::Key_I ) );
     settingsAction->setShortcutContext( Qt::ApplicationShortcut );
 
-    // 도움말 메뉴를 새로 만들지 않는다. 항목 하나짜리 최상위 메뉴가 생기고,
-    // 확인 주기가 바로 옆 설정에 있으므로 같은 메뉴에 두는 편이 자연스럽다.
+    // 업데이트 확인은 도움말이 아니라 여기에 둔다. 확인 주기 설정이 바로 위에
+    // 있고, 누르면 결과가 상태 표시줄/알림 바로 나오는 **동작**이라 정보 대화
+    // 상자와는 성격이 다르다.
     settingsMenu->addSeparator();
     auto* checkUpdateAction = settingsMenu->addAction( QString(), this, [this] {
         if( updateService_ != nullptr )
             updateService_->checkAsync( /*userInitiated=*/true );
     } );
     checkUpdateAction->setObjectName( QStringLiteral( "app.checkUpdate" ) );
+
+    auto* helpMenu = menuBar()->addMenu( QString() );
+    helpMenu->setObjectName( QStringLiteral( "menu.help" ) );
+    auto* aboutAction = helpMenu->addAction( QString(), this, &MainWindow::onAbout );
+    aboutAction->setObjectName( QStringLiteral( "app.about" ) );
+    // 단축키를 주지 않는다. 그러므로 mv.shortcutId 도 붙이지 않는다 —
+    // QSettingsDialog::DefaultShortcuts() 표에 없는 Id 는 아무 효과가 없어서
+    // "재정의할 수 있다" 는 착각만 남긴다.
 
     retranslateMenus();
 }
@@ -893,6 +903,9 @@ void MainWindow::retranslateMenus()
     menuTitle ( "menu.settings",      tr( "설정(&S)" ) );
     actionText( "app.settings",       tr( "설정(&I)..." ) );
     actionText( "app.checkUpdate",    tr( "업데이트 확인(&U)..." ) );
+
+    menuTitle ( "menu.help",          tr( "도움말(&H)" ) );
+    actionText( "app.about",          tr( "정보(&A)..." ) );
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1765,6 +1778,20 @@ void MainWindow::onSettings()
                 [this] { updateService_->checkAsync( /*userInitiated=*/true ); } );
         connect( updateService_, &mrst::UpdateService::stateChanged, &dlg,
                 &QSettingsDialog::refreshUpdateStatus );
+    }
+    dlg.exec();
+}
+
+void MainWindow::onAbout()
+{
+    QAboutDialog dlg( updateService_, this );
+    if( updateService_ != nullptr )
+    {
+        // 설정 대화상자와 같은 규칙이다 — 대화상자는 UpdateService 를 읽기만
+        // 하고, 점검을 시작하는 것은 그것을 가진 이쪽이다. 그래야 새 버전을
+        // 찾았을 때 알림 바까지 평소 경로대로 뜬다.
+        connect( &dlg, &QAboutDialog::updateCheckRequested, this,
+                [this] { updateService_->checkAsync( /*userInitiated=*/true ); } );
     }
     dlg.exec();
 }

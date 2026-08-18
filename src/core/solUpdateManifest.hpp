@@ -115,6 +115,12 @@ struct UpdateInfo
 /// 그 제한을 받지 않는다.
 [[nodiscard]] QUrl                      defaultManifestUrl();
 
+/// 저장소 홈. 정보 대화상자가 보여 준다.
+///
+/// 매니페스트 URL 과 **같은 상수**에서 만든다. 슬러그를 한 벌 더 적어 두면
+/// 저장소를 옮겼을 때 한쪽만 고쳐진 채로 남는다.
+[[nodiscard]] QUrl                      repositoryUrl();
+
 /// CDN 캐시를 우회할 쿼리를 붙인다. 캐시 제어 헤더보다 확실하다.
 [[nodiscard]] QUrl                      withCacheBuster( const QUrl& url, qint64 epochSeconds );
 

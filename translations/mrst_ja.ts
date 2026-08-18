@@ -236,6 +236,10 @@
         <source>대/소문자 구분</source>
         <translation type="unfinished">大文字と小文字を区別</translation>
     </message>
+    <message>
+        <source>도움말(&amp;H)</source>
+        <translation type="unfinished">ヘルプ(&amp;H)</translation>
+    </message>
     <message numerus="yes">
         <source>드롭한 항목 %n개를 처리했습니다.</source>
         <translation type="unfinished">
@@ -477,6 +481,10 @@
         <translation type="unfinished">正規表現</translation>
     </message>
     <message>
+        <source>정보(&amp;A)...</source>
+        <translation type="unfinished">バージョン情報(&amp;A)...</translation>
+    </message>
+    <message>
         <source>제어문자 숨김</source>
         <translation type="unfinished">制御文字を非表示</translation>
     </message>
@@ -657,6 +665,66 @@
     <message>
         <source>활성 프로젝트에 reST 문서가 없습니다.</source>
         <translation type="unfinished">アクティブプロジェクトに reST ドキュメントがありません。</translation>
+    </message>
+</context>
+<context>
+    <name>QAboutDialog</name>
+    <message>
+        <source>%1 (새 버전이 있습니다)</source>
+        <translation type="unfinished">%1（新しいバージョンがあります）</translation>
+    </message>
+    <message>
+        <source>%1 (최신 버전입니다)</source>
+        <translation type="unfinished">%1（最新バージョンです）</translation>
+    </message>
+    <message>
+        <source>%1 정보</source>
+        <extracomment>정보 대화상자의 제목. %1 은 제품 이름이다.</extracomment>
+        <translation type="unfinished">%1 のバージョン情報</translation>
+    </message>
+    <message>
+        <source>(없음)</source>
+        <translation type="unfinished">（なし）</translation>
+    </message>
+    <message>
+        <source>마지막 확인: %1</source>
+        <translation type="unfinished">最終確認: %1</translation>
+    </message>
+    <message>
+        <source>배포된 릴리스가 없습니다</source>
+        <translation type="unfinished">公開されたリリースがありません</translation>
+    </message>
+    <message>
+        <source>저장소:</source>
+        <translation type="unfinished">リポジトリ:</translation>
+    </message>
+    <message>
+        <source>지금 확인</source>
+        <translation type="unfinished">今すぐ確認</translation>
+    </message>
+    <message>
+        <source>최신 버전:</source>
+        <translation type="unfinished">最新バージョン:</translation>
+    </message>
+    <message>
+        <source>현재 버전:</source>
+        <translation type="unfinished">現在のバージョン:</translation>
+    </message>
+    <message>
+        <source>확인 중...</source>
+        <translation type="unfinished">確認中...</translation>
+    </message>
+    <message>
+        <source>확인(&amp;O)</source>
+        <translation type="unfinished">OK(&amp;O)</translation>
+    </message>
+    <message>
+        <source>확인하지 못했습니다</source>
+        <translation type="unfinished">確認できませんでした</translation>
+    </message>
+    <message>
+        <source>확인하지 않음</source>
+        <translation type="unfinished">未確認</translation>
     </message>
 </context>
 <context>

@@ -161,6 +161,12 @@ QUrl defaultManifestUrl()
                           QLatin1String( kManifestName ) ) );
 }
 
+QUrl repositoryUrl()
+{
+    return QUrl( QStringLiteral( "https://github.com/%1/%2" )
+                    .arg( QLatin1String( kManifestOwner ), QLatin1String( kManifestRepo ) ) );
+}
+
 QUrl withCacheBuster( const QUrl& url, const qint64 epochSeconds )
 {
     QUrl result = url;

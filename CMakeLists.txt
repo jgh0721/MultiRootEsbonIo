@@ -117,6 +117,8 @@ add_executable(${PROJECT_NAME}
         src/core/solUpdateInstaller.hpp
         src/core/solUpdateService.cpp
         src/core/solUpdateService.hpp
+        src/uis/dlgAbout.cpp
+        src/uis/dlgAbout.hpp
         src/uis/dlgSettings.cpp
         src/uis/dlgSettings.hpp
         src/uis/dlgSettings.ui

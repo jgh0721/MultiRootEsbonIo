@@ -70,6 +70,8 @@ public slots:
     void                                onCopy();
     void                                onPaste();
     void                                onSettings();
+    /// 도움말 → 정보. 아이콘/버전/저장소만 보여 주는 모달 대화상자를 띄운다.
+    void                                onAbout();
     void                                onCloseTab( int index );
     void                                onTabChanged( int index );
     void                                onThemeToggle();
