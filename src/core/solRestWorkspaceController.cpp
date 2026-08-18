@@ -310,6 +310,9 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
     } );
 
     connect( previewView_, &QWebEngineView::loadFinished, this, [this]( const bool ok ) {
+        // 성공이든 실패든 이 로드는 끝났다. 실패도 반드시 내려야 같은 URL 을
+        // 다시 시도할 수 있다.
+        previewLoadInFlight_ = false;
         previewLoadedOk_ = ok;
         if( !ok )
         {
@@ -349,6 +352,7 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
                     setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
                     previewUrl_ = pendingFullLoadUrl_;
                     previewLoadedOk_ = false;
+                    previewLoadInFlight_ = true;
                     previewBridge_->resetReady();
                     previewView_->load( previewUrl_ );
                 }
@@ -718,9 +722,6 @@ void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QStrin
         return;
     }
 
-    previewShownSize_ = size;
-    previewShownMTimeMs_ = mtimeMs;
-
     // 출력 디렉터리가 프로젝트당 하나로 고정이라 같은 문서의 URL 은 매번 같다.
     // 그대로 다시 load() 하면 Chromium 이 이전 내용을 캐시에서 낼 수 있으므로
     // 빌드 일련번호를 쿼리에 실어 다른 URL 로 만든다. file:// 에서 쿼리는 파일
@@ -728,12 +729,36 @@ void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QStrin
     QUrl url = QUrl::fromLocalFile( htmlPath );
     url.setQuery( QStringLiteral( "b=%1" ).arg( buildSerial ) );
 
+    // **똑같은 URL 을 이미 요청해 두고 아직 로드 중이면** 다시 부르지 않는다.
+    // 다시 부르면 Chromium 이 진행 중인 로드를 버리고 처음부터 시작하므로,
+    // 6MB 짜리 페이지에서는 방금 한 1.4초가 통째로 버려진다.
+    //
+    // 위쪽 가드로는 이 경우를 잡을 수 없다. 그것은 previewLoadedOk_ 를 보는데
+    // 로드 중에는 아직 false 이기 때문이다. 그리고 previewLoadedOk_ 만으로는
+    // "로드 중" 과 "끝났지만 실패" 를 구분할 수 없다 — 구분하지 않으면 실패한
+    // 로드를 같은 URL 로 다시 시도할 수 없게 된다. 그래서 별도 플래그가 필요하다.
+    //
+    // 세션 복원 중에는 setActiveDocument 와 sigFileOpened 가 같은 문서를 두 번
+    // 요청하므로 실제로 이 경로를 탄다(빌드는 sameOutcomeAs 로 접히지만, 지난
+    // 산출물을 그대로 올리는 경로는 빌드를 거치지 않아 따로 막아야 한다).
+    if( previewLoadInFlight_ && previewUrl_ == url )
+    {
+        traceP( "preview.load.skip",
+               QStringLiteral( "in-flight %1" ).arg( htmlInfo.fileName() ) );
+        // 상태 표시는 그대로 둔다. 로드가 정말 진행 중이므로 지우면 안 된다.
+        return;
+    }
+
+    previewShownSize_ = size;
+    previewShownMTimeMs_ = mtimeMs;
+
     const auto loadFullPage = [this, &url, &htmlPath, size] {
         traceP( "preview.load.begin",
                QStringLiteral( "%1 %2KB" ).arg( QFileInfo( htmlPath ).fileName() ).arg( size / 1024 ) );
         setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
         previewUrl_ = url;
         previewLoadedOk_ = false;
+        previewLoadInFlight_ = true;
         if( previewBridge_ != nullptr )
             previewBridge_->resetReady();
         previewView_->load( url );
@@ -821,6 +846,7 @@ void WorkspaceController::applyPreviewWebSettings()
     {
         setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
         previewLoadedOk_ = false;
+        previewLoadInFlight_ = true;
         if( previewBridge_ != nullptr )
             previewBridge_->resetReady();
         previewView_->load( previewUrl_ );

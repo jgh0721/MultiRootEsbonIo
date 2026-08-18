@@ -255,6 +255,12 @@ private:
     quint64                             previewGateGeneration_ = 0;
     QUrl                                previewUrl_;
     bool                                previewLoadedOk_ = false;
+    /// load() 를 부르고 아직 loadFinished 를 못 받았는가.
+    ///
+    /// previewLoadedOk_ 로는 이것을 알 수 없다 — 로드 중과 "끝났지만 실패" 가
+    /// 둘 다 false 라서, 그것만 보고 같은 URL 재요청을 막으면 실패한 로드를
+    /// 다시 시도할 수 없게 된다.
+    bool                                previewLoadInFlight_ = false;
     int                                 hotSwapToken_ = 0;
     QString                             pendingFullLoadPath_;
     /// 핫스왑이 실패했을 때 되돌아갈 URL. 캐시 무효화 쿼리까지 포함해야 한다.
