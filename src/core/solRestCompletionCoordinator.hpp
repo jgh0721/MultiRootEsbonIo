@@ -97,6 +97,8 @@ private:
     /// 팝업을 현재 편집기의 창에 붙이고 표시한다.
     /// 부모가 없는 Tool 창은 Windows 에서 메인 창 뒤로 숨을 수 있다.
     void                                showPopupAtCaret();
+    /// 이미 떠 있으면 자리를 지킨 채 크기만 다시 잡고, 아니면 캐럿 밑에 새로 띄운다.
+    void                                showOrRefreshPopup();
     /// 강조된 항목에 맞춰 목록 오른쪽 상세 패널을 갱신한다.
     void                                refreshDetailPopup( const CompletionDisplayItem& item );
     /// 컨텍스트와 항목으로 상세 패널에 넣을 제목/본문/출처를 만든다.

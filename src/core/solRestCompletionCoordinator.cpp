@@ -124,6 +124,24 @@ void CompletionCoordinator::showPopupAtCaret()
     refreshDetailPopup( popup_->currentItem() );
 }
 
+void CompletionCoordinator::showOrRefreshPopup()
+{
+    if( popup_.isNull() || activeView_.isNull() || popup_->visibleCount() <= 0 )
+        return;
+
+    if( !popup_->isVisible() )
+    {
+        showPopupAtCaret();
+        return;
+    }
+
+    // 이미 떠 있는 목록을 showAt() 으로 다시 띄우면 그동안 움직인 캐럿을 따라
+    // 옆으로 튄다. LSP 응답은 200~500ms 뒤에 오는데, 그 사이에 "../images/" 를
+    // 치면 그만큼 점프한다. 경로 완성은 타이핑이 길어 매우 잘 보인다.
+    popup_->refreshGeometry();
+    refreshDetailPopup( popup_->currentItem() );
+}
+
 void CompletionCoordinator::refreshDetailPopup( const CompletionDisplayItem& item )
 {
     if( detail_.isNull() )
@@ -221,7 +239,7 @@ void CompletionCoordinator::notifyGlossaryReady( const QString& projectId )
     offlineItems_ = local;
     popup_->setItems( offlineItems_ );
     popup_->updateFilter( shownContext_.prefix );
-    showPopupAtCaret();
+    showOrRefreshPopup();
 }
 
 void CompletionCoordinator::showHoverDetail( const QString& role, const QString& target,
@@ -504,7 +522,7 @@ void CompletionCoordinator::applyLspItems( const QString& projectId, const int r
 
     popup_->setItems( toDisplayList( merged ) );
     popup_->updateFilter( shownContext_.prefix );
-    showPopupAtCaret();
+    showOrRefreshPopup();
 }
 
 void CompletionCoordinator::notifyBuildComplete( const QString& projectId )

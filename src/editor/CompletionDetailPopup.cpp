@@ -125,15 +125,50 @@ void CompletionDetailPopup::showBesideAnchor( const QRect& anchor )
     const QScreen* screen = QGuiApplication::screenAt( anchor.topRight() );
     if( screen == nullptr )
         screen = QGuiApplication::primaryScreen();
+    const QRect available = screen != nullptr ? screen->availableGeometry() : QRect{};
 
-    QPoint target( anchor.right() + kAnchorGap, anchor.top() );
-    if( screen != nullptr && target.x() + width() > screen->availableGeometry().right() )
+    // 오른쪽 → 왼쪽 → 아래 → 위. 앞의 둘만 보고 실패하면 clampToScreen 이
+    // 화면 안으로 밀어 넣는데, 목록은 720px 까지 넓어질 수 있어서 그때
+    // 상세 패널이 목록 위에 겹친다 — 둘 다 못 읽게 된다.
+    const QPoint candidates[] = {
+        { anchor.right() + kAnchorGap, anchor.top() },
+        { anchor.left() - kAnchorGap - width(), anchor.top() },
+        { anchor.left(), anchor.bottom() + kAnchorGap },
+        { anchor.left(), anchor.top() - kAnchorGap - height() },
+    };
+
+    QPoint target = clampToScreen( candidates[ 0 ], anchor.topRight() );
+    for( const QPoint& candidate : candidates )
     {
-        // 오른쪽이 좁으면 목록 왼쪽으로 뒤집는다.
-        target.setX( anchor.left() - kAnchorGap - width() );
+        const QRect rect( candidate, size() );
+        if( !available.isNull() && !available.contains( rect ) )
+            continue;
+        if( rect.intersects( anchor ) )
+            continue;
+        target = candidate;
+        break;
     }
 
-    move( clampToScreen( target, anchor.topRight() ) );
+    // 어디에도 온전히 들어가지 않았다. 밀어 넣되 목록을 덮지 않는 쪽을 고른다.
+    if( QRect( target, size() ).intersects( anchor ) )
+    {
+        for( const QPoint& candidate : candidates )
+        {
+            const QPoint clamped = clampToScreen( candidate, anchor.center() );
+            if( !QRect( clamped, size() ).intersects( anchor ) )
+            {
+                target = clamped;
+                break;
+            }
+        }
+    }
+
+    // 위치가 그대로면 건드리지 않는다. Windows 에서 move+show+raise 를 반복하면
+    // 방향키를 훑을 때마다 패널이 깜빡인다.
+    if( isVisible() && pos() == target )
+        return;
+
+    move( target );
     show();
     raise();
 }

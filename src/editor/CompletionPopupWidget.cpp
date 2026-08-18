@@ -12,6 +12,7 @@
 #include <QPainter>
 #include <QScreen>
 #include <QScrollBar>
+#include <QSignalBlocker>
 #include <QSet>
 #include <QStyle>
 #include <QStyledItemDelegate>
@@ -296,7 +297,7 @@ CompletionPopupWidget::CompletionPopupWidget( QWidget* parent )
 
     connect( list_, &QListWidget::clicked, this, [ this ]( const QModelIndex& ) { acceptCurrent(); } );
     connect( list_, &QListWidget::currentItemChanged, this,
-             [ this ]( QListWidgetItem*, QListWidgetItem* ) { emit currentItemChanged( currentItem() ); } );
+             [ this ]( QListWidgetItem*, QListWidgetItem* ) { emitCurrentIfChanged(); } );
 }
 
 CompletionDisplayItem CompletionPopupWidget::currentItem() const
@@ -318,6 +319,7 @@ void CompletionPopupWidget::setItems( const QList< CompletionDisplayItem >& item
     allItems_ = items;
     prefix_.clear();
     rebuild();
+    emitCurrentIfChanged();
 }
 
 void CompletionPopupWidget::updateFilter( const QString& prefix )
@@ -337,6 +339,8 @@ void CompletionPopupWidget::updateFilter( const QString& prefix )
     }
     if( !keepSelected.isEmpty() )
         selectByInsertText( keepSelected );
+
+    emitCurrentIfChanged();
 }
 
 void CompletionPopupWidget::showAt( const QPoint& globalTopLeft )
@@ -347,10 +351,26 @@ void CompletionPopupWidget::showAt( const QPoint& globalTopLeft )
         return;
     }
 
+    anchor_ = globalTopLeft;
+    hasAnchor_ = true;
+    applyGeometry();
+    show();
+    raise();
+}
+
+void CompletionPopupWidget::refreshGeometry()
+{
+    if( !isVisible() || !hasAnchor_ || list_->count() == 0 )
+        return;
+    applyGeometry();
+}
+
+void CompletionPopupWidget::applyGeometry()
+{
     resizeToRows();
 
-    QPoint target = globalTopLeft;
-    const QScreen* screen = QGuiApplication::screenAt( globalTopLeft );
+    QPoint target = anchor_;
+    const QScreen* screen = QGuiApplication::screenAt( anchor_ );
     if( screen == nullptr )
         screen = QGuiApplication::primaryScreen();
     if( screen != nullptr )
@@ -362,13 +382,21 @@ void CompletionPopupWidget::showAt( const QPoint& globalTopLeft )
         if( target.y() + height() > available.bottom() )
         {
             const QFontMetrics metrics( font() );
-            target.setY( qMax( available.top(), globalTopLeft.y() - height() - metrics.height() ) );
+            target.setY( qMax( available.top(), anchor_.y() - height() - metrics.height() ) );
         }
     }
 
-    move( target );
-    show();
-    raise();
+    if( pos() != target )
+        move( target );
+}
+
+void CompletionPopupWidget::emitCurrentIfChanged()
+{
+    const QString key = currentInsertText();
+    if( key == lastEmittedInsertText_ )
+        return;
+    lastEmittedInsertText_ = key;
+    emit currentItemChanged( currentItem() );
 }
 
 bool CompletionPopupWidget::isActive() const
@@ -414,6 +442,9 @@ bool CompletionPopupWidget::acceptCurrent()
 
 void CompletionPopupWidget::hideEvent( QHideEvent* event )
 {
+    // 다시 뜰 때 같은 항목이라도 상세 패널을 새로 채워야 한다.
+    lastEmittedInsertText_.clear();
+    hasAnchor_ = false;
     QFrame::hideEvent( event );
     emit popupHidden();
 }
@@ -474,6 +505,11 @@ void CompletionPopupWidget::rebuild()
                              return left.item->label.length() < right.item->label.length();
                          } );
     }
+
+    // clear() 는 current 를 무효화해 currentItemChanged 를 흘린다. 그대로 두면
+    // 글자 하나에 상세 패널이 껐다 켜진다 (숨김 → 첫 항목 선택 → 다시 표시).
+    // 채우기가 끝난 뒤 호출자가 emitCurrentIfChanged() 로 한 번만 알린다.
+    const QSignalBlocker blocker( list_ );
 
     list_->clear();
     for( const Scored& scored : visible )

@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <QFrame>
+#include <QPoint>
 #include <QList>
 #include <QString>
 #include <QVector>
@@ -50,6 +51,11 @@ public:
     void                                updateFilter( const QString& prefix );
     /// 화면 밖으로 나가지 않도록 보정한 뒤 표시한다.
     void                                showAt( const QPoint& globalTopLeft );
+    /// 이미 떠 있는 목록을 **그 자리에** 둔 채 크기만 다시 잡는다.
+    ///
+    /// showAt() 을 다시 부르면 그동안 움직인 캐럿을 따라 목록이 옆으로 튄다.
+    /// LSP 응답은 200~500ms 뒤에 오는데 경로는 타이핑이 길어 매우 잘 보인다.
+    void                                refreshGeometry();
 
     [[nodiscard]] bool                  isActive() const;
     [[nodiscard]] int                   visibleCount() const;
@@ -79,6 +85,10 @@ protected:
 
 private:
     void                                rebuild();
+    /// 저장해 둔 앵커로 위치·크기를 다시 계산한다.
+    void                                applyGeometry();
+    /// 지금 강조된 항목이 마지막으로 알린 것과 다를 때만 currentItemChanged 를 낸다.
+    void                                emitCurrentIfChanged();
     void                                resizeToRows();
     [[nodiscard]] QString               currentInsertText() const;
     bool                                selectByInsertText( const QString& insertText );
@@ -87,6 +97,10 @@ private:
     QListWidget*                        list_ = nullptr;
     QList< CompletionDisplayItem >      allItems_;
     QString                             prefix_;
+    QPoint                              anchor_;
+    bool                                hasAnchor_ = false;
+    /// 중복 통지를 막는다. 목록을 다시 채우는 것만으로 상세 패널이 깜빡이면 안 된다.
+    QString                             lastEmittedInsertText_;
 };
 
 }  // namespace mrst
