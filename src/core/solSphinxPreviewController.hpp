@@ -30,6 +30,27 @@ struct PreviewBuildRequest
     /// 음수면 제한 없음. 사본을 반영하려면 그 문서를 매번 다시 읽어야 하는데,
     /// Breathe 문서는 그 비용이 수십 초라 편집이 멈춰 버린다.
     int                                 shadowMaxReadMs = -1;
+
+    /// 두 요청이 "같은 산출물을 낳는가".
+    ///
+    /// operator== 로 두지 않는 이유: 구조체 동일성이 아니라 도메인 판정이고,
+    /// 아래처럼 비대칭 예외가 있어서 이름이 그 사실을 말해야 한다.
+    ///
+    /// **미저장 사본이 걸린 요청은 절대 같다고 보지 않는다.** 사본 파일은 원본
+    /// 경로 해시로 이름을 만들어 문서당 하나를 재사용하므로
+    /// (WorkspaceController::writeShadowCopy) **내용이 바뀌어도 경로가 같다.**
+    /// 경로만 비교하면 편집 후 재빌드를 삼켜 버린다. 편집 경로는 디바운스가
+    /// 이미 막아 주므로 이 보수적 판정으로 잃는 것이 없다.
+    [[nodiscard]] bool                  sameOutcomeAs( const PreviewBuildRequest& other ) const
+    {
+        if( !shadowFile.isEmpty() || !other.shadowFile.isEmpty() )
+            return false;
+
+        return project.projectId == other.project.projectId
+            && pythonExe == other.pythonExe
+            && builderScript == other.builderScript
+            && sourceFile.compare( other.sourceFile, Qt::CaseInsensitive ) == 0;
+    }
 };
 
 /// 빌더가 남긴 사이드카 JSON 을 그대로 옮긴 결과.
@@ -61,6 +82,18 @@ struct PreviewBuildResult
     QString                             traceback;
 };
 
+/// 지난 빌드가 남긴 입력 지문(`<outDir>/.mrr-inputs.json`)과 지금 디스크 상태를
+/// 비교한다. **하나라도 다르거나 판정할 수 없으면 true**(=빌드해야 한다)를 낸다.
+///
+/// 왜 필요한가: 바뀐 것이 하나도 없어도 빌드 한 번이 통째로 든다(프로세스 기동 +
+/// sphinx 임포트 + 32MB environment.pickle 언피클, 실측 1.7~2.6초). 그동안
+/// 프리뷰는 비어 있다. Sphinx 도 같은 판정을 하지만 그 판정을 하려면 먼저 그
+/// 시간을 다 써야 한다.
+///
+/// **GUI 스레드에서 부르지 말 것.** 문서 수십 개에 breathe 프로젝트라면 doxygen
+/// XML 수백 개까지 stat 한다.
+[[nodiscard]] bool previewInputsChanged( const QString& outDir );
+
 /// Sphinx HTML 프리뷰 빌드를 관리한다.
 ///
 /// sphinx-build 를 직접 부르지 않고 번들 인터프리터로 mrr_sphinx_preview_build.py
@@ -76,6 +109,16 @@ public:
     [[nodiscard]] bool                  isBuilding() const;
     [[nodiscard]] QString               lastHtmlPath() const;
 
+    /// 지난 빌드가 남긴 산출물을 **빌드 없이** 그대로 읽는다.
+    /// 신뢰할 수 없으면 ok=false 를 돌려준다 — 판정은 전부 "의심스러우면
+    /// 보여 주지 않는다" 쪽이다(낡은 내용을 새것으로 오인하는 것이 최악이다).
+    [[nodiscard]] PreviewBuildResult    cachedResultFor( const PreviewBuildRequest& request ) const;
+
+    /// 프로젝트당 고정된 출력 디렉터리. 회전시키면 Sphinx 의 증분 판정이 죽는다.
+    /// active_ 에 의존하지 않고 디렉터리를 만들지도 않으므로, 빌드를 돌리기
+    /// **전에** 조회만 하는 쪽에서도 쓸 수 있다.
+    [[nodiscard]] static QString        outputDirFor( const SphinxProject& project );
+
     void                                setShadowDir( const QString& path );
     void                                setDebounceInterval( int milliseconds );
 
@@ -84,6 +127,9 @@ public:
     /// 즉시 빌드한다. 저장/탭 전환처럼 사용자가 결과를 기다리는 경우.
     void                                buildNow( const PreviewBuildRequest& request );
     void                                cancel();
+    /// 앱 종료 전용. 진행 중인 빌드를 곧바로 죽이고 기다리지 않는다.
+    /// cancel() 의 유예 타이머는 종료 스택 안에서 발화하지 못한다.
+    void                                cancelImmediately();
 
 signals:
     void                                logMessage( const QString& text );
@@ -104,7 +150,7 @@ private:
     void                                startBuild();
     void                                finishBuild( int exitCode, bool crashed, bool cancelled );
     [[nodiscard]] PreviewBuildResult    readReport( const QString& reportPath ) const;
-    /// 프로젝트당 고정된 출력 디렉터리. 회전시키면 Sphinx 의 증분 판정이 죽는다.
+    /// active_ 의 출력 디렉터리. 없으면 만든다.
     [[nodiscard]] QString               outputDir() const;
     void                                cleanupStaleOutputDirs( const QString& keepDir ) const;
     [[nodiscard]] QString               writeShadowCopy() const;
@@ -119,6 +165,8 @@ private:
     QString                             activeReportPath_;
     QString                             lastHtmlPath_;
     int                                 buildSerial_ = 0;
+    /// 계측용. preview.build.end 에 이번 빌드의 소요 시간을 실어 보낸다.
+    qint64                              buildStartedAtMs_ = 0;
     /// 이번 요청에서 이미 번들로 한 번 물러섰는가 (무한 재시도 방지).
     bool                                usedFallbackPython_ = false;
 };

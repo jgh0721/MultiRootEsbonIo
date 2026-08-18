@@ -152,7 +152,9 @@ void LspServerPool::stopProject( const QString& projectId )
     if( client == nullptr )
         return;
 
-    client->stop();
+    // 런타임 축출(프로젝트 전환/LRU)이다. 이벤트 루프가 살아 있으므로 서버가
+    // 스스로 정리할 시간을 준다 — 기다리지는 않는다.
+    client->stop( LspClient::StopMode::Graceful );
     client->deleteLater();
     emit projectEvicted( projectId );
 }
@@ -165,7 +167,11 @@ void LspServerPool::stopAll()
         LspClient* client = clients_.take( projectId );
         if( client == nullptr )
             continue;
-        client->stop();
+        // 앱 종료 경로다. 아무것도 기다리지 않는다 — 예전에는 여기서
+        // 클라이언트마다 terminate() + waitForFinished(1500) 을 순차로 돌았고,
+        // terminate() 가 창 없는 python 에 무효라 그 1.5초가 **매번 그대로**
+        // 종료 시간이 됐다(실측: 전체 종료 1.8초 중 1.5초).
+        client->stop( LspClient::StopMode::Immediate );
         delete client;   // 종료 경로라 deleteLater 를 기다릴 수 없다
     }
     lruOrder_.clear();

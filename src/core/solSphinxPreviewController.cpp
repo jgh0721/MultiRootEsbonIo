@@ -2,8 +2,11 @@
 #include "solSphinxPreviewController.hpp"
 
 #include "solUvTaskRunner.hpp"
+#include "utils/solPhaseTrace.hpp"
 
+#include <QDateTime>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -103,12 +106,170 @@ void SphinxPreviewController::cancel()
         task_->cancel();
 }
 
+void SphinxPreviewController::cancelImmediately()
+{
+    debounceTimer_->stop();
+    hasPending_ = false;
+    if( task_ )
+        task_->killNow();
+}
+
 QString SphinxPreviewController::writeShadowCopy() const
 {
     if( pending_.shadowFile.isEmpty() || shadowDir_.isEmpty() )
         return {};
 
     return pending_.shadowFile;   // 호출 측이 이미 파일로 만들어 넘긴다.
+}
+
+bool previewInputsChanged( const QString& outDir )
+{
+    // 빌더가 쓰는 이름과 같아야 한다 (mrr_sphinx_preview_build.py 의 INPUTS_NAME).
+    QFile file( QDir( outDir ).filePath( QStringLiteral( ".mrr-inputs.json" ) ) );
+    if( !file.open( QIODevice::ReadOnly ) )
+    {
+        traceP( "preview.gate.miss", QStringLiteral( "no-inputs-file" ) );
+        return true;
+    }
+
+    const QJsonObject root = QJsonDocument::fromJson( file.readAll() ).object();
+    file.close();
+
+    if( root.value( QStringLiteral( "schema" ) ).toInt() != 1 )
+    {
+        traceP( "preview.gate.miss", QStringLiteral( "schema" ) );
+        return true;
+    }
+
+    const QJsonArray files = root.value( QStringLiteral( "files" ) ).toArray();
+    if( files.isEmpty() )
+    {
+        traceP( "preview.gate.miss", QStringLiteral( "empty-inputs" ) );
+        return true;
+    }
+
+    for( const QJsonValue& value : files )
+    {
+        const QJsonObject entry = value.toObject();
+        const QFileInfo info( entry.value( QStringLiteral( "p" ) ).toString() );
+        if( !info.exists() )
+        {
+            traceP( "preview.gate.miss", QStringLiteral( "gone %1" ).arg( info.fileName() ) );
+            return true;
+        }
+        if( info.size() != entry.value( QStringLiteral( "s" ) ).toInteger() )
+        {
+            traceP( "preview.gate.miss", QStringLiteral( "size %1" ).arg( info.fileName() ) );
+            return true;
+        }
+        // 빌더는 ns 로 남긴다. Qt 는 ms 까지만 주므로 ms 로 맞춰 비교한다.
+        const qint64 recordedMs = entry.value( QStringLiteral( "m" ) ).toInteger() / 1000000;
+        if( info.lastModified().toMSecsSinceEpoch() != recordedMs )
+        {
+            traceP( "preview.gate.miss", QStringLiteral( "mtime %1" ).arg( info.fileName() ) );
+            return true;
+        }
+    }
+
+    // 목록에 없던 **새 문서**가 생기는 것은 위 비교로 잡히지 않는다. 개수로 잡는다.
+    const QString sourceDir = root.value( QStringLiteral( "sourceDir" ) ).toString();
+    QStringList suffixes;
+    for( const QJsonValue& value : root.value( QStringLiteral( "sourceSuffixes" ) ).toArray() )
+        suffixes << value.toString();
+
+    if( !sourceDir.isEmpty() && !suffixes.isEmpty() )
+    {
+        int count = 0;
+        QDirIterator it( sourceDir, QDir::Files, QDirIterator::Subdirectories );
+        while( it.hasNext() )
+        {
+            it.next();
+            if( suffixes.contains( QLatin1Char( '.' ) + it.fileInfo().suffix() ) )
+                ++count;
+        }
+        if( count != root.value( QStringLiteral( "sourceCount" ) ).toInt( -1 ) )
+        {
+            traceP( "preview.gate.miss", QStringLiteral( "source-count %1" ).arg( count ) );
+            return true;
+        }
+    }
+
+    traceP( "preview.gate.hit", QStringLiteral( "%1 inputs" ).arg( files.size() ) );
+    return false;
+}
+
+PreviewBuildResult SphinxPreviewController::cachedResultFor( const PreviewBuildRequest& request ) const
+{
+    PreviewBuildResult result;
+    const QString outDir = outputDirFor( request.project );
+
+    // 중단된 빌드가 남긴 표식. 그때는 쓰다 만 HTML 이 최신 mtime 으로 남아 있다
+    // (빌더의 BUILDING_SENTINEL / _claim_out_dir 참고). 절대 보여 주면 안 된다.
+    if( QFileInfo::exists( QDir( outDir ).filePath( QStringLiteral( ".mrr-building" ) ) ) )
+    {
+        traceP( "preview.stale.miss", QStringLiteral( "build-sentinel" ) );
+        return result;
+    }
+
+    result = readReport( QDir( outDir ).filePath( QStringLiteral( ".mrr-build.json" ) ) );
+    if( !result.ok || result.htmlPath.isEmpty() )
+    {
+        traceP( "preview.stale.miss", QStringLiteral( "report-not-ok" ) );
+        result.ok = false;
+        return result;
+    }
+
+    // 리포트에는 "무엇을 요청했는가" 가 없다. docname 으로 짝을 확인한다.
+    // 소스 루트 기준 상대 경로에서 확장자를 떼면 Sphinx 의 docname 과 같아진다.
+    // source_suffix 가 기본이 아닌 프로젝트에서는 계산이 어긋나는데, 그때는
+    // 불일치로 판정되어 **틀리는 쪽이 아니라 안 보여 주는 쪽으로** 실패한다.
+    const QDir sourceRoot( toCanonicalQString( request.project.sourcePath ) );
+    QString docname = sourceRoot.relativeFilePath( request.sourceFile );
+    docname.replace( QLatin1Char( '\\' ), QLatin1Char( '/' ) );
+    const qsizetype dot = docname.lastIndexOf( QLatin1Char( '.' ) );
+    if( dot > 0 )
+        docname.truncate( dot );
+
+    if( docname.compare( result.primaryDocname, Qt::CaseInsensitive ) != 0 )
+    {
+        traceP( "preview.stale.miss",
+               QStringLiteral( "docname %1 != %2" ).arg( docname, result.primaryDocname ) );
+        result.ok = false;
+        return result;
+    }
+
+    const QFileInfo htmlInfo( result.htmlPath );
+    if( !htmlInfo.exists() || htmlInfo.size() <= 0 )
+    {
+        traceP( "preview.stale.miss", QStringLiteral( "html-missing" ) );
+        result.ok = false;
+        return result;
+    }
+
+    // 원본이 HTML 보다 새로우면 그 사이 외부 도구(git pull 등)가 바꾼 것이다.
+    // 입력 지문이 이미 이것을 잡지만, 지문이 놓치는 경로(지문 파일만 지워진
+    // 경우 등)를 위해 한 겹 더 둔다.
+    const QFileInfo sourceInfo( request.sourceFile );
+    if( sourceInfo.exists() && sourceInfo.lastModified() > htmlInfo.lastModified() )
+    {
+        traceP( "preview.stale.miss", QStringLiteral( "source-newer" ) );
+        result.ok = false;
+        return result;
+    }
+
+    result.projectId = QString::fromStdWString( request.project.projectId );
+    result.sourceFile = request.sourceFile;
+    // 이 결과는 새 빌드가 아니다. 일련번호를 올리지 않아야 showPreviewHtml() 의
+    // "이미 같은 것을 띄웠다" 판정이 살아 있다.
+    result.serial = buildSerial_;
+    return result;
+}
+
+QString SphinxPreviewController::outputDirFor( const SphinxProject& project )
+{
+    const QString buildRoot = toCanonicalQString( project.buildPath );
+    const QString previewRoot = QDir( buildRoot ).filePath( QStringLiteral( "preview-html" ) );
+    return QDir( previewRoot ).filePath( QStringLiteral( "html" ) );
 }
 
 QString SphinxPreviewController::outputDir() const
@@ -118,9 +279,7 @@ QString SphinxPreviewController::outputDir() const
     // 공유해 읽기를 증분으로 만들어도 쓰기가 전량이면 소용이 없다. Breathe 로
     // API 문서를 싣는 프로젝트에서는 그 재작성만 60초를 넘긴다(실측: HTML 36MB,
     // 그중 한 파일이 22MB). 디렉터리를 고정해야 증분 판정이 살아난다.
-    const QString buildRoot = toCanonicalQString( active_.project.buildPath );
-    const QString previewRoot = QDir( buildRoot ).filePath( QStringLiteral( "preview-html" ) );
-    const QString outDir = QDir( previewRoot ).filePath( QStringLiteral( "html" ) );
+    const QString outDir = outputDirFor( active_.project );
     QDir().mkpath( outDir );
     return outDir;
 }
@@ -158,7 +317,19 @@ void SphinxPreviewController::startBuild()
     // 않는다. 게다가 고정 출력 디렉터리에서는 중단된 빌드가 **쓰다 만 HTML** 을
     // 남긴다(회수는 빌더 쪽 sentinel 이 한다).
     if( isBuilding() )
+    {
+        // 지금 도는 빌드와 완전히 같은 요청이면 큐에 남길 이유가 없다.
+        // 세션 복원 중에는 setActiveDocument 와 sigFileOpened 람다가 같은 문서로
+        // 두 번 요청하므로, 그대로 두면 finishBuild() 가 끝난 빌드를 그대로 다시
+        // 돌린다(실측 기준 빌드 한 벌 + 산출 HTML 재로드 한 벌이 통째로 낭비다).
+        if( hasPending_ && pending_.sameOutcomeAs( active_ ) )
+        {
+            hasPending_ = false;
+            traceP( "preview.build.dedup",
+                   QFileInfo( active_.sourceFile ).fileName() );
+        }
         return;
+    }
 
     const bool continuingFallback = usedFallbackPython_;
     active_ = pending_;
@@ -218,6 +389,8 @@ void SphinxPreviewController::startBuild()
     task_ = task;
 
     const QString projectId = QString::fromStdWString( active_.project.projectId );
+    traceP( "preview.build.begin", QFileInfo( active_.sourceFile ).fileName() );
+    buildStartedAtMs_ = QDateTime::currentMSecsSinceEpoch();
     emit buildStarted( projectId );
 
     connect( task, &UvTask::outputLine, this, &SphinxPreviewController::logMessage );
@@ -291,7 +464,22 @@ void SphinxPreviewController::finishBuild( const int exitCode, const bool crashe
         emit logMessage( result.ok ? tr( "프리뷰 빌드 완료" ) : tr( "프리뷰 빌드 실패" ) );
     }
 
+    traceP( "preview.build.end",
+           QStringLiteral( "%1ms ok=%2 processed=%3 %4" )
+               .arg( QDateTime::currentMSecsSinceEpoch() - buildStartedAtMs_ )
+               .arg( result.ok ? 1 : 0 )
+               .arg( result.processedSources.size() )
+               .arg( QFileInfo( active_.sourceFile ).fileName() ) );
+
     emit buildFinished( result );
+
+    // 방금 끝난 것과 같은 요청은 다시 돌리지 않는다 — 결과가 이미 화면에 있다.
+    // 실패한 빌드는 예외로 남긴다(다시 시도할 기회가 있어야 한다).
+    if( hasPending_ && result.ok && pending_.sameOutcomeAs( active_ ) )
+    {
+        hasPending_ = false;
+        traceP( "preview.build.dedup", QFileInfo( active_.sourceFile ).fileName() );
+    }
 
     // 빌드 중 새 요청이 들어왔으면 이어서 처리한다.
     if( hasPending_ )

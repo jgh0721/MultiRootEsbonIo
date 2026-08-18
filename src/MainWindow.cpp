@@ -14,6 +14,10 @@
 #include "editor/QBaseEditor.hpp"
 #include "uis/dlgSettings.hpp"
 #include "utils/DwmTitleBar.hpp"
+#include "utils/solPhaseTrace.hpp"
+
+#include <QWebEnginePage>
+#include <QWebEngineScriptCollection>
 
 #include <QActionGroup>
 #include <QMenuBar>
@@ -297,6 +301,10 @@ namespace
 
     /// 창이 뜨고 나서 업데이트를 확인하기까지의 여유.
     /// 첫 페인트와 파이썬 부트스트랩 시작이 먼저 지나가게 둔다.
+    /// 첫 페인트가 오지 않을 때 기동 단계를 강제로 넘기는 안전망.
+    /// 최소화 상태로 시작하면 Paint 이벤트가 오지 않는다.
+    constexpr int kStartupPaintFallbackMs = 400;
+
     constexpr int kUpdateFirstCheckDelayMs = 5000;
     /// 며칠씩 켜 두는 앱이라 기동 시 한 번만 보면 주기 설정이 무의미해진다.
     constexpr int kUpdateHeartbeatMs = 6 * 60 * 60 * 1000;
@@ -355,7 +363,10 @@ namespace
 MainWindow::MainWindow( QWidget* parent )
     : QMainWindow( parent )
 {
+    const mrst::PhaseSpan ctorSpan( "ctor" );
+    mrst::traceP( "ui.setupUi.begin" );
     Ui.setupUi( this );
+    mrst::traceP( "ui.setupUi.end" );
     setWindowTitle( tr( "MultiRoot reST Editor" ) );
     resize( 1024, 768 );
     setAcceptDrops( true );
@@ -390,8 +401,9 @@ MainWindow::MainWindow( QWidget* parent )
     // WA_OpaquePaintEvent 는 붙이지 않는다. QTabWidget 은 탭 베이스와 프레임만 그려
     // 자기 영역을 전부 채우지 않으므로, 배경 지우기를 끄면 리사이즈 때 잔상이 남는다.
 
-    //: 문서를 열기 전 프리뷰 영역에 보이는 시작 화면. <h1>/<p> 태그는 그대로 둘 것.
-    Ui.webEngineView->setHtml( tr( "<h1>MultiRoot reST</h1><p>셸이 시작되었습니다.</p>" ) );
+    // 시작 화면(setHtml)과 컨트롤러 연결은 여기서 하지 않는다. 둘 다 page() 를
+    // 만들어 Chromium 을 통째로 띄우고(실측 424~1254ms), 그 시점은 첫 프레임보다
+    // 앞이라 그동안 창이 아무것도 그리지 못한다. initialisePreview() 로 미룬다.
 
     Ui.splFolderWithOutlineOnSide->setMinimumWidth( 200 );
     Ui.frmBottom->setMinimumHeight( 150 );
@@ -462,8 +474,8 @@ MainWindow::MainWindow( QWidget* parent )
     }
 
     // Sphinx/Esbonio 조율자. 탭이 복원되기 전에 먼저 만들어 둔다.
+    // 프리뷰 위젯 주입은 initialisePreview() 에서 한다 — 그것이 Chromium 을 띄운다.
     controller_ = new mrst::WorkspaceController( this );
-    controller_->setPreviewView( Ui.webEngineView );
     connect( controller_, &mrst::WorkspaceController::logMessage, this, &MainWindow::appendLog );
     connect( controller_, &mrst::WorkspaceController::navigateRequested, this,
             [this]( const QString& path, const int line, const int column ) {
@@ -485,29 +497,89 @@ MainWindow::MainWindow( QWidget* parent )
                 showMissingDependencies( distributions + themes );
             } );
 
-    if( settings.value( "textView/hotExitEnabled", true ).toBool() )
+    // hot-exit 복원과 세션 복원은 advanceStartupPhase() 가 첫 페인트 뒤에 한다.
+    // 백업 디렉터리 전량 스캔 + 탭 생성이 전부 첫 프레임 앞을 막던 자리다.
+}
+
+void MainWindow::setStartupPaths( const QStringList& paths )
+{
+    startupPaths_ = paths;
+}
+
+void MainWindow::showEvent( QShowEvent* event )
+{
+    QMainWindow::showEvent( event );
+
+    // 최소화 상태로 시작하는 등 Paint 가 오지 않는 경우가 있다. 어느 쪽이 먼저든
+    // advanceStartupPhase() 는 멱등이라 한 번만 실행된다.
+    QTimer::singleShot( kStartupPaintFallbackMs, this, &MainWindow::advanceStartupPhase );
+}
+
+void MainWindow::advanceStartupPhase()
+{
+    if( startupPhase_ != StartupPhase::Shell || m_shuttingDown )
+        return;
+    startupPhase_ = StartupPhase::Ready;
+
+    const mrst::PhaseSpan span( "phase.ready" );
+
+    // 프리뷰를 **복원보다 먼저** 붙인다. 탭이 열리면서 곧바로 프리뷰 빌드가
+    // 요청되는데, 그때 previewView_ 가 없으면 결과가 조용히 버려진다
+    // (WorkspaceController::onPreviewFinished 의 조기 반환).
+    initialisePreview();
+
+    restoreHotExitSnapshots();
+
+    if( !startupPaths_.isEmpty() )
+        openStartupPaths( startupPaths_ );
+    else
+        restoreLastSession();
+}
+
+void MainWindow::initialisePreview()
+{
+    if( previewInitialised_ || Ui.webEngineView == nullptr )
+        return;
+    previewInitialised_ = true;
+
+    const mrst::PhaseSpan span( "preview.init" );
+
+    //: 문서를 열기 전 프리뷰 영역에 보이는 시작 화면. <h1>/<p> 태그는 그대로 둘 것.
+    Ui.webEngineView->setHtml( tr( "<h1>MultiRoot reST</h1><p>셸이 시작되었습니다.</p>" ) );
+
+    // 생성자의 applyCurrentTheme() 는 page() 가 없어 바탕색을 못 칠했다. 지금 칠한다.
+    Ui.webEngineView->page()->setBackgroundColor( ThemeManager::instance().backgroundColor() );
+
+    if( controller_ )
+        controller_->setPreviewView( Ui.webEngineView );
+}
+
+void MainWindow::restoreHotExitSnapshots()
+{
+    if( !AppSettings().value( "textView/hotExitEnabled", true ).toBool() )
+        return;
+
+    const mrst::PhaseSpan hotExitSpan( "hotexit.scan" );
+    const QList<TextShadowBackupStore::Snapshot> hotExitSnapshots = TextShadowBackupStore::restorableSnapshots( false );
+    mrst::traceP( "hotexit.snapshots", QString::number( hotExitSnapshots.size() ) );
+    for( const TextShadowBackupStore::Snapshot& snapshot : hotExitSnapshots )
     {
-        const QList<TextShadowBackupStore::Snapshot> hotExitSnapshots = TextShadowBackupStore::restorableSnapshots( false );
-        for( const TextShadowBackupStore::Snapshot& snapshot : hotExitSnapshots )
+        if( snapshot.isUntitled )
         {
-            if( snapshot.isUntitled )
+            auto* view = new QTextView( this );
+            applyPersistedViewSettings( view );
+            applyThemeToView( view );
+            if( !view->openHotExitBackup( snapshot.untitledId ) )
             {
-                auto* view = new QTextView( this );
-                applyPersistedViewSettings( view );
-                applyThemeToView( view );
-                if( !view->openHotExitBackup( snapshot.untitledId ) )
-                {
-                    delete view;
-                    continue;
-                }
-                addViewTab( view );
+                delete view;
                 continue;
             }
-
-            openFile( snapshot.originalFilePath );
+            addViewTab( view );
+            continue;
         }
-    }
 
+        openFile( snapshot.originalFilePath );
+    }
 }
 
 MainWindow::~MainWindow()
@@ -633,6 +705,19 @@ void MainWindow::createMenus()
     unfoldAllAction->setObjectName( QStringLiteral( "editor.unfoldAll" ) );
     unfoldAllAction->setShortcut( QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_Plus ) );
     unfoldAllAction->setShortcutContext( Qt::WindowShortcut );
+
+    // 프리뷰는 입력 파일이 바뀌지 않으면 다시 빌드하지 않는다(설정
+    // preview/skipUnchangedBuild). 그 판정이 놓치는 입력이 있을 수 있으므로
+    // 사용자가 강제할 수단이 반드시 있어야 한다.
+    viewMenu->addSeparator();
+    auto* rebuildPreviewAction = viewMenu->addAction( QString(), this, [this] {
+        if( controller_ )
+            controller_->requestPreviewBuild( /*immediate=*/true, /*forceRebuild=*/true );
+    } );
+    rebuildPreviewAction->setObjectName( QStringLiteral( "preview.rebuild" ) );
+    rebuildPreviewAction->setProperty( "mv.shortcutId", QStringLiteral( "preview.rebuild" ) );
+    rebuildPreviewAction->setShortcut( QKeySequence( Qt::Key_F5 ) );
+    rebuildPreviewAction->setShortcutContext( Qt::ApplicationShortcut );
 
     auto* settingsMenu = menuBar()->addMenu( QString() );
     settingsMenu->setObjectName( QStringLiteral( "menu.settings" ) );
@@ -801,6 +886,7 @@ void MainWindow::retranslateMenus()
     actionText( "view.themeToggle",   tr( "테마 전환" ) );
     actionText( "editor.foldAll",     tr( "모두 접기(&F)" ) );
     actionText( "editor.unfoldAll",   tr( "모두 펼치기(&U)" ) );
+    actionText( "preview.rebuild",    tr( "프리뷰 다시 빌드(&R)" ) );
 
     menuTitle ( "menu.settings",      tr( "설정(&S)" ) );
     actionText( "app.settings",       tr( "설정(&I)..." ) );
@@ -926,6 +1012,10 @@ void MainWindow::openFile( const QString& filePath )
     const QString normalizedPath = normalizeFilePath( filePath );
     if( normalizedPath.isEmpty() ) return;
 
+    // 창이 뜬 직후(기동 단계가 아직 Shell 일 때) 사용자가 메뉴나 드롭으로 파일을
+    // 열 수 있다. 프리뷰가 아직 없으면 곧바로 요청될 빌드 결과가 조용히 버려진다.
+    initialisePreview();
+
     for( int i = 0; i < m_tabWidget->count(); ++i )
     {
         auto* view = dynamic_cast< QBaseView* >( m_tabWidget->widget( i ) );
@@ -938,6 +1028,7 @@ void MainWindow::openFile( const QString& filePath )
 
     if( shouldConfirmBinaryTextOpen( normalizedPath ) && !confirmOpenBinaryTextFile( normalizedPath ) )
         return;
+    mrst::traceP( "tab.open", QFileInfo( normalizedPath ).fileName() );
 
     QBaseView* view = createViewForFile( normalizedPath );
     if( !view )
@@ -1044,7 +1135,12 @@ void MainWindow::applyCurrentTheme()
 
     // 프리뷰가 아직 아무것도 안 그렸거나 리사이즈로 새 영역이 드러났을 때
     // Chromium 이 칠하는 바탕색. 기본값(흰색)이면 다크 테마에서 번쩍인다.
-    if( Ui.webEngineView != nullptr && Ui.webEngineView->page() != nullptr )
+    //
+    // previewInitialised_ 를 먼저 보는 이유: QWebEngineView::page() 는 페이지가
+    // 없으면 **만들어 버린다.** 즉 `page() != nullptr` 은 검사가 아니라 생성이고,
+    // 생성자에서 이 함수를 부르는 순간 Chromium 이 통째로 뜬다. 초기화 전에는
+    // 건드리지 않고, initialisePreview() 가 같은 색을 칠한다.
+    if( previewInitialised_ && Ui.webEngineView != nullptr )
         Ui.webEngineView->page()->setBackgroundColor( themeManager.backgroundColor() );
 
     for( int i = 0; i < m_tabWidget->count(); ++i )
@@ -1491,6 +1587,25 @@ void MainWindow::onCloseTab( int index )
 
 void MainWindow::closeEvent( QCloseEvent* event )
 {
+    mrst::traceP( "close.enter" );
+
+    // 종료 의사를 **저장 확인보다 먼저** 알린다. 아래 루프의 setCurrentIndex() 가
+    // onTabChanged 를 일으켜 프리뷰 빌드와 LSP 프로세스를 새로 띄우고, 저장이
+    // 성공하면 notifyDocumentSaved() 가 용어집 전량 재스캔까지 던진다.
+    // 컨트롤러의 shuttingDown_ 가드는 이미 그 경로를 전부 막고 있는데,
+    // 지금까지는 shutdown() 에서야 켜져서(=아래 shutdownUi 이후) 소용이 없었다.
+    if( controller_ )
+        controller_->beginShutdown();
+
+    // 사용자가 취소를 눌러 종료가 되돌아가는 경로가 둘 있다. 어느 쪽이든
+    // 표시를 되돌리고 활성 문서를 다시 반영해야 프리뷰/LSP 가 되살아난다.
+    const auto abortShutdown = [this] {
+        if( controller_ == nullptr )
+            return;
+        controller_->endShutdown();
+        controller_->setActiveDocument( textViewOf( currentView() ) );
+    };
+
     if( m_tabWidget )
     {
         for( int i = 0; i < m_tabWidget->count(); ++i )
@@ -1514,6 +1629,7 @@ void MainWindow::closeEvent( QCloseEvent* event )
                         // 종료를 되돌리면 설치 예약도 함께 취소해야 한다. 남겨 두면
                         // 다음 종료 때 사용자가 요청하지 않은 설치가 시작된다.
                         pendingInstall_ = false;
+                        abortShutdown();
                         event->ignore();
                         return;
                     }
@@ -1522,6 +1638,7 @@ void MainWindow::closeEvent( QCloseEvent* event )
                         if( !saveView( view, true ) )
                         {
                             pendingInstall_ = false;
+                            abortShutdown();
                             event->ignore();
                             return;
                         }
@@ -1530,10 +1647,13 @@ void MainWindow::closeEvent( QCloseEvent* event )
             }
         }
     }
+    mrst::traceP( "close.prompts-done" );
 
     saveWorkspaceSessionNow();
+    mrst::traceP( "close.session-saved" );
 
     shutdownUi();
+    mrst::traceP( "close.ui-shutdown" );
 
     // 여기까지 왔으면 저장 확인을 모두 통과했고, shutdownUi() 가 LSP/프리뷰/
     // WebEngine 자식 프로세스를 정리했다(Job Object 덕에 손자 sphinx_agent 까지).
@@ -1547,6 +1667,7 @@ void MainWindow::closeEvent( QCloseEvent* event )
         }
     }
 
+    mrst::traceP( "close.leave" );
     QMainWindow::closeEvent( event );
 }
 
@@ -1929,6 +2050,25 @@ bool MainWindow::eventFilter( QObject* watched, QEvent* event )
         return QMainWindow::eventFilter( watched, event );
 
     const QEvent::Type type = event->type();
+
+    // 첫 페인트가 곧 "사용자가 창을 본 시각" 이다. show() 는 페인트를 예약만 하고
+    // exec() 전에는 아무것도 그려지지 않으므로, 그 전에 시작한 무거운 일은 전부
+    // 창이 비어 있는 시간이 된다. 이 이벤트는 아직 처리되지 않았으니 실제로
+    // 그려진 뒤로 미룬다(0ms 큐잉).
+    //
+    // window() == this 로 좁히는 이유: QMainWindow 자신은 자식에 완전히 덮이면
+    // Paint 를 못 받을 수 있다. 어느 자식이 먼저 그려지든 잡아야 한다.
+    if( !firstPaintSeen_ && type == QEvent::Paint )
+    {
+        if( auto* painted = qobject_cast< QWidget* >( watched );
+            painted != nullptr && painted->window() == this )
+        {
+            firstPaintSeen_ = true;
+            mrst::traceP( "firstpaint" );
+            QTimer::singleShot( 0, this, &MainWindow::advanceStartupPhase );
+        }
+    }
+
     if( type != QEvent::DragEnter && type != QEvent::DragMove && type != QEvent::Drop )
         return QMainWindow::eventFilter( watched, event );
 
@@ -2146,10 +2286,47 @@ void MainWindow::shutdownUi()
 {
     if( m_shuttingDown ) return;
     m_shuttingDown = true;
+    mrst::traceP( "shutdownUi.enter" );
 
     // LSP/프리뷰 프로세스는 위젯 파괴보다 먼저 정리해야 고아 프로세스가 남지 않는다.
     if( controller_ )
         controller_->shutdown();
+    mrst::traceP( "shutdownUi.controller-shutdown" );
+
+    // 진행 중인 업데이트 확인/내려받기를 끊는다. 다만 설치가 예약돼 있으면
+    // 건드리지 않는다 — launchInstaller() 가 ReadyToInstall 상태를 요구한다.
+    if( updateService_ != nullptr && !pendingInstall_ )
+        updateService_->cancel();
+
+    // 워크스페이스 전체를 감시하던 파일시스템 모델을 놓아 준다.
+    // QFileSystemModel 은 내부에 수집 스레드를 두고 있어, 놓지 않으면 종료
+    // 직전까지 배경 I/O 가 계속 돈다.
+    if( treLeftFolderTreeModel_ != nullptr )
+    {
+        if( Ui.treLeftSideFolterTree != nullptr )
+            Ui.treLeftSideFolterTree->setModel( nullptr );
+        treLeftFolderTreeModel_->setRootPath( QString{} );
+    }
+
+    // 프리뷰 정리. 진행 중인 로드를 끊는 것이 핵심이다 — 이 저장소의 Breathe
+    // 페이지는 하나가 6~22MB 라, 로딩 중에 닫으면 그 파싱이 종료를 붙잡는다.
+    //
+    // setHtml({}) 은 하지 않는다: 비동기 내비게이션이라 종료 스택 안에서
+    // 완료되지 않고 취소 대상만 늘어난다. 뷰를 delete 하지도 않는다 —
+    // 폼(mainWindow.ui)의 자식이라 이중 delete 가 된다.
+    if( Ui.webEngineView != nullptr )
+    {
+        Ui.webEngineView->stop();
+        if( QWebEnginePage* page = Ui.webEngineView->page() )
+        {
+            // PreviewBridge 는 controller_ 의 자식이라 방금 사라졌다.
+            // 채널을 떼지 않으면 페이지가 죽은 객체를 가리킨다.
+            page->setWebChannel( nullptr );
+            page->scripts().clear();
+        }
+        Ui.webEngineView->hide();
+    }
+    mrst::traceP( "shutdownUi.web-cleared" );
 
     qDebug().noquote() << "[MainWindow] shutdownUi begin" << this
         << "tabCount=" << ( m_tabWidget ? m_tabWidget->count() : -1 );
@@ -2221,6 +2398,7 @@ void MainWindow::shutdownUi()
 
         delete widget;
     }
+    mrst::traceP( "shutdownUi.tabs-torn-down" );
 
     qDebug().noquote() << "[MainWindow] shutdownUi end" << this;
 }
@@ -2712,6 +2890,7 @@ void MainWindow::saveWorkspaceSessionNow()
 
 void MainWindow::restoreLastSession()
 {
+    const mrst::PhaseSpan restoreSpan( "session.restore" );
     const QString lastRoot = AppSettings().value( QStringLiteral( "workspace/lastRoot" ) ).toString();
     if( lastRoot.isEmpty() || !QFileInfo( lastRoot ).isDir() )
         return;
@@ -2721,6 +2900,12 @@ void MainWindow::restoreLastSession()
     const mrst::WorkspaceSession session = mrst::loadWorkspaceSession( lastRoot );
     if( session.documents.isEmpty() )
         return;   // 워크스페이스만 되살렸다
+
+    // 탭을 여는 동안에는 활성 문서 반영을 미룬다. addViewTab() 이 탭마다
+    // setActiveDocument() 를 부르므로, 미루지 않으면 첫 프리뷰 빌드가 0번 탭
+    // 것으로 나가고 사용자가 볼 문서의 빌드는 그것이 끝난 뒤에야 시작한다.
+    if( controller_ )
+        controller_->beginBatchRestore();
 
     for( const mrst::OpenDocumentState& document : session.documents )
     {
@@ -2740,6 +2925,16 @@ void MainWindow::restoreLastSession()
 
     if( session.activeIndex >= 0 && session.activeIndex < m_tabWidget->count() )
         m_tabWidget->setCurrentIndex( session.activeIndex );
+
+    // setCurrentIndex() 가 인덱스를 바꾸지 않으면(활성 탭이 이미 0번) onTabChanged 가
+    // 나지 않는다. 그러면 배치가 기억한 대상이 마지막으로 열린 탭에 머무르므로,
+    // 지금 실제 활성 탭을 명시적으로 한 번 더 알려 준다(아직 가드가 켜져 있어
+    // 대상만 기록된다). 그 다음 endBatchRestore() 가 한 번만 반영한다.
+    if( controller_ )
+    {
+        controller_->setActiveDocument( textViewOf( currentView() ) );
+        controller_->endBatchRestore();
+    }
 
     // 캐럿 복원은 파일 로드가 비동기라 지금 하면 덮인다. 로드가 끝난 뒤에 옮긴다.
     for( int index = 0; index < m_tabWidget->count() && index < session.documents.size(); ++index )
@@ -3147,10 +3342,20 @@ void MainWindow::openStartupPaths( const QStringList& paths )
     // 파일이 첫 인자면 상위 폴더를 워크스페이스로 삼아야 프로젝트 스캔이 동작한다.
     setWorkspace( first.isDir() ? first.absoluteFilePath() : first.absolutePath() );
 
+    // 세션 복원과 같은 이유로 활성 문서 반영을 마지막 한 번으로 접는다.
+    if( controller_ )
+        controller_->beginBatchRestore();
+
     for( const QString& path : paths )
     {
         const QFileInfo info( path );
         if( info.exists() && info.isFile() )
             openFile( info.absoluteFilePath() );
+    }
+
+    if( controller_ )
+    {
+        controller_->setActiveDocument( textViewOf( currentView() ) );
+        controller_->endBatchRestore();
     }
 }

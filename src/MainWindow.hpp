@@ -50,6 +50,15 @@ public:
     void openStartupPaths( const QStringList& paths );
     /// 명령줄 인자가 없을 때, 마지막 워크스페이스와 열려 있던 탭을 되살린다.
     void restoreLastSession();
+
+    /// 기동 시 열 경로를 기억해 둔다. 비면 지난 세션을 복원한다.
+    ///
+    /// 왜 여기서 바로 열지 않는가: main() 의 show() 는 페인트를 **예약만** 하고
+    /// 실제 첫 프레임은 exec() 가 이벤트 루프를 돌려야 나온다. 그래서 show() 와
+    /// exec() 사이에서 탭을 열면 그 시간이 통째로 "창이 아무것도 안 그리는 시간"
+    /// 이 된다. 실제 열기는 첫 페인트 뒤 advanceStartupPhase() 가 한다.
+    void setStartupPaths( const QStringList& paths );
+
     QBaseView* currentView() const;
 
 public slots:
@@ -69,6 +78,8 @@ public slots:
 
 protected:
     bool                                eventFilter( QObject* watched, QEvent* event ) override;
+    /// 첫 페인트가 오지 않는 경우(최소화 상태로 시작 등)의 안전망을 건다.
+    void                                showEvent( QShowEvent* event ) override;
     /// QEvent::LanguageChange 를 여기서 받는다. 앱 전역 eventFilter 가 아니라
     /// 이쪽인 이유는 retranslateUi() 옆 주석에 적어 두었다.
     void                                changeEvent( QEvent* event ) override;
@@ -183,6 +194,32 @@ private:
     QStringList                         m_recentFiles;
     static constexpr int                MaxRecentFiles = 10;
     bool                                m_shuttingDown = false;
+
+    // ── 단계적 기동 ──
+    // 생성자는 껍데기만 만들고(P0), 무거운 것은 첫 페인트 뒤로 미룬다(P1).
+    // 그러지 않으면 Chromium 부팅과 탭 복원이 첫 프레임 앞을 막는다.
+    enum class StartupPhase
+    {
+        Shell,      ///< 생성자가 끝난 상태. 창은 떴지만 프리뷰도 탭도 없다.
+        Ready,      ///< 프리뷰가 붙고 세션이 복원된 상태.
+    };
+    StartupPhase                        startupPhase_ = StartupPhase::Shell;
+    /// 첫 페인트를 이미 봤는가. eventFilter 의 일회성 분기를 단락시킨다.
+    bool                                firstPaintSeen_ = false;
+    /// QWebEnginePage 를 우리가 명시적으로 만들었는가.
+    /// QWebEngineView::page() 는 **없으면 만들어 버리므로** 존재 여부를 물어보는
+    /// 수단이 없다. 그래서 직접 들고 있어야 한다.
+    bool                                previewInitialised_ = false;
+    /// setStartupPaths() 로 받아 둔 명령줄 경로. 비면 지난 세션을 복원한다.
+    QStringList                         startupPaths_;
+
+    /// 다음 기동 단계로 넘어간다. **멱등**이다 — 첫 페인트와 안전망 타이머가
+    /// 둘 다 부를 수 있고, 사용자 조작(파일 열기/드롭)이 앞당길 수도 있다.
+    void                                advanceStartupPhase();
+    /// QWebEnginePage 를 만들고 컨트롤러에 붙인다. 여기서 Chromium 이 뜬다.
+    void                                initialisePreview();
+    /// hot-exit 스냅샷 복원. 생성자에서 하면 첫 프레임 앞을 막는다.
+    void                                restoreHotExitSnapshots();
 
 private:
 

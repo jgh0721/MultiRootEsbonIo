@@ -53,6 +53,15 @@ READ_COST_NAME = ".mrr-readcost.json"
 # doctree 에 남은 편집 내용을 원본으로 되돌리는 데 쓴다.
 SHADOWED_NAME = ".mrr-shadowed.json"
 
+# 이번 빌드가 읽은 입력 파일들의 (경로, mtime, 크기). 앱이 다음 기동에서 이것만
+# 비교해 "바뀐 것이 없으면 아예 python 을 띄우지 않는다".
+#
+# 왜 필요한가: 변경이 하나도 없어도 빌드 한 번이 통째로 든다(프로세스 기동 +
+# sphinx 임포트 + 32MB environment.pickle 언피클). 실측 1.7~2.6초이고 그동안
+# 프리뷰가 비어 있다. Sphinx 자신도 같은 판정을 하지만, 그 판정을 하려면 먼저
+# 그 1.7초를 다 써야 한다는 것이 문제다.
+INPUTS_NAME = ".mrr-inputs.json"
+
 # 진단은 로그 패널과 진단 테이블에 그대로 실린다. breathe 가 doxygen 의 namespace 를
 # 문서마다 다시 등록하면서 내는 Duplicate ID 경고는 같은 (파일,줄,메시지)가 수천 번
 # 반복된다(실측 5911건 -> 사이드카 JSON 1.5MB). 중복은 정보가 아니므로 접는다.
@@ -514,6 +523,85 @@ def _save_source_map(out_dir: Path, sources: list[str]) -> None:
         pass
 
 
+def _collect_input_files(app, conf_dir: Path) -> set[str]:
+    """이번 빌드의 결과를 좌우하는 입력 파일 전부.
+
+    셋을 합친다.
+
+    1. conf.py — 확장/테마/설정이 전부 여기서 나온다.
+    2. 소스 문서와 그 의존 파일 — ``env.doc2path`` 와 ``env.dependencies``.
+       후자는 ``.. include::`` / ``literalinclude`` 처럼 Sphinx 가 이미 추적하는 것이다.
+    3. breathe 가 읽은 doxygen XML — breathe 는 ``note_dependency()`` 를 쓰지 않고
+       대신 ``env.breathe_file_state`` 에 {경로: (mtime, docnames)} 를 담아
+       environment.pickle 로 영속화한다(breathe/file_state_cache.py).
+       실제로 읽힌 것만 들어 있으므로 XML 전량이 아니다.
+
+    breathe 가 없는 프로젝트에서는 3번이 그냥 비어 있다.
+    """
+    paths: set[str] = set()
+
+    conf_py = conf_dir / "conf.py"
+    if conf_py.is_file():
+        paths.add(str(conf_py.resolve()))
+
+    env = getattr(app, "env", None)
+    if env is None:
+        return paths
+
+    for docname in getattr(env, "found_docs", set()):
+        try:
+            paths.add(str(Path(env.doc2path(docname)).resolve()))
+        except Exception:  # noqa: BLE001
+            continue
+
+    srcdir = Path(app.srcdir)
+    for deps in getattr(env, "dependencies", {}).values():
+        for dep in deps:
+            try:
+                paths.add(str((srcdir / dep).resolve()))
+            except Exception:  # noqa: BLE001
+                continue
+
+    for filename in getattr(env, "breathe_file_state", {}):
+        try:
+            paths.add(str(Path(filename).resolve()))
+        except Exception:  # noqa: BLE001
+            continue
+
+    return paths
+
+
+def _save_inputs(out_dir: Path, app, conf_dir: Path, source_dir: Path) -> None:
+    entries = []
+    for path in sorted(_collect_input_files(app, conf_dir)):
+        try:
+            stat = os.stat(path)
+        except OSError:
+            # 지금 없는 파일은 기록하지 않는다. 대신 아래 sourceCount 가
+            # 개수 변화를 잡고, 목록에 없던 파일이 생기는 것도 그쪽이 잡는다.
+            continue
+        entries.append({"p": path, "m": int(stat.st_mtime_ns), "s": stat.st_size})
+
+    # 목록에 없는 **새 문서**가 추가되는 것은 mtime 비교로 잡을 수 없다.
+    # 소스 트리의 문서 개수를 함께 남겨 그 경우를 잡는다.
+    # source_suffix 는 Sphinx 버전과 설정에 따라 dict / list / str 셋 다 될 수 있다.
+    # str 을 그대로 tuple() 에 넣으면 글자 단위로 쪼개진다.
+    raw_suffix = getattr(app.config, "source_suffix", None) or {".rst": None}
+    suffixes = (raw_suffix,) if isinstance(raw_suffix, str) else tuple(raw_suffix)
+    source_count = 0
+    for entry in source_dir.rglob("*"):
+        if entry.is_file() and entry.suffix in suffixes:
+            source_count += 1
+
+    _save_json(out_dir / INPUTS_NAME, {
+        "schema": 1,
+        "sourceDir": str(source_dir.resolve()),
+        "sourceSuffixes": sorted(suffixes),
+        "sourceCount": source_count,
+        "files": entries,
+    })
+
+
 def _load_json(path: Path, default):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -643,6 +731,17 @@ def main(argv: list[str] | None = None) -> int:
         _save_source_map(args.out_dir, stamper.sources)
         _save_json(args.out_dir / READ_COST_NAME, read_costs)
         _save_json(args.out_dir / SHADOWED_NAME, sorted(applied))
+
+        # 미저장 사본을 적용한 빌드의 입력 지문은 남기지 않는다. 그 빌드의 결과는
+        # 디스크의 원본이 아니라 편집 버퍼를 반영한 것이라, 그대로 두면 다음 기동에
+        # "바뀐 것 없음" 으로 판정되어 **저장하지 않은 편집이 프리뷰에 굳는다.**
+        if applied:
+            try:
+                (args.out_dir / INPUTS_NAME).unlink(missing_ok=True)
+            except OSError:
+                pass
+        else:
+            _save_inputs(args.out_dir, app, args.conf_dir, args.source_dir)
 
         # app.config.version 은 "프로젝트" 버전이다. Sphinx 자체 버전이 필요하다.
         import sphinx

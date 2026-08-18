@@ -5,6 +5,7 @@
 #include "ScintillaEditorSettings.hpp"
 #include "TextLexerRegistry.hpp"
 #include "ScintillaDocument.hpp"
+#include "utils/solPhaseTrace.hpp"
 
 #include <QAbstractScrollArea>
 #include <QByteArray>
@@ -193,8 +194,27 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 				m_forcedModified = dirty;
 				emit modificationChanged(dirty);
 			});
-	connect(m_editor, &ScintillaEditBase::notifyChange,
-			this, [this] {
+	// notifyChange 를 쓰지 않고 modified 를 쓰는 이유: Scintilla 는 "스타일과
+	// 인디케이터를 뺀 **모든** 변경" 에 NotifyChange() 를 보낸다
+	// (Editor.cxx 의 NotifyChange 호출부 조건이 정확히 그것이다). 거기에는
+	// 접기 깊이(ChangeFold)와 마커(ChangeMarker)도 들어가는데 둘 다 텍스트
+	// 변경이 아니다.
+	//
+	// 그 구분을 하지 않으면 updateRstFoldLevels() 가 줄마다 보내는
+	// SCI_SETFOLDLEVEL 이 그대로 textChanged 로 되돌아온다. 실측(2058줄
+	// code-svc.rst): **파일을 여는 것만으로 textChanged 가 2056번** 발생하고,
+	// 그 하나하나가 프리뷰 재빌드 요청과 LSP didChange(문서 전문 95KB 전송)를
+	// 유발했다. 게다가 핸들러가 다시 scheduleRstFoldUpdate() 를 걸어 스스로를
+	// 먹인다. 진단 마커(setDiagnosticMarks)도 같은 경로로 폭주할 수 있었다.
+	connect(m_editor, &ScintillaEditBase::modified, this,
+			[this](Scintilla::ModificationFlags type, Scintilla::Position, Scintilla::Position,
+				   Scintilla::Position, const QByteArray&, Scintilla::Position,
+				   Scintilla::FoldLevel, Scintilla::FoldLevel) {
+				const bool insertedOrDeleted =
+					(static_cast<int>(type) & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT)) != 0;
+				if (!insertedOrDeleted)
+					return;
+
 				syncLineCountState(true);
 				// 제목 장식 한 줄만 고쳐도 그 아래 섹션 깊이가 통째로 바뀐다.
 				// 구조 계산은 문서 단위라 디바운스해서 돌린다.
@@ -1139,6 +1159,13 @@ void ScintillaQtDirectBackend::updateRstFoldLevels()
 	if (!m_editor || !m_rstLexer)
 		return;
 
+	// 예약된 갱신이 있으면 취소한다. setText() 가 notifyChange 경로에서
+	// scheduleRstFoldUpdate() 로 200ms 예약을 걸고, 곧이어 applyLanguage() 가
+	// 같은 계산을 즉시 한 번 더 한다. 취소하지 않으면 파일을 여는 것만으로
+	// 문서 전체 스캔이 두 번 돈다(즉시 실행이 예약보다 항상 더 최신이다).
+	if (m_rstFoldTimer != nullptr)
+		m_rstFoldTimer->stop();
+
 	if (!m_codeFoldingEnabled) {
 		// 접기를 끄면 마진이 사라지므로 깊이는 그대로 둬도 화면에는 영향이 없다.
 		// 다만 접힌 채로 꺼 두면 본문이 영영 숨는다. 전부 펼쳐 둔다.
@@ -1150,6 +1177,7 @@ void ScintillaQtDirectBackend::updateRstFoldLevels()
 	if (totalLines <= 0 || totalLines > kRstFoldMaxLines)
 		return;
 
+	const mrst::PhaseSpan span("editor.fold", QStringLiteral("%1lines").arg(totalLines));
 	const QByteArray text = textRangeUtf8(0, documentLength());
 	const std::vector<mrst::rst::FoldLine> folds =
 		mrst::rst::computeFoldLevels(std::string(text.constData(), static_cast<std::size_t>(text.size())));

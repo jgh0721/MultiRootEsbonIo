@@ -94,6 +94,10 @@ public:
     void                                ensureEnvironmentAsync();
     void                                configureEnvironmentAsync( bool forceRebuild = false );
     void                                cancel();
+    /// 앱 종료 전용. uv/python 을 곧바로 죽이고 기다리지 않는다.
+    /// 남으면 Environment/ 를 물고 있어 업데이터의 파일 교체가 실패한다
+    /// (그 폴더는 앱 설치 폴더 아래다).
+    void                                cancelImmediately();
     void                                requestUvVersionAsync();
     /// 지정한 환경에 패키지를 설치한다. targetPythonExe 가 비면 번들 환경.
     /// 번들에 설치한 것은 extraPackages 에 남겨 다음 sync 후 다시 적용한다

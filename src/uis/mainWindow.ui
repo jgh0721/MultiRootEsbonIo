@@ -208,13 +208,13 @@
               <number>0</number>
              </property>
              <item>
-              <widget class="QWebEngineView" name="webEngineView" native="true">
-               <property name="url" stdset="0">
-                <url>
-                 <string notr="true">about:blank</string>
-                </url>
-               </property>
-              </widget>
+              <!-- url 속성을 두지 않는다. uic 가 그것을 setProperty("url", ...) 로
+                   펼치고, 그것이 QWebEngineView::setUrl() -> page() 생성 -> Chromium
+                   부팅으로 이어진다. 즉 setupUi() 안에서 Chromium 이 통째로 뜬다
+                   (실측 424~1254ms). 그 시점은 첫 프레임보다 앞이라 그동안 창이
+                   아무것도 그리지 못한다. 페이지 생성은 MainWindow 가 첫 페인트
+                   뒤에 명시적으로 한다(initialisePreview). -->
+              <widget class="QWebEngineView" name="webEngineView" native="true"/>
              </item>
             </layout>
            </widget>

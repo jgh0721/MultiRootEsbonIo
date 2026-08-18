@@ -643,6 +643,12 @@ void PythonEnvManager::cancel()
         activeTask_->cancel();
 }
 
+void PythonEnvManager::cancelImmediately()
+{
+    if( activeTask_ )
+        activeTask_->killNow();
+}
+
 void PythonEnvManager::updateProgressFromUvLine( const QString& line )
 {
     // uv 출력에서 대략적인 단계만 읽는다. 정확한 비율은 노리지 않는다.

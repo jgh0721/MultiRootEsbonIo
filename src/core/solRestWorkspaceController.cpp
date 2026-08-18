@@ -14,6 +14,7 @@
 #include "solSphinxProjectRegistry.hpp"
 #include "solVirtualProjectMgr.hpp"
 #include "editor/QBaseEditor.hpp"
+#include "utils/solPhaseTrace.hpp"
 
 #include "solSphinxDiagnosticsStore.hpp"
 
@@ -317,6 +318,7 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
             return;
         }
         previewUrl_ = previewView_->url();
+        traceP( "preview.load.end", previewView_->url().fileName() );
         // 초기 placeholder 는 setHtml 로 넣은 것이라 파일 URL 이 아니다.
         // fileName() 이 의미 없는 조각을 내놓으므로 로그를 남기지 않는다.
         if( previewUrl_.isLocalFile() )
@@ -518,7 +520,7 @@ QString WorkspaceController::writeShadowCopy( QTextView* view, const QString& pa
     return shadowPath;
 }
 
-void WorkspaceController::requestPreviewBuild( const bool immediate )
+void WorkspaceController::requestPreviewBuild( const bool immediate, const bool forceRebuild )
 {
     if( shuttingDown_ || previewController_ == nullptr || pythonEnv_ == nullptr )
         return;
@@ -561,10 +563,77 @@ void WorkspaceController::requestPreviewBuild( const bool immediate )
     // 뒤에만 표시를 켠다 — 프리뷰를 만들 수 없는 파일에서 켜면 영영 남는다.
     setPreviewStatus( tr( "프리뷰 준비 중..." ) );
 
+    traceP( "preview.request",
+           QStringLiteral( "%1 immediate=%2 shadow=%3" )
+               .arg( QFileInfo( request.sourceFile ).fileName() )
+               .arg( immediate ? 1 : 0 )
+               .arg( request.shadowFile.isEmpty() ? 0 : 1 ) );
+
+    // 입력이 하나도 안 바뀌었으면 python 을 아예 띄우지 않고 지난 산출물을 쓴다.
+    // 사본(미저장 편집)이 걸린 요청과 사용자가 명시적으로 요청한 재빌드는 예외다.
+    if( previewSkipUnchangedBuild_ && request.shadowFile.isEmpty() && !forceRebuild )
+    {
+        tryServeFromLastBuild( request, immediate );
+        return;
+    }
+
     if( immediate )
         previewController_->buildNow( request );
     else
         previewController_->requestBuild( request );
+}
+
+void WorkspaceController::tryServeFromLastBuild( const PreviewBuildRequest& request,
+                                                 const bool immediate )
+{
+    const QString outDir = SphinxPreviewController::outputDirFor( request.project );
+
+    // 판정은 문서 수십 개 + breathe 라면 doxygen XML 수백 개를 stat 한다.
+    // GUI 스레드에서 하면 그 자체가 멈춤이 된다.
+    QPointer< WorkspaceController > guard( this );
+    const quint64 generation = ++previewGateGeneration_;
+    QThreadPool::globalInstance()->start( [guard, outDir, request, immediate, generation] {
+        const bool changed = previewInputsChanged( outDir );
+
+        QMetaObject::invokeMethod( guard, [guard, request, immediate, changed, generation] {
+            if( guard.isNull() || guard->shuttingDown_ )
+                return;
+            // 판정이 도는 사이 사용자가 다른 문서로 옮겨 갔으면 버린다.
+            if( generation != guard->previewGateGeneration_ )
+                return;
+            guard->onPreviewGateDecided( request, immediate, changed );
+        }, Qt::QueuedConnection );
+    } );
+}
+
+void WorkspaceController::onPreviewGateDecided( const PreviewBuildRequest& request,
+                                                const bool immediate, const bool changed )
+{
+    if( changed )
+    {
+        if( immediate )
+            previewController_->buildNow( request );
+        else
+            previewController_->requestBuild( request );
+        return;
+    }
+
+    // 바뀐 것이 없다. 지난 빌드의 리포트를 그대로 읽어 화면에 올린다.
+    const PreviewBuildResult cached =
+        previewController_->cachedResultFor( request );
+    if( !cached.ok )
+    {
+        // 산출물을 믿을 수 없으면 그냥 빌드한다 (안전한 방향).
+        traceP( "preview.stale.miss", QStringLiteral( "cache-unusable" ) );
+        if( immediate )
+            previewController_->buildNow( request );
+        else
+            previewController_->requestBuild( request );
+        return;
+    }
+
+    traceP( "preview.stale.hit", QFileInfo( cached.htmlPath ).fileName() );
+    onPreviewFinished( cached );
 }
 
 void WorkspaceController::onPreviewFinished( const PreviewBuildResult& result )
@@ -616,12 +685,35 @@ void WorkspaceController::setPreviewStatus( const QString& text )
 void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QString& documentKey,
                                            const int buildSerial )
 {
-    const qint64 size = QFileInfo( htmlPath ).size();
+    const QFileInfo htmlInfo( htmlPath );
+    const qint64 size = htmlInfo.size();
     if( size <= 0 )
     {
         setPreviewStatus( {} );
         return;
     }
+
+    // 이 HTML 을 이미 그대로 띄워 두었다면 다시 읽을 이유가 없다.
+    //
+    // 출력 디렉터리가 고정이라(outputDir() 주석) 변경 없는 문서의 재빌드는 Sphinx 가
+    // HTML 을 **아예 다시 쓰지 않는다.** 그런데도 빌드 일련번호가 올라 URL 이 달라지므로
+    // 지금까지는 매번 전체 리로드를 했다. 이 저장소의 Breathe API 페이지는 하나가
+    // 6~22MB 라, 같은 내용을 다시 읽는 데만 수 초가 든다.
+    const qint64 mtimeMs = htmlInfo.lastModified().toMSecsSinceEpoch();
+    if( documentKey == previewDocumentKey_
+        && size == previewShownSize_
+        && mtimeMs == previewShownMTimeMs_
+        && previewLoadedOk_
+        && previewView_->url() == previewUrl_ )
+    {
+        traceP( "preview.load.skip",
+               QStringLiteral( "%1 %2KB" ).arg( htmlInfo.fileName() ).arg( size / 1024 ) );
+        setPreviewStatus( {} );
+        return;
+    }
+
+    previewShownSize_ = size;
+    previewShownMTimeMs_ = mtimeMs;
 
     // 출력 디렉터리가 프로젝트당 하나로 고정이라 같은 문서의 URL 은 매번 같다.
     // 그대로 다시 load() 하면 Chromium 이 이전 내용을 캐시에서 낼 수 있으므로
@@ -630,7 +722,9 @@ void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QStrin
     QUrl url = QUrl::fromLocalFile( htmlPath );
     url.setQuery( QStringLiteral( "b=%1" ).arg( buildSerial ) );
 
-    const auto loadFullPage = [this, &url] {
+    const auto loadFullPage = [this, &url, &htmlPath, size] {
+        traceP( "preview.load.begin",
+               QStringLiteral( "%1 %2KB" ).arg( QFileInfo( htmlPath ).fileName() ).arg( size / 1024 ) );
         setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
         previewUrl_ = url;
         previewLoadedOk_ = false;
@@ -1009,6 +1103,8 @@ void WorkspaceController::reloadSettings()
 
     previewApplyUnsavedEdits_ =
         settings.value( QStringLiteral( "preview/applyUnsavedEdits" ), true ).toBool();
+    previewSkipUnchangedBuild_ =
+        settings.value( QStringLiteral( "preview/skipUnchangedBuild" ), true ).toBool();
     // 0 은 "제한 없음" 이다. 빌더는 음수를 그 뜻으로 받는다.
     const int maxReadMs = settings.value( QStringLiteral( "preview/unsavedEditMaxReadMs" ), 2000 ).toInt();
     previewUnsavedMaxReadMs_ = ( maxReadMs > 0 ) ? maxReadMs : -1;
@@ -1016,20 +1112,41 @@ void WorkspaceController::reloadSettings()
     applyPreviewWebSettings();
 }
 
+void WorkspaceController::beginShutdown()
+{
+    shuttingDown_ = true;
+}
+
+void WorkspaceController::endShutdown()
+{
+    shuttingDown_ = false;
+}
+
 void WorkspaceController::shutdown()
 {
     shuttingDown_ = true;
     if( previewController_ != nullptr )
-        previewController_->cancel();
+        previewController_->cancelImmediately();
+    // uv sync / 패키지 설치도 함께 끊는다. Environment/ 는 앱 설치 폴더 아래라
+    // 살아남으면 업데이터가 교체에 실패한다.
+    if( pythonEnv_ != nullptr )
+        pythonEnv_->cancelImmediately();
+    traceP( "ctl.preview-cancelled" );
     // LSP 프로세스는 위젯 파괴 전에 정리해야 고아로 남지 않는다.
     if( lspPool_ != nullptr )
         lspPool_->stopAll();
+    traceP( "ctl.lsp-stopped" );
     // 서버를 먼저 내린 뒤에 임시 디렉터리를 지운다 (아직 물고 있을 수 있다).
     if( virtualProjects_ != nullptr )
         virtualProjects_->cleanup();
+    traceP( "ctl.virtual-cleaned" );
     documents_.clear();
     activeView_ = nullptr;
     activeProjectId_.clear();
+    // MainWindow 가 곧 WebEngine 을 정리한다. 우리가 먼저 참조를 놓아야
+    // 그 사이에 프리뷰 콜백이 죽은 브리지를 건드리지 않는다.
+    previewView_ = nullptr;
+    previewBridge_ = nullptr;
 }
 
 void WorkspaceController::attachDocument( QTextView* view )
@@ -1126,10 +1243,36 @@ void WorkspaceController::detachDocument( QTextView* view )
     }
 }
 
+void WorkspaceController::beginBatchRestore()
+{
+    batchRestoring_ = true;
+    batchPendingActive_ = nullptr;
+}
+
+void WorkspaceController::endBatchRestore()
+{
+    if( !batchRestoring_ )
+        return;
+
+    batchRestoring_ = false;
+    if( !batchPendingActive_.isNull() )
+        setActiveDocument( batchPendingActive_ );
+    batchPendingActive_ = nullptr;
+}
+
 void WorkspaceController::setActiveDocument( QTextView* view )
 {
     if( shuttingDown_ )
         return;
+
+    if( batchRestoring_ )
+    {
+        // activeView_ 는 일부러 건드리지 않는다. 그래야 attachDocument() 의
+        // sigFileOpened 람다에 있는 "activeView_ != view 면 반환" 가드가 살아
+        // 있어, 복원 중 어느 탭의 비동기 로드가 끝나도 프리뷰 빌드가 나가지 않는다.
+        batchPendingActive_ = view;
+        return;
+    }
 
     QTextView* previousView = activeView_;
     activeView_ = view;

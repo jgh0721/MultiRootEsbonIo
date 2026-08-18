@@ -39,6 +39,15 @@ public:
     /// (Windows 에서 terminate() 는 콘솔 없는 python 이 무시하는 WM_CLOSE 다.)
     void                                cancel();
 
+    /// 앱 종료 전용. 곧바로 kill 하고 아무것도 기다리지 않는다.
+    ///
+    /// cancel() 을 종료 경로에서 쓰면 안 되는 이유: 그것은 terminate() 뒤에
+    /// QTimer::singleShot 으로 kill 을 예약하는데, closeEvent 스택 안에서는
+    /// 그 타이머가 발화하지 못한다. terminate() 자체도 무효이므로 결국
+    /// **아무 일도 일어나지 않고** python 이 고아로 남는다. 남은 프로세스는
+    /// 업데이터가 Environment/ 를 교체하는 것을 방해할 수 있다.
+    void                                killNow();
+
     [[nodiscard]] bool                  isRunning() const;
     [[nodiscard]] bool                  wasCancelled() const;
     [[nodiscard]] QString               tag() const;

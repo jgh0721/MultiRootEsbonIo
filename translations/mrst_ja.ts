@@ -627,6 +627,10 @@
         <translation type="unfinished">プロジェクト</translation>
     </message>
     <message>
+        <source>프리뷰 다시 빌드(&amp;R)</source>
+        <translation type="unfinished">プレビューを再ビルド(&amp;R)</translation>
+    </message>
+    <message>
         <source>현재 탭</source>
         <translation type="unfinished">現在のタブ</translation>
     </message>
@@ -2609,12 +2613,28 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ 1 
         <translation type="unfinished">[アップデート] 片付けられなかった項目: %1</translation>
     </message>
     <message>
+        <source>되돌릴 백업이 없습니다.</source>
+        <translation type="unfinished">ロールバックできるバックアップがありません。</translation>
+    </message>
+    <message>
         <source>디렉터리를 만들 수 없습니다: %1</source>
         <translation type="unfinished">ディレクトリを作成できません: %1</translation>
     </message>
     <message>
+        <source>백업 폴더가 비어 있습니다.</source>
+        <translation type="unfinished">バックアップフォルダーが空です。</translation>
+    </message>
+    <message>
+        <source>백업 폴더를 만들 수 없습니다.</source>
+        <translation type="unfinished">バックアップフォルダーを作成できません。</translation>
+    </message>
+    <message>
         <source>설치할 준비가 된 파일이 없습니다.</source>
         <translation type="unfinished">インストールの準備ができたファイルがありません。</translation>
+    </message>
+    <message>
+        <source>앱이 종료되지 않아 업데이트를 적용하지 못했습니다.</source>
+        <translation type="unfinished">アプリが終了しなかったため、更新を適用できませんでした。</translation>
     </message>
     <message>
         <source>업데이터를 시작할 수 없습니다: %1</source>
@@ -2629,12 +2649,28 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ 1 
         <translation type="unfinished">アップデーターが見つかりません: %1</translation>
     </message>
     <message>
+        <source>이전 백업을 정리할 수 없습니다.</source>
+        <translation type="unfinished">以前のバックアップを整理できません。</translation>
+    </message>
+    <message>
         <source>이전 준비 파일을 지울 수 없습니다: %1</source>
         <translation type="unfinished">以前の準備ファイルを削除できません: %1</translation>
     </message>
     <message>
         <source>준비 정보를 저장할 수 없습니다: %1</source>
         <translation type="unfinished">準備情報を保存できません: %1</translation>
+    </message>
+    <message>
+        <source>준비된 파일을 찾을 수 없습니다.</source>
+        <translation type="unfinished">準備されたファイルが見つかりません。</translation>
+    </message>
+    <message>
+        <source>준비된 파일이 없습니다.</source>
+        <translation type="unfinished">準備されたファイルがありません。</translation>
+    </message>
+    <message>
+        <source>파일을 교체하지 못했습니다.</source>
+        <translation type="unfinished">ファイルを置き換えられませんでした。</translation>
     </message>
 </context>
 <context>

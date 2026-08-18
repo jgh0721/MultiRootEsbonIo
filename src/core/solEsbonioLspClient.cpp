@@ -2,6 +2,7 @@
 #include "solEsbonioLspClient.hpp"
 
 #include "utils/ProcessReaper.hpp"
+#include "utils/solPhaseTrace.hpp"
 
 #include <QDir>
 #include <QFileInfo>
@@ -13,6 +14,10 @@
 
 namespace mrst {
 namespace {
+
+/// Graceful 종료에서 shutdown/exit 와 stdin EOF 를 보낸 뒤 스스로 끝나기를
+/// 기다려 주는 시간. 이 시간이 지나면 kill 한다. GUI 를 막지 않는 대기다.
+constexpr int kGracefulExitGraceMs = 3000;
 
 /// MRST_LSP_TRACE 가 지정되면 오가는 프레임을 그대로 파일에 남긴다.
 /// LSP 문제는 "아무 일도 안 일어난다" 로만 관측되기 때문에, 실제 트래픽을
@@ -228,6 +233,7 @@ void LspClient::start(const SphinxProject& project, const QString& pythonExe, co
     if (isRunning() && activeProjectId_ == QString::fromStdWString(project.projectId)) {
         return;
     }
+    const PhaseSpan span("lsp.spawn", QString::fromStdWString(project.projectId));
     stop();
     project_ = project;
     sphinxBuildExe_ = sphinxBuildExe;
@@ -263,18 +269,37 @@ void LspClient::start(const SphinxProject& project, const QString& pythonExe, co
     initialize();
 }
 
-void LspClient::stop() {
+void LspClient::stop(const StopMode mode) {
     if (process_ == nullptr) {
         return;
     }
+
     if (process_->state() != QProcess::NotRunning) {
-        process_->terminate();
-        if (!process_->waitForFinished(1500)) {
-            process_->kill();
-            process_->waitForFinished(1500);
+        if (mode == StopMode::Graceful) {
+            // LSP 규약의 정상 종료 순서. 그리고 stdin 을 닫아 EOF 를 준다 —
+            // pygls 의 stdio 루프는 그것으로도 스스로 끝난다.
+            // 어느 쪽이든 **응답을 기다리지 않는다.** 아래 abandonProcess() 가
+            // 곧바로 kill 하므로, 이 두 줄은 서버가 스스로 정리할 기회를 주는
+            // 것 이상은 아니다.
+            write(writer_.request(QStringLiteral("shutdown"), {}));
+            write(writer_.notify(QStringLiteral("exit"), {}));
+            process_->closeWriteChannel();
         }
+
+        // terminate() 는 쓰지 않는다 — 창 없는 python 에는 무효라서 대기가
+        // 통째로 낭비된다(헤더의 StopMode 주석 참고). 손자 sphinx_agent 는
+        // start() 에서 넣어 둔 Job Object 가 앱 종료 시 커널 수준에서 정리한다.
     }
-    process_.reset();
+
+    // reset() 을 쓰지 않는 이유: ~QProcess 는 아직 살아 있는 프로세스를 보면
+    // kill() 뒤에 waitForFinished() 를 **30초 기본값**으로 부른다. 대기를
+    // 없애려던 것이 30초 대기가 되어 버린다.
+    if (mode == StopMode::Graceful) {
+        // 이벤트 루프가 살아 있으므로 스스로 끝날 시간을 준다. 기다리지는 않는다.
+        reapProcessLater(std::move(process_), kGracefulExitGraceMs);
+    } else {
+        abandonProcess(std::move(process_));
+    }
     activeProjectId_.clear();
     documentVersions_.clear();
     pendingRequests_.clear();

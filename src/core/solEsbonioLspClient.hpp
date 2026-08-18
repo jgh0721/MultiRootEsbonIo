@@ -100,7 +100,25 @@ public:
     void setSphinxPythonCommand(const QString& pythonExe);
 
     void start(const SphinxProject& project, const QString& pythonExe, const QString& sphinxBuildExe);
-    void stop();
+
+    /// 서버를 내리는 방식.
+    ///
+    /// 예전에는 하나뿐이었고 `terminate()` + `waitForFinished(1500)` 이었다.
+    /// 그런데 Windows 의 `QProcess::terminate()` 는 top-level 창에 WM_CLOSE 를
+    /// 보내는 방식이라 **창 없는 `python -m esbonio.server` 에는 무효**다
+    /// (같은 사실이 solUvTaskRunner.hpp 에도 적혀 있다). 그래서 그 대기는
+    /// **항상 1500ms 를 꽉 채우고 타임아웃**했다. 실측으로 종료 시간의 84% 였고,
+    /// 프로젝트를 전환할 때마다(LRU 축출) GUI 가 그만큼 얼어붙었다.
+    enum class StopMode
+    {
+        Graceful,    ///< 런타임 축출/프로젝트 전환. 이벤트 루프가 살아 있다.
+        Immediate,   ///< 앱 종료. 아무것도 기다리지 않는다.
+    };
+
+    /// 기본값이 Immediate 인 이유: ~LspClient / ~LspServerPool 이 부르는 경로는
+    /// 이벤트 루프가 이미 없을 수 있고, 거기서 Graceful 을 쓰면 응답을 영영
+    /// 기다리게 된다. 기다려도 되는 쪽이 명시적으로 골라야 안전하다.
+    void stop(StopMode mode = StopMode::Immediate);
     void didOpen(const QString& path, const QString& text, const QString& languageId = QStringLiteral("rst"));
     void didChange(const QString& path, const QString& text);
     void didSave(const QString& path, const QString& text);

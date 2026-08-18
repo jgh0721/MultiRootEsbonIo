@@ -1,6 +1,8 @@
 ﻿#include "stdafx.h"
 #include "solUvTaskRunner.hpp"
 
+#include "utils/ProcessReaper.hpp"
+
 #include <QRegularExpression>
 #include <QTimer>
 
@@ -44,11 +46,10 @@ UvTask::UvTask( Request request, QObject* parent )
 
 UvTask::~UvTask()
 {
-    if( process_ && process_->state() != QProcess::NotRunning )
-    {
-        process_->kill();
-        process_->waitForFinished( 200 );   // 소멸 시점의 마지막 수단
-    }
+    // 예전에는 kill() + waitForFinished(200) 이었다. 200ms 안에 안 죽으면
+    // 이어서 ~QProcess 가 waitForFinished() 를 **30초 기본값**으로 부른다.
+    // abandonProcess() 는 죽이기만 하고 객체를 파괴하지 않아 그 경로가 없다.
+    abandonProcess( std::move( process_ ) );
 }
 
 QString UvTask::tag() const
@@ -90,7 +91,17 @@ void UvTask::start()
         connect( process_.get(), &QProcess::readyReadStandardError, this, [this] { drain( false ); } );
     connect( process_.get(), &QProcess::finished, this, &UvTask::onFinished );
     connect( process_.get(), &QProcess::errorOccurred, this, &UvTask::onErrorOccurred );
-    connect( process_.get(), &QProcess::started, this, &UvTask::started );
+    connect( process_.get(), &QProcess::started, this, [this] {
+        // 앱이 죽으면 같이 죽는 그룹에 넣는다. 지금까지는 Esbonio 만 등록돼
+        // 있었는데, 프리뷰 빌더도 sphinx 확장을 통해 손자를 띄울 수 있고
+        // uv sync 는 python 다운로더를 띄운다. 등록하지 않으면 앱이 사라진 뒤에도
+        // 남아 Environment/ 를 물고 있어 업데이터의 파일 교체를 막는다.
+        //
+        // waitForStarted() 는 쓸 수 없다(이 클래스의 존재 이유가 그것이다).
+        // processId() 는 started 시점에 유효하다.
+        assignToKillOnExitJob( process_->processId() );
+        emit started();
+    } );
 
     process_->start();
 }
@@ -108,6 +119,18 @@ void UvTask::cancel()
         if( guard && guard->isRunning() )
             guard->process_->kill();
     } );
+}
+
+void UvTask::killNow()
+{
+    if( process_ == nullptr )
+        return;
+
+    cancelled_ = true;
+    // finished 를 내보내지 않는다. 종료 경로라 수신자(컨트롤러/매니저)가
+    // 곧 사라지고, 여기서 온 신호로 새 작업이 시작되면 안 된다.
+    finishedEmitted_ = true;
+    abandonProcess( std::move( process_ ) );
 }
 
 void UvTask::drain( bool flushPartial )

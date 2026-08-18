@@ -31,6 +31,7 @@ struct ResolvedPythonEnv;
 class SphinxPreviewController;
 class VirtualProjectManager;
 struct PreviewBuildResult;
+struct PreviewBuildRequest;
 
 /// 열린 문서 하나에 대한 Sphinx 관점의 상태.
 ///
@@ -73,18 +74,46 @@ public:
     void                                reloadSettings();
     void                                shutdown();
 
+    /// 종료 의사만 표시한다. 실제 정리는 shutdown() 이 한다.
+    ///
+    /// closeEvent 의 저장 확인 루프가 setCurrentIndex() 로 onTabChanged 를
+    /// 일으켜 **종료 도중에** 프리뷰 빌드와 LSP 프로세스를 새로 띄우고,
+    /// 개요(수백 문서)·용어집(수천 문서) 스캔까지 던진다. shuttingDown_ 가
+    /// 그것을 전부 막지만 지금은 shutdown() 에서야 켜져서 이미 늦다.
+    void                                beginShutdown();
+    /// 사용자가 저장 확인에서 취소를 눌러 종료가 되돌아갔을 때.
+    void                                endShutdown();
+
     // ── 문서 수명주기 (MainWindow 의 탭 배관에서 호출) ──
     void                                attachDocument( QTextView* view );
     void                                detachDocument( QTextView* view );
     void                                setActiveDocument( QTextView* view );
     void                                notifyDocumentSaved( QTextView* view );
 
+    /// 세션 복원처럼 탭이 무더기로 열리는 구간을 감싼다. 그 사이의
+    /// setActiveDocument() 는 대상만 기억해 두고, endBatchRestore() 에서
+    /// **마지막 한 번만** 실제로 반영한다.
+    ///
+    /// 왜 필요한가: MainWindow::addViewTab() 이 탭마다 setActiveDocument() 를
+    /// 부르므로, 복원 순서상 **첫 프리뷰 빌드가 0번 탭 것**이 되고 사용자가 볼
+    /// 활성 탭 빌드는 그것이 끝난 뒤에야 시작한다. 순수 낭비 한 벌이다.
+    /// setActiveDocument() 의 기존 중복 가드는 "같은 문서 재호출" 만 잡아서
+    /// 이 상황을 표현할 수 없다.
+    void                                beginBatchRestore();
+    void                                endBatchRestore();
+
     [[nodiscard]] QString               activeProjectId() const;
     [[nodiscard]] DiagnosticsStore*     diagnostics() const;
 
     /// 활성 문서의 프리뷰를 다시 빌드한다.
     /// immediate=false 면 디바운스(편집 중), true 면 즉시(저장/탭 전환).
-    void                                requestPreviewBuild( bool immediate = false );
+    ///
+    /// forceRebuild=true 는 "입력이 안 바뀌었어도 반드시 빌드한다" 는 뜻이다.
+    /// 변경 감지 게이트(preview/skipUnchangedBuild)를 우회하는 유일한 통로이고,
+    /// 사용자가 메뉴로 명시적으로 요청했을 때만 쓴다. 게이트가 놓치는 입력이
+    /// 있을 수 있으므로 이 탈출구가 반드시 있어야 한다.
+    void                                requestPreviewBuild( bool immediate = false,
+                                                             bool forceRebuild = false );
 
     /// Ctrl+Space. 트리거 문자 없이 지금 캐럿 위치에서 자동완성을 연다.
     void                                requestCompletion();
@@ -131,6 +160,12 @@ private:
     /// 값이 바뀌었으면 이미 떠 있는 페이지를 다시 읽는다 (실패한 스크립트는
     /// 설정만 바꿔서는 다시 실행되지 않는다).
     void                                applyPreviewWebSettings();
+    /// 입력이 안 바뀌었는지 워커 스레드에서 판정하고, 결과에 따라 빌드하거나
+    /// 지난 산출물을 그대로 올린다.
+    void                                tryServeFromLastBuild( const PreviewBuildRequest& request,
+                                                               bool immediate );
+    void                                onPreviewGateDecided( const PreviewBuildRequest& request,
+                                                              bool immediate, bool changed );
     void                                refreshDiagnosticMarks( const QString& normalizedPath );
 
     // ── Esbonio ──
@@ -209,6 +244,15 @@ private:
     // 갈아끼워 깜빡임을 없앤다.
     QString                             previewDocumentKey_;
     QString                             previewHeadSignature_;
+    /// 지금 화면에 띄워 둔 HTML 의 크기와 mtime. 재빌드 결과가 이것과 같으면
+    /// 파일 내용이 그대로라는 뜻이므로 다시 로드하지 않는다.
+    qint64                              previewShownSize_ = -1;
+    qint64                              previewShownMTimeMs_ = -1;
+    /// 설정 preview/skipUnchangedBuild. 입력이 안 바뀌었으면 빌드를 건너뛴다.
+    bool                                previewSkipUnchangedBuild_ = true;
+    /// 늦게 도착한 이전 문서의 게이트 판정을 버리기 위한 세대 번호
+    /// (outlineGeneration_ 과 같은 관용구).
+    quint64                             previewGateGeneration_ = 0;
     QUrl                                previewUrl_;
     bool                                previewLoadedOk_ = false;
     int                                 hotSwapToken_ = 0;
@@ -228,6 +272,11 @@ private:
     QPointer< QTextView >               activeView_;
     QString                             activeProjectId_;
     bool                                shuttingDown_ = false;
+
+    /// 세션 복원 중인가. 켜져 있으면 setActiveDocument() 가 반영을 미룬다.
+    bool                                batchRestoring_ = false;
+    /// 복원이 끝나면 활성화할 뷰.
+    QPointer< QTextView >               batchPendingActive_;
 };
 
 }  // namespace mrst

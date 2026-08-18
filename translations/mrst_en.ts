@@ -633,6 +633,10 @@ Open it as text anyway?
         <translation type="unfinished">Project</translation>
     </message>
     <message>
+        <source>프리뷰 다시 빌드(&amp;R)</source>
+        <translation type="unfinished">&amp;Rebuild Preview</translation>
+    </message>
+    <message>
         <source>현재 탭</source>
         <translation type="unfinished">Current tab</translation>
     </message>
@@ -2615,12 +2619,28 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">[Update] Items that could not be cleaned up: %1</translation>
     </message>
     <message>
+        <source>되돌릴 백업이 없습니다.</source>
+        <translation type="unfinished">There is no backup to roll back to.</translation>
+    </message>
+    <message>
         <source>디렉터리를 만들 수 없습니다: %1</source>
         <translation type="unfinished">The directory could not be created: %1</translation>
     </message>
     <message>
+        <source>백업 폴더가 비어 있습니다.</source>
+        <translation type="unfinished">The backup folder is empty.</translation>
+    </message>
+    <message>
+        <source>백업 폴더를 만들 수 없습니다.</source>
+        <translation type="unfinished">Could not create the backup folder.</translation>
+    </message>
+    <message>
         <source>설치할 준비가 된 파일이 없습니다.</source>
         <translation type="unfinished">There are no files ready to install.</translation>
+    </message>
+    <message>
+        <source>앱이 종료되지 않아 업데이트를 적용하지 못했습니다.</source>
+        <translation type="unfinished">The update could not be applied because the app did not exit.</translation>
     </message>
     <message>
         <source>업데이터를 시작할 수 없습니다: %1</source>
@@ -2635,12 +2655,28 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">The updater could not be found: %1</translation>
     </message>
     <message>
+        <source>이전 백업을 정리할 수 없습니다.</source>
+        <translation type="unfinished">Could not clean up the previous backup.</translation>
+    </message>
+    <message>
         <source>이전 준비 파일을 지울 수 없습니다: %1</source>
         <translation type="unfinished">The previously staged files could not be removed: %1</translation>
     </message>
     <message>
         <source>준비 정보를 저장할 수 없습니다: %1</source>
         <translation type="unfinished">The staging information could not be saved: %1</translation>
+    </message>
+    <message>
+        <source>준비된 파일을 찾을 수 없습니다.</source>
+        <translation type="unfinished">The staged files could not be found.</translation>
+    </message>
+    <message>
+        <source>준비된 파일이 없습니다.</source>
+        <translation type="unfinished">There are no staged files.</translation>
+    </message>
+    <message>
+        <source>파일을 교체하지 못했습니다.</source>
+        <translation type="unfinished">Could not replace the files.</translation>
     </message>
 </context>
 <context>

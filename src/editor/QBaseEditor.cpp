@@ -732,8 +732,17 @@ void QTextView::setEditorFont( const QFont& font )
     const int pointSize = font.pointSize() > 0
         ? font.pointSize()
         : ( font.pointSizeF() > 0.0 ? qRound( font.pointSizeF() ) : settings.value( "textView/fontSize", 10 ).toInt() );
-    settings.setValue( "textView/fontFamily", font.family() );
-    settings.setValue( "textView/fontSize", qBound( 6, pointSize, 72 ) );
+    const int clampedSize = qBound( 6, pointSize, 72 );
+
+    // 값이 같으면 쓰지 않는다. QSettings 는 같은 값을 넣어도 dirty 로 보고
+    // 소멸자의 sync() 에서 INI 를 통째로 다시 쓴다. 이 함수는
+    // MainWindow::applyPersistedViewSettings() 가 **INI 에서 읽어** 넘긴 값으로
+    // 불리므로, 세션 복원 때 탭마다 그 재작성이 그대로 시작 시간이 된다.
+    // (이 파일의 setLineSpacingScale/setTabWidth/setUseTabs 는 이미 같은 가드를 갖고 있다.)
+    if( settings.value( "textView/fontFamily" ).toString() != font.family() )
+        settings.setValue( "textView/fontFamily", font.family() );
+    if( settings.value( "textView/fontSize" ).toInt() != clampedSize )
+        settings.setValue( "textView/fontSize", clampedSize );
 }
 
 QFont QTextView::editorFont() const { return m_editor ? m_editor->editorFont() : QFont(); }
