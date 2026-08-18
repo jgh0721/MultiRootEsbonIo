@@ -30,6 +30,12 @@ struct PreviewBuildRequest
     /// 음수면 제한 없음. 사본을 반영하려면 그 문서를 매번 다시 읽어야 하는데,
     /// Breathe 문서는 그 비용이 수십 초라 편집이 멈춰 버린다.
     int                                 shadowMaxReadMs = -1;
+    /// 입력 지문을 남길 파일. 비면 빌더가 남기지 않고, 그러면 게이트가 늘
+    /// "바뀌었다" 로 판정해 매번 빌드한다(가상 프로젝트가 그 경우다).
+    ///
+    /// 경로를 앱이 정해서 넘기는 이유: 이름 규칙을 C++ 과 파이썬 양쪽에 두면
+    /// 한쪽만 고쳐졌을 때 조용히 어긋난다.
+    QString                             inputsFile;
 
     /// 두 요청이 "같은 산출물을 낳는가".
     ///
@@ -82,8 +88,14 @@ struct PreviewBuildResult
     QString                             traceback;
 };
 
-/// 지난 빌드가 남긴 입력 지문(`<outDir>/.mrr-inputs.json`)과 지금 디스크 상태를
-/// 비교한다. **하나라도 다르거나 판정할 수 없으면 true**(=빌드해야 한다)를 낸다.
+/// 워크스페이스의 `.multiroot` 아래 입력 지문 파일 경로.
+/// 프로젝트마다 하나이므로 projectId 로 갈라 둔다. 워크스페이스 루트가 없으면
+/// (가상 프로젝트 등) 빈 문자열을 낸다 — 그러면 지문을 쓰지도 읽지도 않는다.
+[[nodiscard]] QString previewInputsFilePath( const QString& workspaceRoot,
+                                             const QString& projectId );
+
+/// 지난 빌드가 남긴 입력 지문과 지금 디스크 상태를 비교한다.
+/// **하나라도 다르거나 판정할 수 없으면 true**(=빌드해야 한다)를 낸다.
 ///
 /// 왜 필요한가: 바뀐 것이 하나도 없어도 빌드 한 번이 통째로 든다(프로세스 기동 +
 /// sphinx 임포트 + 32MB environment.pickle 언피클, 실측 1.7~2.6초). 그동안
@@ -92,7 +104,7 @@ struct PreviewBuildResult
 ///
 /// **GUI 스레드에서 부르지 말 것.** 문서 수십 개에 breathe 프로젝트라면 doxygen
 /// XML 수백 개까지 stat 한다.
-[[nodiscard]] bool previewInputsChanged( const QString& outDir );
+[[nodiscard]] bool previewInputsChanged( const QString& inputsFile );
 
 /// Sphinx HTML 프리뷰 빌드를 관리한다.
 ///

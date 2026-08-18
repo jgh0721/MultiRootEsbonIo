@@ -554,6 +554,12 @@ void WorkspaceController::requestPreviewBuild( const bool immediate, const bool 
     request.shadowFile = previewApplyUnsavedEdits_ ? writeShadowCopy( view, context->path )
                                                    : QString();
     request.shadowMaxReadMs = previewUnsavedMaxReadMs_;
+    // 가상 프로젝트(워크스페이스 밖의 단독 파일)는 지문을 남기지 않는다.
+    // 빌드 산출물이 QTemporaryDir 안이라 세션과 함께 사라지므로 지문이 가리킬
+    // 대상이 없고, 남기면 사용자의 .multiroot 에 임시 프로젝트 항목만 쌓인다.
+    request.inputsFile = context->isVirtual
+        ? QString{}
+        : previewInputsFilePath( registry_->workspaceRoot(), context->projectId );
 
     // 실제로 요청을 보낸 문서만 기록한다. 위쪽 조기 반환들(런타임 미준비,
     // 프로젝트 미해결)에서는 기록하지 않아야 준비가 끝난 뒤 다시 시도된다.
@@ -586,14 +592,14 @@ void WorkspaceController::requestPreviewBuild( const bool immediate, const bool 
 void WorkspaceController::tryServeFromLastBuild( const PreviewBuildRequest& request,
                                                  const bool immediate )
 {
-    const QString outDir = SphinxPreviewController::outputDirFor( request.project );
+    const QString inputsFile = request.inputsFile;
 
     // 판정은 문서 수십 개 + breathe 라면 doxygen XML 수백 개를 stat 한다.
     // GUI 스레드에서 하면 그 자체가 멈춤이 된다.
     QPointer< WorkspaceController > guard( this );
     const quint64 generation = ++previewGateGeneration_;
-    QThreadPool::globalInstance()->start( [guard, outDir, request, immediate, generation] {
-        const bool changed = previewInputsChanged( outDir );
+    QThreadPool::globalInstance()->start( [guard, inputsFile, request, immediate, generation] {
+        const bool changed = previewInputsChanged( inputsFile );
 
         QMetaObject::invokeMethod( guard, [guard, request, immediate, changed, generation] {
             if( guard.isNull() || guard->shuttingDown_ )

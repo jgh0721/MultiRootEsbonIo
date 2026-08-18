@@ -122,10 +122,27 @@ QString SphinxPreviewController::writeShadowCopy() const
     return pending_.shadowFile;   // 호출 측이 이미 파일로 만들어 넘긴다.
 }
 
-bool previewInputsChanged( const QString& outDir )
+QString previewInputsFilePath( const QString& workspaceRoot, const QString& projectId )
 {
-    // 빌더가 쓰는 이름과 같아야 한다 (mrr_sphinx_preview_build.py 의 INPUTS_NAME).
-    QFile file( QDir( outDir ).filePath( QStringLiteral( ".mrr-inputs.json" ) ) );
+    if( workspaceRoot.isEmpty() || projectId.isEmpty() )
+        return {};
+
+    // 워크스페이스 단위 상태는 .multiroot 에 모인다 (projects.json / workspace.json).
+    // 지문은 프로젝트마다 하나이므로 projectId 로 이름을 갈라 둔다 — 한 파일에
+    // 모으면 프로젝트 여러 개가 서로의 항목을 지울 수 있다.
+    return QDir( workspaceRoot )
+        .filePath( QStringLiteral( ".multiroot/preview-inputs-%1.json" ).arg( projectId ) );
+}
+
+bool previewInputsChanged( const QString& inputsFile )
+{
+    if( inputsFile.isEmpty() )
+    {
+        traceP( "preview.gate.miss", QStringLiteral( "no-inputs-path" ) );
+        return true;
+    }
+
+    QFile file( inputsFile );
     if( !file.open( QIODevice::ReadOnly ) )
     {
         traceP( "preview.gate.miss", QStringLiteral( "no-inputs-file" ) );
@@ -368,6 +385,10 @@ void SphinxPreviewController::startBuild()
         QStringLiteral( "--report" ), activeReportPath_,
         QStringLiteral( "--auto-fix-legacy-conf" ),
     };
+    // 비면 넘기지 않는다. 빌더는 인자가 없으면 지문을 남기지 않고, 그러면
+    // 게이트가 늘 "바뀌었다" 로 판정한다 (안전한 방향).
+    if( !active_.inputsFile.isEmpty() )
+        arguments << QStringLiteral( "--inputs-file" ) << active_.inputsFile;
     if( !active_.sourceFile.isEmpty() )
         arguments << QStringLiteral( "--primary" ) << active_.sourceFile;
     if( !active_.shadowFile.isEmpty() && !active_.sourceFile.isEmpty() )

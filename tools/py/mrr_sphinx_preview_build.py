@@ -53,14 +53,10 @@ READ_COST_NAME = ".mrr-readcost.json"
 # doctree 에 남은 편집 내용을 원본으로 되돌리는 데 쓴다.
 SHADOWED_NAME = ".mrr-shadowed.json"
 
-# 이번 빌드가 읽은 입력 파일들의 (경로, mtime, 크기). 앱이 다음 기동에서 이것만
-# 비교해 "바뀐 것이 없으면 아예 python 을 띄우지 않는다".
-#
-# 왜 필요한가: 변경이 하나도 없어도 빌드 한 번이 통째로 든다(프로세스 기동 +
-# sphinx 임포트 + 32MB environment.pickle 언피클). 실측 1.7~2.6초이고 그동안
-# 프리뷰가 비어 있다. Sphinx 자신도 같은 판정을 하지만, 그 판정을 하려면 먼저
-# 그 1.7초를 다 써야 한다는 것이 문제다.
-INPUTS_NAME = ".mrr-inputs.json"
+# 입력 지문을 두던 옛 자리(출력 디렉터리 안). 지금은 앱이 `--inputs-file` 로
+# 워크스페이스의 .multiroot 아래 경로를 지정한다. 옛 파일이 남아 있으면 아무도
+# 읽지 않으면서 디버깅만 혼란스럽게 하므로 빌드할 때 걷어낸다.
+LEGACY_INPUTS_NAME = ".mrr-inputs.json"
 
 # 진단은 로그 패널과 진단 테이블에 그대로 실린다. breathe 가 doxygen 의 namespace 를
 # 문서마다 다시 등록하면서 내는 Duplicate ID 경고는 같은 (파일,줄,메시지)가 수천 번
@@ -571,7 +567,18 @@ def _collect_input_files(app, conf_dir: Path) -> set[str]:
     return paths
 
 
-def _save_inputs(out_dir: Path, app, conf_dir: Path, source_dir: Path) -> None:
+def _save_inputs(inputs_file: Path, app, conf_dir: Path, source_dir: Path) -> None:
+    """이번 빌드가 읽은 입력 파일들의 (경로, mtime, 크기) 를 남긴다.
+
+    앱은 다음 기동에서 이것만 비교해 "바뀐 것이 없으면 아예 python 을 띄우지
+    않는다". 변경이 하나도 없어도 빌드 한 번이 통째로 드는데(프로세스 기동 +
+    sphinx 임포트 + 32MB environment.pickle 언피클, 실측 1.7~2.6초) 그동안
+    프리뷰가 비어 있다. Sphinx 자신도 같은 판정을 하지만, 그 판정을 하려면
+    먼저 그 시간을 다 써야 한다는 것이 문제다.
+
+    경로는 앱이 정해서 넘긴다(`--inputs-file`). 이름 규칙을 파이썬과 C++ 양쪽에
+    두면 한쪽만 고쳐졌을 때 조용히 어긋나기 때문이다.
+    """
     entries = []
     for path in sorted(_collect_input_files(app, conf_dir)):
         try:
@@ -593,7 +600,13 @@ def _save_inputs(out_dir: Path, app, conf_dir: Path, source_dir: Path) -> None:
         if entry.is_file() and entry.suffix in suffixes:
             source_count += 1
 
-    _save_json(out_dir / INPUTS_NAME, {
+    # .multiroot 이 아직 없을 수 있다(워크스페이스를 처음 여는 경우).
+    try:
+        inputs_file.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+
+    _save_json(inputs_file, {
         "schema": 1,
         "sourceDir": str(source_dir.resolve()),
         "sourceSuffixes": sorted(suffixes),
@@ -650,6 +663,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--doctree-dir", required=True, type=Path)
     parser.add_argument("--report", type=Path, default=None)
+    parser.add_argument("--inputs-file", type=Path, default=None,
+                        help="입력 지문을 남길 경로. 생략하면 남기지 않는다"
+                             "(그러면 앱이 매번 빌드한다).")
     parser.add_argument("--primary", type=Path, default=None,
                         help="편집 중인 원본 파일. htmlPath 계산에 쓴다.")
     parser.add_argument("--shadow", action="append", default=[], metavar="SRC=TMP",
@@ -732,16 +748,24 @@ def main(argv: list[str] | None = None) -> int:
         _save_json(args.out_dir / READ_COST_NAME, read_costs)
         _save_json(args.out_dir / SHADOWED_NAME, sorted(applied))
 
+        # 지문을 출력 디렉터리에 두던 시절의 파일을 걷어낸다. 아무도 읽지 않으면서
+        # 디버깅만 혼란스럽게 한다(이 저장소 기준 200KB).
+        try:
+            (args.out_dir / LEGACY_INPUTS_NAME).unlink(missing_ok=True)
+        except OSError:
+            pass
+
         # 미저장 사본을 적용한 빌드의 입력 지문은 남기지 않는다. 그 빌드의 결과는
         # 디스크의 원본이 아니라 편집 버퍼를 반영한 것이라, 그대로 두면 다음 기동에
         # "바뀐 것 없음" 으로 판정되어 **저장하지 않은 편집이 프리뷰에 굳는다.**
-        if applied:
-            try:
-                (args.out_dir / INPUTS_NAME).unlink(missing_ok=True)
-            except OSError:
-                pass
-        else:
-            _save_inputs(args.out_dir, app, args.conf_dir, args.source_dir)
+        if args.inputs_file is not None:
+            if applied:
+                try:
+                    args.inputs_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            else:
+                _save_inputs(args.inputs_file, app, args.conf_dir, args.source_dir)
 
         # app.config.version 은 "프로젝트" 버전이다. Sphinx 자체 버전이 필요하다.
         import sphinx
