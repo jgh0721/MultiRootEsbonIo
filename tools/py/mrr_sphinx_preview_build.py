@@ -485,15 +485,90 @@ def _parse_shadow_sources(values: list[str]) -> dict[str, Path]:
     return shadow
 
 
-def _shadow_source_reader(shadow_by_docname: dict[str, Path]):
+_DOXYGEN_DIRECTIVE_RE = re.compile(r"^([ \t]*)\.\.[ \t]+(doxygen[a-z]*)[ \t]*::(.*)$",
+                                   re.IGNORECASE)
+
+
+def _stub_doxygen_directives(text: str) -> tuple[str, int]:
+    """`.. doxygen*::` 블록을 자리표시자로 바꾼다. **줄 수를 그대로 유지한다.**
+
+    왜 하는가: 이 지시어 하나가 doxygen XML 수백 개를 훑어 docutils 노드 수만 개로
+    펼쳐진다. 실측(iMonAIT/docs)에서 재파싱이 code-libs 38.3초 / code-svc 8.3초라,
+    타이핑할 때마다 반영하는 것이 불가능했다(그래서 지금은 아예 포기하고 있다).
+    타이핑 중에는 API 본문이 필요 없으므로 자리표시자로 두고, 저장하면 온전히 만든다.
+
+    **줄 수를 유지해야 하는 이유**: 양방향 스크롤 동기화는 HTML 에 심은 원본 줄
+    번호(data-mrr-start-line)로 동작한다. 블록을 줄 수가 다른 것으로 바꾸면 그
+    뒤의 모든 줄 번호가 밀려 동기화가 어긋난다. 그래서 첫 줄만 자리표시자로 쓰고
+    나머지는 빈 줄로 채운다.
+
+    블록의 범위는 들여쓰기로 정한다 — 지시어보다 깊게 들여쓴 줄과 빈 줄이 본문이고,
+    들여쓰기가 지시어 이하인 비어 있지 않은 줄에서 끝난다(docutils 규칙).
+    자리표시자를 지시어와 같은 열에 두므로, 다른 지시어 안에 중첩돼 있어도
+    부모 블록의 구조가 깨지지 않는다.
+    """
+    lines = text.split("\n")
+    out = list(lines)
+    total = len(lines)
+    stubbed = 0
+    index = 0
+
+    while index < total:
+        match = _DOXYGEN_DIRECTIVE_RE.match(lines[index])
+        if match is None:
+            index += 1
+            continue
+
+        indent = len(match.group(1))
+        directive = match.group(2)
+        argument = match.group(3).strip()
+
+        cursor = index + 1
+        while cursor < total:
+            line = lines[cursor]
+            if line.strip() == "":
+                cursor += 1
+                continue
+            if len(line) - len(line.lstrip()) <= indent:
+                break
+            cursor += 1
+
+        # 블록 끝의 빈 줄은 블록에 넣지 않는다. 뒤 문단과의 구분을 남겨야 한다.
+        last = cursor - 1
+        while last > index and lines[last].strip() == "":
+            last -= 1
+
+        # 백틱은 인라인 리터럴을 깨므로 지운다.
+        label = f"{directive}:: {argument}".strip().replace("`", "")
+        out[index] = (f"{' ' * indent}.. note:: 저장하면 표시됩니다 "
+                      f"— 미저장 편집 중에는 ``{label}`` 을 생략합니다.")
+        for blanked in range(index + 1, last + 1):
+            out[blanked] = ""
+
+        stubbed += 1
+        index = last + 1
+
+    return "\n".join(out), stubbed
+
+
+def _shadow_source_reader(shadow_by_docname: dict[str, Path],
+                          stub_doxygen: bool,
+                          stubbed_docs: dict[str, int]):
     def replace_source(_app: Sphinx, docname: str, source: list[str]) -> None:
         replacement = shadow_by_docname.get(docname)
         if replacement is None:
             return
         try:
-            source[0] = replacement.read_text(encoding="utf-8")
+            text = replacement.read_text(encoding="utf-8")
         except OSError:
-            pass
+            return
+
+        if stub_doxygen:
+            text, stubbed = _stub_doxygen_directives(text)
+            if stubbed:
+                stubbed_docs[docname] = stubbed
+
+        source[0] = text
 
     return replace_source
 
@@ -518,6 +593,7 @@ def _plan_shadow(app: Sphinx, args, read_costs: dict[str, int],
     """
     shadow_by_path = _parse_shadow_sources(args.shadow)
     limit = args.shadow_max_read_ms
+    stub_doxygen = bool(getattr(args, "stub_doxygen", False))
 
     applied: dict[str, Path] = {}
     skipped: list[str] = []
@@ -534,6 +610,10 @@ def _plan_shadow(app: Sphinx, args, read_costs: dict[str, int],
         # 순간에 멈춘다. 비용은 전량 빌드나 저장 시 재읽기에서 채워지므로,
         # 한 번 읽히고 나면 다음 편집부터 정상적으로 반영된다.
         cost = read_costs.get(docname)
+        # 지시어를 자리표시자로 바꿀 것이면 재파싱 비용이 어차피 작아지므로
+        # 이 임계값이 의미가 없다. 임계값이 막고 있던 것이 정확히 이 비용이다.
+        if stub_doxygen:
+            limit = -1
         if limit >= 0:
             if cost is None:
                 skipped.append(docname)
@@ -784,6 +864,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="편집 중인 원본 파일. htmlPath 계산에 쓴다.")
     parser.add_argument("--shadow", action="append", default=[], metavar="SRC=TMP",
                         help="원본 파일의 내용을 임시 파일 내용으로 대체 (미저장 버퍼 반영).")
+    parser.add_argument("--stub-doxygen", action="store_true",
+                        help="미저장 사본을 적용하는 문서의 .. doxygen*:: 블록을 "
+                             "자리표시자로 바꾼다(타이핑 중 반응성). 줄 수는 유지한다.")
     parser.add_argument("--shadow-max-read-ms", type=int, default=-1, metavar="MS",
                         help="직전 빌드의 읽기 시간이 이 값을 넘는 문서에는 --shadow 를 "
                              "적용하지 않는다. 음수면 제한 없음.")
@@ -847,8 +930,10 @@ def main(argv: list[str] | None = None) -> int:
         _install_read_cost_meter(app, read_costs)
 
         applied, skipped = _plan_shadow(app, args, read_costs, status_stream)
+        stubbed_docs: dict[str, int] = {}
         if applied:
-            app.connect("source-read", _shadow_source_reader(applied))
+            app.connect("source-read",
+                        _shadow_source_reader(applied, bool(args.stub_doxygen), stubbed_docs))
         report["shadowApplied"] = sorted(applied)
         report["shadowSkipped"] = sorted(skipped)
 
@@ -858,8 +943,30 @@ def main(argv: list[str] | None = None) -> int:
         stamper = SourceLineStamper(_load_source_map(args.out_dir))
         app.connect("doctree-resolved",
                     lambda _app, doctree, _docname: stamper.stamp_doctree(doctree))
+        # 계측기가 값을 덮어쓰기 **전에** 원본을 떠 둔다. 아래에서 자리표시자로
+        # 읽은 문서만 되돌린다.
+        costs_before_build = dict(read_costs)
+
         app.build()
         _save_source_map(args.out_dir, stamper.sources)
+
+        # 자리표시자로 읽은 문서의 비용은 기록하지 않는다. 그것은 **온전한 문서의
+        # 재파싱 비용이 아니라** 지시어를 뺀 값이라, 기록해 두면 나중에 이 기능을
+        # 껐을 때 임계값 판정이 "이 문서는 싸다" 고 오판해 38초짜리 문서에
+        # 미저장 편집을 적용하고 그 자리에서 멈춘다. 직전 값을 되돌려 둔다.
+        for docname in stubbed_docs:
+            previous_cost = costs_before_build.get(docname)
+            if previous_cost is None:
+                read_costs.pop(docname, None)
+            else:
+                read_costs[docname] = previous_cost
+        report["stubbedDoxygen"] = {name: count for name, count in sorted(stubbed_docs.items())}
+        if stubbed_docs:
+            for docname, count in sorted(stubbed_docs.items()):
+                status_stream.write(
+                    f"미저장 편집: {docname} 의 doxygen 지시어 {count}개를 생략했습니다"
+                    f"(저장하면 온전히 만듭니다).\n")
+
         _save_json(args.out_dir / READ_COST_NAME, read_costs)
         _save_json(args.out_dir / SHADOWED_NAME, sorted(applied))
 

@@ -899,12 +899,22 @@ QWidget* QSettingsDialog::createPreviewPage()
     limitLayout->addStretch( 1 );
     unsavedLayout->addWidget( limitRow );
 
+    m_previewStubDoxygenCheck = new QCheckBox(
+        tr( "타이핑 중에는 doxygen 지시어를 생략하기" ), unsavedGroup );
+    m_previewStubDoxygenCheck->setToolTip(
+        tr( "켜면 위의 재파싱 허용 시간을 적용하지 않습니다." ) );
+    unsavedLayout->addWidget( m_previewStubDoxygenCheck );
+
     auto* unsavedHint = new QLabel(
         tr( "켜면 저장하기 전의 편집 내용이 프리뷰에 바로 나타납니다. 다만 그러려면 "
             "그 문서를 편집할 때마다 다시 파싱해야 합니다.\n\n"
             "Breathe 로 C++ API 를 싣는 문서처럼 디렉티브 하나가 doxygen XML 수백 개를 "
             "훑는 경우 재파싱만 수십 초가 걸립니다. 직전 빌드에서 잰 파싱 시간이 위 "
-            "값을 넘는 문서는 자동으로 제외되어 **저장할 때만** 갱신됩니다." ),
+            "값을 넘는 문서는 자동으로 제외되어 **저장할 때만** 갱신됩니다.\n\n"
+            "마지막 항목을 켜면 그런 문서에서도 편집이 반영됩니다. 타이핑하는 동안 "
+            "API 부분만 \"저장하면 표시됩니다\" 자리표시자로 두고, 저장하면 온전히 "
+            "다시 만듭니다. 줄 번호는 그대로 유지되므로 스크롤 동기화는 어긋나지 "
+            "않습니다." ),
         unsavedGroup );
     unsavedHint->setWordWrap( true );
     unsavedLayout->addWidget( unsavedHint );
@@ -921,7 +931,8 @@ QWidget* QSettingsDialog::createPreviewPage()
         emit settingsApplied();
     } );
     connect( m_previewUnsavedCheck, &QCheckBox::toggled, this, [this, limitRow]( const bool checked ) {
-        limitRow->setEnabled( checked );
+        m_previewStubDoxygenCheck->setEnabled( checked );
+        limitRow->setEnabled( checked && !m_previewStubDoxygenCheck->isChecked() );
         AppSettings().setValue( QStringLiteral( "preview/applyUnsavedEdits" ), checked );
         emit settingsApplied();
     } );
@@ -929,7 +940,16 @@ QWidget* QSettingsDialog::createPreviewPage()
         AppSettings().setValue( QStringLiteral( "preview/unsavedEditMaxReadMs" ), value );
         emit settingsApplied();
     } );
-    limitRow->setEnabled( m_previewUnsavedCheck->isChecked() );
+    connect( m_previewStubDoxygenCheck, &QCheckBox::toggled, this,
+            [this, limitRow]( const bool checked ) {
+                // 생략하면 재파싱이 어차피 싸므로 허용 시간이 의미가 없다.
+                limitRow->setEnabled( m_previewUnsavedCheck->isChecked() && !checked );
+                AppSettings().setValue( QStringLiteral( "preview/stubDoxygenWhileTyping" ), checked );
+                emit settingsApplied();
+            } );
+    limitRow->setEnabled( m_previewUnsavedCheck->isChecked()
+                          && !m_previewStubDoxygenCheck->isChecked() );
+    m_previewStubDoxygenCheck->setEnabled( m_previewUnsavedCheck->isChecked() );
 
     return page;
 }
@@ -957,6 +977,12 @@ void QSettingsDialog::loadPreviewSettings()
         m_previewUnsavedMaxReadSpin->setValue(
             settings.value( QStringLiteral( "preview/unsavedEditMaxReadMs" ), 2000 ).toInt() );
     }
+    if( m_previewStubDoxygenCheck != nullptr )
+    {
+        const QSignalBlocker blocker( m_previewStubDoxygenCheck );
+        m_previewStubDoxygenCheck->setChecked(
+            settings.value( QStringLiteral( "preview/stubDoxygenWhileTyping" ), true ).toBool() );
+    }
 }
 
 void QSettingsDialog::savePreviewSettings()
@@ -976,6 +1002,11 @@ void QSettingsDialog::savePreviewSettings()
     {
         settings.setValue( QStringLiteral( "preview/unsavedEditMaxReadMs" ),
                            m_previewUnsavedMaxReadSpin->value() );
+    }
+    if( m_previewStubDoxygenCheck != nullptr )
+    {
+        settings.setValue( QStringLiteral( "preview/stubDoxygenWhileTyping" ),
+                           m_previewStubDoxygenCheck->isChecked() );
     }
 }
 

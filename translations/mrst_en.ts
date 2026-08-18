@@ -1259,16 +1259,36 @@ When turned off, existing hot exit backups are deleted immediately.</translation
         <translation type="unfinished">Category</translation>
     </message>
     <message>
+        <source>켜면 위의 재파싱 허용 시간을 적용하지 않습니다.</source>
+        <translation type="unfinished">When enabled, the re-parse time limit above does not apply.</translation>
+    </message>
+    <message>
         <source>켜면 저장하기 전의 편집 내용이 프리뷰에 바로 나타납니다. 다만 그러려면 그 문서를 편집할 때마다 다시 파싱해야 합니다.
 
 Breathe 로 C++ API 를 싣는 문서처럼 디렉티브 하나가 doxygen XML 수백 개를 훑는 경우 재파싱만 수십 초가 걸립니다. 직전 빌드에서 잰 파싱 시간이 위 값을 넘는 문서는 자동으로 제외되어 **저장할 때만** 갱신됩니다.</source>
-        <translation type="unfinished">When on, edits appear in the preview before you save. That does require the document to be reparsed on every edit.
+        <translation type="obsolete">When on, edits appear in the preview before you save. That does require the document to be reparsed on every edit.
 
 Where a single directive scans hundreds of doxygen XML files — a document that pulls in a C++ API through Breathe, for instance — reparsing alone takes tens of seconds. Documents whose parse time measured in the last build exceeds the value above are excluded automatically and refresh **only on save**.</translation>
     </message>
     <message>
+        <source>켜면 저장하기 전의 편집 내용이 프리뷰에 바로 나타납니다. 다만 그러려면 그 문서를 편집할 때마다 다시 파싱해야 합니다.
+
+Breathe 로 C++ API 를 싣는 문서처럼 디렉티브 하나가 doxygen XML 수백 개를 훑는 경우 재파싱만 수십 초가 걸립니다. 직전 빌드에서 잰 파싱 시간이 위 값을 넘는 문서는 자동으로 제외되어 **저장할 때만** 갱신됩니다.
+
+마지막 항목을 켜면 그런 문서에서도 편집이 반영됩니다. 타이핑하는 동안 API 부분만 &quot;저장하면 표시됩니다&quot; 자리표시자로 두고, 저장하면 온전히 다시 만듭니다. 줄 번호는 그대로 유지되므로 스크롤 동기화는 어긋나지 않습니다.</source>
+        <translation type="unfinished">When enabled, edits appear in the preview before you save. That requires re-parsing the document on every edit.
+
+For documents that pull in a C++ API with Breathe, a single directive can scan hundreds of doxygen XML files, and re-parsing alone takes tens of seconds. Documents whose measured parse time from the previous build exceeds the value above are excluded automatically and refresh **only when you save**.
+
+Enable the last option to have edits reflected in those documents too. While you type, only the API sections are replaced by a &quot;shown once you save&quot; placeholder; saving rebuilds them in full. Line numbers are preserved, so scroll synchronisation stays aligned.</translation>
+    </message>
+    <message>
         <source>코드 폴딩:</source>
         <translation type="unfinished">Code folding:</translation>
+    </message>
+    <message>
+        <source>타이핑 중에는 doxygen 지시어를 생략하기</source>
+        <translation type="unfinished">Skip doxygen directives while typing</translation>
     </message>
     <message>
         <source>탭 간격:</source>

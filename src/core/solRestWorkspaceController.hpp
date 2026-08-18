@@ -250,6 +250,9 @@ private:
     qint64                              previewShownMTimeMs_ = -1;
     /// 설정 preview/skipUnchangedBuild. 입력이 안 바뀌었으면 빌드를 건너뛴다.
     bool                                previewSkipUnchangedBuild_ = true;
+    /// 설정 preview/stubDoxygenWhileTyping. 타이핑 중에는 doxygen 지시어를
+    /// 자리표시자로 두어, 재파싱이 수십 초인 문서도 편집이 반영되게 한다.
+    bool                                previewStubDoxygenWhileTyping_ = true;
     /// 늦게 도착한 이전 문서의 게이트 판정을 버리기 위한 세대 번호
     /// (outlineGeneration_ 과 같은 관용구).
     quint64                             previewGateGeneration_ = 0;

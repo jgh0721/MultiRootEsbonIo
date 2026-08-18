@@ -397,6 +397,8 @@ void SphinxPreviewController::startBuild()
                   << QStringLiteral( "%1=%2" ).arg( active_.sourceFile, active_.shadowFile )
                   << QStringLiteral( "--shadow-max-read-ms" )
                   << QString::number( active_.shadowMaxReadMs );
+        if( active_.stubDoxygenForShadow )
+            arguments << QStringLiteral( "--stub-doxygen" );
     }
 
     UvTask::Request request;

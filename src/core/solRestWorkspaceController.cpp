@@ -558,6 +558,7 @@ void WorkspaceController::requestPreviewBuild( const bool immediate, const bool 
     request.shadowFile = previewApplyUnsavedEdits_ ? writeShadowCopy( view, context->path )
                                                    : QString();
     request.shadowMaxReadMs = previewUnsavedMaxReadMs_;
+    request.stubDoxygenForShadow = previewStubDoxygenWhileTyping_;
     // 가상 프로젝트(워크스페이스 밖의 단독 파일)는 지문을 남기지 않는다.
     // 빌드 산출물이 QTemporaryDir 안이라 세션과 함께 사라지므로 지문이 가리킬
     // 대상이 없고, 남기면 사용자의 .multiroot 에 임시 프로젝트 항목만 쌓인다.
@@ -1137,6 +1138,8 @@ void WorkspaceController::reloadSettings()
         settings.value( QStringLiteral( "preview/applyUnsavedEdits" ), true ).toBool();
     previewSkipUnchangedBuild_ =
         settings.value( QStringLiteral( "preview/skipUnchangedBuild" ), true ).toBool();
+    previewStubDoxygenWhileTyping_ =
+        settings.value( QStringLiteral( "preview/stubDoxygenWhileTyping" ), true ).toBool();
     // 0 은 "제한 없음" 이다. 빌더는 음수를 그 뜻으로 받는다.
     const int maxReadMs = settings.value( QStringLiteral( "preview/unsavedEditMaxReadMs" ), 2000 ).toInt();
     previewUnsavedMaxReadMs_ = ( maxReadMs > 0 ) ? maxReadMs : -1;

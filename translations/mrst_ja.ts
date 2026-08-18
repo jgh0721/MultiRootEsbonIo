@@ -1253,16 +1253,36 @@
         <translation type="unfinished">カテゴリ</translation>
     </message>
     <message>
+        <source>켜면 위의 재파싱 허용 시간을 적용하지 않습니다.</source>
+        <translation type="unfinished">有効にすると、上の再パース許容時間は適用されません。</translation>
+    </message>
+    <message>
         <source>켜면 저장하기 전의 편집 내용이 프리뷰에 바로 나타납니다. 다만 그러려면 그 문서를 편집할 때마다 다시 파싱해야 합니다.
 
 Breathe 로 C++ API 를 싣는 문서처럼 디렉티브 하나가 doxygen XML 수백 개를 훑는 경우 재파싱만 수십 초가 걸립니다. 직전 빌드에서 잰 파싱 시간이 위 값을 넘는 문서는 자동으로 제외되어 **저장할 때만** 갱신됩니다.</source>
-        <translation type="unfinished">オンにすると保存前の編集内容がプレビューにすぐ現れます。ただしそのためには、そのドキュメントを編集するたびに再パースが必要です。
+        <translation type="obsolete">オンにすると保存前の編集内容がプレビューにすぐ現れます。ただしそのためには、そのドキュメントを編集するたびに再パースが必要です。
 
 Breathe で C++ API を取り込む文書のように、ディレクティブ 1 つが doxygen XML を数百件走査する場合、再パースだけで数十秒かかります。直前のビルドで計測したパース時間が上の値を超えるドキュメントは自動的に除外され、**保存時のみ**更新されます。</translation>
     </message>
     <message>
+        <source>켜면 저장하기 전의 편집 내용이 프리뷰에 바로 나타납니다. 다만 그러려면 그 문서를 편집할 때마다 다시 파싱해야 합니다.
+
+Breathe 로 C++ API 를 싣는 문서처럼 디렉티브 하나가 doxygen XML 수백 개를 훑는 경우 재파싱만 수십 초가 걸립니다. 직전 빌드에서 잰 파싱 시간이 위 값을 넘는 문서는 자동으로 제외되어 **저장할 때만** 갱신됩니다.
+
+마지막 항목을 켜면 그런 문서에서도 편집이 반영됩니다. 타이핑하는 동안 API 부분만 &quot;저장하면 표시됩니다&quot; 자리표시자로 두고, 저장하면 온전히 다시 만듭니다. 줄 번호는 그대로 유지되므로 스크롤 동기화는 어긋나지 않습니다.</source>
+        <translation type="unfinished">有効にすると、保存前の編集内容がプレビューにすぐ反映されます。ただしそのためには、編集ごとにその文書を再パースする必要があります。
+
+Breathe で C++ API を取り込む文書のように、ディレクティブ一つが doxygen XML を数百件走査する場合、再パースだけで数十秒かかります。直前のビルドで計測したパース時間が上の値を超える文書は自動的に除外され、**保存したときだけ**更新されます。
+
+最後の項目を有効にすると、そうした文書でも編集が反映されます。入力中は API 部分だけを「保存すると表示されます」というプレースホルダーに置き換え、保存時に完全に作り直します。行番号は保たれるため、スクロール同期はずれません。</translation>
+    </message>
+    <message>
         <source>코드 폴딩:</source>
         <translation type="unfinished">コード折りたたみ:</translation>
+    </message>
+    <message>
+        <source>타이핑 중에는 doxygen 지시어를 생략하기</source>
+        <translation type="unfinished">入力中は doxygen ディレクティブを省略する</translation>
     </message>
     <message>
         <source>탭 간격:</source>
