@@ -1,6 +1,8 @@
 ﻿#include "stdafx.h"
 #include "CompletionPopupWidget.hpp"
 
+#include "core/solThemeManager.hpp"
+
 #include <QApplication>
 #include <QFontMetrics>
 #include <QGuiApplication>
@@ -58,7 +60,9 @@ KindIcon iconForKind( const int kind )
         case 15: return { QLatin1Char( 'S' ), "#6b9bd2" };   // Snippet
         case 17: return { QLatin1Char( 'F' ), "#8b5cf6" };   // File
         case 18: return { QLatin1Char( 'R' ), "#3b82f6" };   // Reference -> :ref: 대상
-        case 19: return { QLatin1Char( 'D' ), "#8b5cf6" };   // Folder
+        case 19: return { QLatin1Char( '/' ), "#8b5cf6" };   // Folder — 'D' 보다 '/' 가 즉시 읽힌다
+        case kCompletionKindImageFile:
+                 return { QChar( 0x25A3 ), "#10b981" };      // 상세에 프리뷰가 뜨는 이미지
         case 21: return { QLatin1Char( 'C' ), "#22c55e" };   // Constant
         case 22: return { QLatin1Char( 'S' ), "#e8a838" };   // Struct
         default: return { QLatin1Char( 0x00b7 ), "#888888" };
@@ -130,8 +134,17 @@ public:
         if( !detail.isEmpty() )
         {
             painter->setFont( detailFont );
-            QColor dimmed = styled.palette.text().color();
-            dimmed.setAlpha( 140 );
+            // 팔레트에서 읽지 않는다. 테마를 바꿀 때 Qlementine 이
+            // QApplication::setPalette() 를 부르는 순서가 우리 그리기와 보장되지 않는다.
+            // 또 이 열은 경로 후보에서 동명 파일을 가르는 정보라 알파로 더 흐리게
+            // 만들지 않는다 (작은 글씨만으로도 충분히 부차적으로 보인다).
+            QColor dimmed = ThemeManager::instance().color( QStringLiteral( "common.foregroundMuted" ) );
+            if( styled.state.testFlag( QStyle::State_Selected ) )
+            {
+                // 선택 배경 위에서는 테마의 보조 글자색이 묻힌다.
+                dimmed = styled.palette.highlightedText().color();
+                dimmed.setAlpha( 180 );
+            }
             painter->setPen( dimmed );
             const QRect detailRect( rect.right() - detailWidth - kMargin, rect.top(),
                                    detailWidth, rect.height() );
@@ -176,9 +189,11 @@ private:
         const QFontMetrics metrics( font );
         const int baseline = rect.center().y() + metrics.ascent() / 2 - 1;
         // 선택된 행에서는 강조색이 배경에 묻히므로 굵게만 남긴다.
+        // 하드코딩한 #1a73e8 은 다크 배경에서 대비가 3.2:1 로 모자랐다.
+        // 테마의 강조색은 라이트/다크 양쪽에서 검증된 값이다.
         const QColor accent = option.state.testFlag( QStyle::State_Selected )
                                   ? normal
-                                  : QColor( QStringLiteral( "#1a73e8" ) );
+                                  : ThemeManager::instance().color( QStringLiteral( "common.accent" ) );
 
         int x = rect.left();
         for( int index = 0; index < label.length(); ++index )
