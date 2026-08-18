@@ -1,12 +1,13 @@
 ﻿#include "stdafx.h"
 #include "solWorkspaceSearch.hpp"
 
+#include "core/solFileKinds.hpp"
+
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
-#include <QSet>
 
 namespace mrst {
 namespace {
@@ -20,18 +21,6 @@ const QStringList& defaultSuffixes()
         QStringLiteral( "ini" ),
     };
     return suffixes;
-}
-
-const QSet< QString >& excludedDirectories()
-{
-    static const QSet< QString > names{
-        QStringLiteral( ".git" ),   QStringLiteral( ".hg" ),   QStringLiteral( ".svn" ),
-        QStringLiteral( ".idea" ),  QStringLiteral( ".vs" ),   QStringLiteral( "__pycache__" ),
-        QStringLiteral( "_build" ), QStringLiteral( "build" ), QStringLiteral( ".multiroot" ),
-        QStringLiteral( ".venv" ),  QStringLiteral( "venv" ),  QStringLiteral( "env" ),
-        QStringLiteral( "node_modules" ), QStringLiteral( ".tox" ),
-    };
-    return names;
 }
 
 /// 검색/치환에 쓸 정규식 하나로 정규화한다.
@@ -91,7 +80,7 @@ QStringList collectSearchableFiles( const QString& root, const QStringList& suff
             rootDir.relativeFilePath( absolute ).split( QLatin1Char( '/' ), Qt::SkipEmptyParts );
         bool excluded = false;
         for( qsizetype index = 0; index + 1 < parts.size(); ++index )
-            excluded = excluded || excludedDirectories().contains( parts.at( index ).toCaseFolded() );
+            excluded = excluded || filekinds::isExcludedDirectoryName( parts.at( index ) );
         if( excluded )
             continue;
 

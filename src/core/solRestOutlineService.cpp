@@ -1,13 +1,13 @@
 ﻿#include "stdafx.h"
 #include "solRestOutlineService.hpp"
 
+#include "core/solFileKinds.hpp"
 #include "utils/solBackgroundWork.hpp"
 
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
-#include <QSet>
 
 #include <algorithm>
 
@@ -23,18 +23,6 @@ const QString& adornmentChars()
 
 /// LSP SymbolKind::Number. 파이썬 원본과 맞춘다 (섹션에 딱 맞는 kind 가 없다).
 constexpr int kSectionKind = 12;
-
-/// 프로젝트 개요에서 건너뛸 디렉터리.
-const QSet< QString >& excludedDirectories()
-{
-    static const QSet< QString > names{
-        QStringLiteral( ".git" ),   QStringLiteral( ".hg" ),    QStringLiteral( ".svn" ),
-        QStringLiteral( ".idea" ),  QStringLiteral( ".vs" ),    QStringLiteral( "__pycache__" ),
-        QStringLiteral( "_build" ), QStringLiteral( "build" ),  QStringLiteral( ".multiroot" ),
-        QStringLiteral( ".venv" ),  QStringLiteral( "venv" ),   QStringLiteral( "node_modules" ),
-    };
-    return names;
-}
 
 /// 전부 같은 장식 문자로 이루어진 두 글자 이상의 줄인가.
 QChar adornmentChar( const QStringView line )
@@ -213,7 +201,7 @@ QStringList collectProjectDocuments( const QString& sourceRoot, const QString& r
         const QStringList parts = relative.split( QLatin1Char( '/' ), Qt::SkipEmptyParts );
         bool excluded = false;
         for( qsizetype index = 0; index + 1 < parts.size(); ++index )
-            excluded = excluded || excludedDirectories().contains( parts.at( index ).toCaseFolded() );
+            excluded = excluded || filekinds::isExcludedDirectoryName( parts.at( index ) );
         if( excluded )
             continue;
 

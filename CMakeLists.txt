@@ -107,6 +107,8 @@ add_executable(${PROJECT_NAME}
         src/core/solQlementineTheme.hpp
         src/core/solThemeManager.cpp
         src/core/solThemeManager.hpp
+        src/core/solFileKinds.cpp
+        src/core/solFileKinds.hpp
         src/core/solGlossaryIndex.cpp
         src/core/solGlossaryIndex.hpp
         src/core/solLanguageManager.cpp
@@ -318,6 +320,7 @@ if(MRST_BUILD_TESTS)
             src/editor/RstContainerLexer.cpp
             src/core/solRstOfflineCompletions.cpp
             src/core/solUpdateManifest.cpp
+            src/core/solFileKinds.cpp
             src/core/solGlossaryIndex.cpp
             src/core/solRestOutlineService.cpp
             src/core/solWorkspaceSearch.cpp

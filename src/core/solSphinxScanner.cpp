@@ -1,6 +1,7 @@
 ﻿#include "stdafx.h"
 #include "solSphinxScanner.hpp"
 
+#include "core/solFileKinds.hpp"
 #include "utils/solBackgroundWork.hpp"
 
 #include <algorithm>
@@ -14,10 +15,6 @@
 namespace mrst {
 namespace fs = std::filesystem;
 namespace {
-
-std::set<std::string> defaultExcludedDirs() {
-    return {".git", ".hg", ".svn", ".idea", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", ".venv", "__pycache__", "_build", "build", ".multiroot"};
-}
 
 std::string lower(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
@@ -84,7 +81,7 @@ bool SphinxProject::contains(const fs::path& filePath) const {
 
 ProjectScanner::ProjectScanner(fs::path workspaceRoot, ScannerSettings settings)
     : workspaceRoot_(fs::weakly_canonical(std::move(workspaceRoot))), settings_(std::move(settings)) {
-    excludedDirs_ = defaultExcludedDirs();
+    excludedDirs_ = filekinds::excludedScanDirectoriesNarrow();
     for (const std::string& extra : settings_.excludedDirs) {
         excludedDirs_.insert(lower(extra));
     }

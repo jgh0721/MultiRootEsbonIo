@@ -3,6 +3,7 @@
 
 #include "core/solAppSettings.hpp"
 #include "core/solBaseView.hpp"
+#include "core/solFileKinds.hpp"
 #include "core/solPythonEnvMgr.hpp"
 #include "core/solRestWorkspaceController.hpp"
 #include "core/solSphinxDiagnosticsStore.hpp"
@@ -60,22 +61,12 @@
 
 namespace
 {
-    QStringList imageFileExtensions()
-    {
-        return { "jpg", "jpeg", "png", "bmp", "gif", "tiff", "tif", "ico", "webp", "svg" };
-    }
-
-    QStringList markdownFileExtensions()
-    {
-        return { "md", "markdown", "mdown" };
-    }
-
     bool fileWouldOpenAsText( const QString& filePath )
     {
         const QString ext = QFileInfo( filePath ).suffix().toLower();
         return ext != QStringLiteral( "pdf" )
-            && !imageFileExtensions().contains( ext )
-            && !markdownFileExtensions().contains( ext );
+            && !mrst::filekinds::imageExtensions().contains( ext )
+            && !mrst::filekinds::markdownExtensions().contains( ext );
     }
 
     bool canCloseWithTextHotExit( QBaseView* view )
@@ -1186,10 +1177,10 @@ QBaseView* MainWindow::createViewForFile( const QString& filePath )
     //if( ext == "pdf" )
     //    return new QPDFView( this );
 
-    //if( imageFileExtensions().contains( ext ) )
+    //if( mrst::filekinds::imageExtensions().contains( ext ) )
     //    return new QImageView( this );
 
-    //if( markdownFileExtensions().contains( ext ) )
+    //if( mrst::filekinds::markdownExtensions().contains( ext ) )
     //    return new QMarkdownView( this );
 
     return new QTextView( this );
