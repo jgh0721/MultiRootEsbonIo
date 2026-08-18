@@ -1565,7 +1565,12 @@ void MainWindow::onCloseTab( int index )
             if( btn == QMessageBox::Cancel ) return;
             if( btn == QMessageBox::Yes )
             {
-                if( !saveView( view, true ) )
+                // saveAs=false. 여기서 "예"는 "저장해라"(= Ctrl+S)이지 "다른 이름으로
+                // 저장해라"가 아니다. true 를 주면 saveFileAs() -> TextSaveDialog 로
+                // 이어져, 경로가 이미 있는 파일에도 "다른 이름으로 저장" 대화상자가
+                // 탭마다 하나씩 뜬다. 이름 없는 새 문서는 saveFile() 안에서 경로가
+                // 비어 있을 때 그 대화상자로 물러서므로 그대로 동작한다.
+                if( !saveView( view, false ) )
                     return;
                 if( view->isLoading() )
                 {
@@ -1650,7 +1655,10 @@ void MainWindow::closeEvent( QCloseEvent* event )
                     }
                     if( btn == QMessageBox::Yes )
                     {
-                        if( !saveView( view, true ) )
+                        // saveAs=false — onCloseTab 과 같은 이유다. 종료 확인에서
+                        // "예"는 "저장해라"이고, true 를 주면 수정된 탭마다
+                        // "다른 이름으로 저장" 대화상자가 하나씩 떠서 종료가 멈춘다.
+                        if( !saveView( view, false ) )
                         {
                             pendingInstall_ = false;
                             abortShutdown();
