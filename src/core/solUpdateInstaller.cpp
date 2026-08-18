@@ -1,6 +1,8 @@
 ﻿#include "stdafx.h"
 #include "core/solUpdateInstaller.hpp"
 
+#include "mrst_version.h"
+
 #include "utils/ProcessReaper.hpp"
 #include "utils/solBackgroundWork.hpp"
 
@@ -29,7 +31,7 @@ constexpr auto kUpdaterLogName  = "updater.log";
 constexpr auto kResultName      = "result.ini";
 constexpr auto kStagedName      = "staged.ini";
 constexpr auto kLockName        = "lock";
-constexpr auto kUpdaterFileName = "mrst_updater.exe";
+constexpr auto kUpdaterFileName = MRST_UPDATER_EXE_NAME;
 
 bool ensureDirectory( const QString& path, QString* errorMessage )
 {
@@ -217,8 +219,9 @@ StagedUpdate UpdateInstaller::stagedUpdate() const
 
     // 교체가 끝났으면 staging 은 비어 있다. 그것도 의미 있는 상태이므로 버리지
     // 않고 그대로 알린다 (호출자가 백업을 정리할 시점을 여기서 판단한다).
-    const QString appName = QFileInfo( applicationExecutable() ).fileName();
-    staged.payloadPresent = QFileInfo::exists( QDir( stagingDirectory() ).filePath( appName ) );
+    // 실행 중 이름이 아니라 배포 이름으로 본다 (UpdateService::startVerification 과 같은 이유).
+    staged.payloadPresent = QFileInfo::exists(
+        QDir( stagingDirectory() ).filePath( QStringLiteral( MRST_APP_EXE_NAME ) ) );
 
     return staged;
 }

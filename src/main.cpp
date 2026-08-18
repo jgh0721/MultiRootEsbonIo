@@ -1,6 +1,7 @@
 ﻿#include "stdafx.h"
 #include "main.hpp"
 
+#include "core/solAppSettings.hpp"
 #include "core/solLanguageManager.hpp"
 #include "core/solQlementineTheme.hpp"
 #include "core/solThemeManager.hpp"
@@ -45,13 +46,20 @@ int main( int argc, char* argv[] )
     {
         QApplication app( argc, argv );
         mrst::traceP( "qapp.ready" );
-        QApplication::setApplicationName( "MultiRoot reST Editor" );
+        QApplication::setApplicationName( QStringLiteral( MRST_PRODUCT_NAME ) );
         QApplication::setOrganizationName( "myHouse" );
         // 파일 속성의 버전과 어긋나지 않도록 리소스와 같은 값을 쓴다.
         QApplication::setApplicationVersion( QStringLiteral( MRST_VERSION_STRING ) );
         // 창 / 작업 표시줄 / Alt+Tab 아이콘. 탐색기가 보여 주는 .exe 아이콘은
         // 이것과 별개로 resources/app.rc 의 ICON 리소스가 담당한다.
         QApplication::setWindowIcon( QIcon( QStringLiteral( ":/icons/app.png" ) ) );
+
+        // 0.4.0 에서 실행 파일 이름과 함께 설정 파일 이름도 바뀌었다. 구 파일을
+        // 새 이름으로 한 번 옮긴다. **설정을 처음 읽는 곳(바로 아래 번역기 설치)
+        // 보다 앞이어야 한다** — 뒤에 두면 첫 실행이 기본값으로 굳고, 그 뒤 저장이
+        // 일어나면 새 ini 가 만들어져 마이그레이션이 영영 일어나지 않는다.
+        if( AppSettings::migrateLegacyFile() )
+            qInfo( "이전 버전의 설정을 옮겼습니다: %s", qPrintable( AppSettings::iniFilePath() ) );
 
         // 번역기를 테마·창보다 **먼저** 건다. MainWindow 생성자가 이미 tr() 을 수십
         // 번 부르므로, 번역기가 그보다 늦게 붙으면 LanguageChange 를 받을 위젯이
@@ -90,7 +98,7 @@ int main( int argc, char* argv[] )
             MainWindow* window = new MainWindow;
 
             // 명령줄로 받은 폴더/파일들. 실제로 여는 것은 창이 처음 그려진 뒤다.
-            // 예) MultiRoot-reST-CPP.exe D:\Docs D:\Docs\A\index.rst D:\Docs\B\index.rst
+            // 예) "MultiRoot-reST Editor.exe" D:\Docs D:\Docs\A\index.rst D:\Docs\B\index.rst
             //
             // 여기서 곧바로 열면 안 된다: show() 는 페인트를 **예약만** 하고 첫
             // 프레임은 아래 exec() 가 이벤트 루프를 돌려야 나온다. 그래서 show() 와

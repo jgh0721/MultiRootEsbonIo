@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "product": "@MRST_PRODUCT@",
+  "product": "@MRST_UPDATE_PRODUCT_ID@",
   "channel": "stable",
   "version": "@MRST_VERSION@",
   "tag": "v@MRST_VERSION@",

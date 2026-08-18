@@ -88,7 +88,9 @@ struct UpdateInfo
 
 /// update-manifest.json 을 파싱한다.
 ///
-/// expectedProduct 는 호출자가 MRST_INTERNAL_NAME 을 넘긴다. 이 파일이
+/// expectedProduct 는 호출자가 MRST_UPDATE_PRODUCT_ID 를 넘긴다(solUpdateService.cpp).
+/// **배포 파일 이름(MRST_INTERNAL_NAME)을 여기에 쓰지 않는다** — 파일 이름을 바꾸는
+/// 순간 자기 매니페스트를 "다른 제품" 으로 거부하게 된다. 이 파일이
 /// 생성 헤더(mrst_version.h)를 직접 include 하지 않는 이유는 테스트 타깃의
 /// include 경로에 빌드 디렉터리가 없기 때문이다.
 ///

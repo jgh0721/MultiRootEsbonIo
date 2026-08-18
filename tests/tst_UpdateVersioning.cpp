@@ -12,7 +12,10 @@ using namespace mrst;
 
 namespace {
 
-constexpr auto kProduct = "MultiRoot-reST-CPP";
+/// CMakeLists.txt 가 cmake/MrstNames.cmake 의 실제 값을 넣어 준다. 리터럴로
+/// 적어 두면 product 를 바꿨을 때(= 구버전과의 계약을 깼을 때) 테스트가 그것을
+/// 모르고 통과한다.
+constexpr auto kProduct = MRST_UPDATE_PRODUCT_ID;
 
 /// 유효한 sha256 자리를 채우는 값. 실제 해시일 필요는 없고 형식만 맞으면 된다.
 QString dummySha256()
@@ -29,8 +32,8 @@ QJsonObject makeAsset()
     asset[ QStringLiteral( "arch" ) ]     = QStringLiteral( "x64" );
     asset[ QStringLiteral( "url" ) ]      = QStringLiteral(
         "https://github.com/jgh0721/MultiRootEsbonIo/releases/download/v0.2.1/"
-        "MultiRoot-reST-CPP-0.2.1-win64.zip" );
-    asset[ QStringLiteral( "rootDir" ) ]    = QStringLiteral( "MultiRoot-reST-CPP-0.2.1" );
+        "MultiRoot-reST-Editor-0.2.1-win64.zip" );
+    asset[ QStringLiteral( "rootDir" ) ]    = QStringLiteral( "MultiRoot-reST-Editor-0.2.1" );
     asset[ QStringLiteral( "size" ) ]       = 157286400;
     asset[ QStringLiteral( "sha256" ) ]     = dummySha256();
     asset[ QStringLiteral( "entryCount" ) ] = 82;
@@ -202,7 +205,7 @@ void TestUpdateVersioning::parsesValidManifest()
     QVERIFY( !info.mandatory );
     QVERIFY( info.releasedAt.isValid() );
     QCOMPARE( info.asset.id, QStringLiteral( "app" ) );
-    QCOMPARE( info.asset.rootDir, QStringLiteral( "MultiRoot-reST-CPP-0.2.1" ) );
+    QCOMPARE( info.asset.rootDir, QStringLiteral( "MultiRoot-reST-Editor-0.2.1" ) );
     QCOMPARE( info.asset.size, 157286400LL );
     QCOMPARE( info.asset.entryCount, 82 );
     QCOMPARE( info.asset.sha256, dummySha256() );

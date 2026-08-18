@@ -31,19 +31,19 @@ const wchar_t* text( const Text id, const UiLang lang )
             L"이 프로그램은 MultiRoot reST 가 업데이트를 적용할 때 자동으로 실행됩니다.\r\n"
             L"\r\n"
             L"직접 되돌리려면:\r\n"
-            L"  mrst_updater.exe --rollback --target <설치폴더> "
+            L"  \"MultiRoot-reST Updater.exe\" --rollback --target <설치폴더> "
             L"--backup <설치폴더>\\.update\\backup --log <로그파일>",
 
             L"This program runs automatically when MultiRoot reST applies an update.\r\n"
             L"\r\n"
             L"To roll back manually:\r\n"
-            L"  mrst_updater.exe --rollback --target <install folder> "
+            L"  \"MultiRoot-reST Updater.exe\" --rollback --target <install folder> "
             L"--backup <install folder>\\.update\\backup --log <log file>",
 
             L"このプログラムは MultiRoot reST が更新を適用するときに自動的に実行されます。\r\n"
             L"\r\n"
             L"手動で元に戻すには:\r\n"
-            L"  mrst_updater.exe --rollback --target <インストール先> "
+            L"  \"MultiRoot-reST Updater.exe\" --rollback --target <インストール先> "
             L"--backup <インストール先>\\.update\\backup --log <ログファイル>",
         },
         /* RollbackOk */ {

@@ -77,8 +77,10 @@ constexpr qint64 kMaxManifestBytes = 256 * 1024;
 
 [[nodiscard]] QString userAgent()
 {
+    // 공백 없는 제품 식별자를 쓴다. MRST_INTERNAL_NAME 은 배포 파일 이름과 같아서
+    // 공백이 들어 있고, User-Agent 의 product 토큰에는 공백을 넣을 수 없다(RFC 9110).
     return QStringLiteral( "%1/%2" )
-        .arg( QStringLiteral( MRST_INTERNAL_NAME ), QStringLiteral( MRST_VERSION_STRING ) );
+        .arg( QStringLiteral( MRST_UPDATE_PRODUCT_ID ), QStringLiteral( MRST_VERSION_STRING ) );
 }
 
 }  // namespace
@@ -321,7 +323,9 @@ void UpdateService::onManifestFinished()
     }
 
     QString error;
-    const UpdateInfo info = parseUpdateManifest( body, QStringLiteral( MRST_INTERNAL_NAME ), &error,
+    // 기대하는 product 는 배포 파일 이름이 아니라 **와이어 계약**이다. 두 값을 같은
+    // 것으로 두면 실행 파일 이름을 바꾸는 순간 자기 매니페스트도 거부한다.
+    const UpdateInfo info = parseUpdateManifest( body, QStringLiteral( MRST_UPDATE_PRODUCT_ID ), &error,
                                                  manifestUrl().host() );
     if( !info.isValid() )
     {
@@ -613,8 +617,12 @@ void UpdateService::startVerification()
     emit progressChanged( -1, phaseText() );
 
     const QDir staging( installer_->stagingDirectory() );
-    const QString appName     = QFileInfo( UpdateInstaller::applicationExecutable() ).fileName();
-    const QString updaterName = QFileInfo( UpdateInstaller::updaterExecutable() ).fileName();
+    // 실행 중 프로세스 이름이 아니라 **이 빌드가 배포하는 이름**을 본다. 실행 이름을
+    // 기준으로 삼으면, 이름이 바뀐 배포본을 받은 구버전이 "자기 이름" 을 스테이징에서
+    // 찾다가 166MB 를 받아 놓고 검증에서 실패한다. 세대가 갈리는 업데이트는 매니페스트
+    // product 로 애초에 막는다(cmake/MrstNames.cmake).
+    const QString appName     = QStringLiteral( MRST_APP_EXE_NAME );
+    const QString updaterName = QStringLiteral( MRST_UPDATER_EXE_NAME );
     const QString appPath     = staging.filePath( appName );
     const QString updaterPath = staging.filePath( updaterName );
     const QString expected    = info_.version;

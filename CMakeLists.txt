@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project("MultiRoot-reST-CPP" VERSION 0.3.1 LANGUAGES CXX)
+project("MultiRoot-reST-Editor" VERSION 0.4.0 LANGUAGES CXX)
 
 # 실행 파일 아이콘(resources/app.rc)을 컴파일하려면 RC 언어가 필요하다.
 if(WIN32)
@@ -21,9 +21,37 @@ set(MRST_LEXILLA_ROOT "${CMAKE_SOURCE_DIR}/third_party/scintilla/lexilla" CACHE 
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
+# ── 이름 ──────────────────────────────────────────────────
+# 타깃 이름 / 배포 파일 이름 / 설정 파일 이름 / 매니페스트 product 를 한 곳에서
+# 정한다. 패키징 스크립트도 같은 파일을 include 한다. 반드시 아래 버전 헤더
+# 생성보다 **먼저** 와야 한다 — mrst_version.h.in 이 이 값들을 치환한다.
+include(cmake/MrstNames.cmake)
+
+# 설정 파일 이름은 C++ 쪽에도 리터럴로 있다. 테스트 타깃의 include 경로에 빌드
+# 디렉터리가 없어서(solUpdateManifest.hpp 의 같은 사유) 생성 헤더로 흘려보낼 수
+# 없기 때문이다. 두 벌이 갈라지면 패키징의 "있으면 안 되는 파일" 검사가 엉뚱한
+# 이름을 찾아 사용자 ini 유출을 놓치므로, 구성 시점에 대조한다.
+file(READ "${CMAKE_SOURCE_DIR}/uniqueLibs/solDocument_Defs.hpp" _mrstDefs)
+foreach(_pair "DEFAULT_SETTINGS_FILENAME;${MRST_SETTINGS_INI}"
+              "LEGACY_SETTINGS_FILENAME;${MRST_LEGACY_SETTINGS_INI}")
+    list(GET _pair 0 _macro)
+    list(GET _pair 1 _expected)
+    if(NOT _mrstDefs MATCHES "${_macro}[^\"]*\"${_expected}\"")
+        message(FATAL_ERROR
+                "설정 파일 이름이 어긋났다.\n"
+                "  cmake/MrstNames.cmake : ${_expected}\n"
+                "  uniqueLibs/solDocument_Defs.hpp 의 ${_macro} 를 같은 값으로 맞춘다.")
+    endif()
+endforeach()
+unset(_mrstDefs)
+# file(READ) 는 재구성 의존을 만들지 않는다. 이걸 걸지 않으면 헤더의 이름만 고쳤을 때
+# 위 가드가 다시 돌지 않아, 어긋난 상태로 빌드가 통과한다.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/uniqueLibs/solDocument_Defs.hpp")
+
 # ── 버전 헤더 ─────────────────────────────────────────────
 # C++ 과 리소스 컴파일러(app.rc 의 VERSIONINFO)가 같은 값을 쓰도록
-# project(VERSION ...) 을 헤더 하나로 흘려보낸다.
+# project(VERSION ...) 과 위 이름들을 헤더 하나로 흘려보낸다.
 configure_file("${CMAKE_SOURCE_DIR}/cmake/mrst_version.h.in"
         "${CMAKE_BINARY_DIR}/mrst_version.h" @ONLY)
 
@@ -162,6 +190,12 @@ add_executable(${PROJECT_NAME}
 
 if(WIN32)
     target_sources(${PROJECT_NAME} PRIVATE resources/app.rc)
+    # RC 는 include 의존이 자동으로 잡히지 않는다. 실측: ninja `-t deps` 가
+    # app.rc.res 에 대해 #deps 0 을 보고했고, 버전을 올려도 VERSIONINFO 가 옛 값으로
+    # 남았다. 그대로 배포하면 자동 업데이트가 스테이징 exe 의 FileVersion 을
+    # 매니페스트 version 과 대조하는 단계에서 **모든 사용자에게** 실패한다.
+    set_property(SOURCE resources/app.rc APPEND PROPERTY
+            OBJECT_DEPENDS "${CMAKE_BINARY_DIR}/mrst_version.h")
 endif()
 
 # ── MSVC stdafx.h 미리 컴파일된 헤더 지정 ────────────────
@@ -208,6 +242,12 @@ if(WIN32)
     )
 endif()
 
+# 배포 파일 이름에는 공백이 들어간다. 타깃 이름(= PROJECT_NAME)에는 넣을 수 없어서
+# (CMake 가 생성기 표현식 때문에 거부한다) 여기서 갈라 준다.
+# ⚠ OUTPUT_NAME 은 .pdb 이름까지 따라간다 — PackageRelease.cmake 의 금지 목록이
+#    pdb 를 이름으로 찾으므로 그쪽은 TARGET_PDB_FILE 에서 유도해야 한다.
+set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "${MRST_APP_BASENAME}")
+
 # ── 업데이터 (별도 실행 파일) ─────────────────────────────
 # 실행 중인 프로세스는 자기 exe 와 로드된 DLL 을 지울 수 없고, 교체가 중간에
 # 실패했을 때 되돌릴 주체도 필요하다. 그래서 파일 교체만 하는 작은 프로그램을
@@ -217,7 +257,7 @@ endif()
 # 스스로 잠근다. 정적 CRT 라 VC 재배포 DLL 도 필요 없다(windeployqt 에
 # --no-compiler-runtime 을 주고 있어서 그 DLL 은 배포되지 않는다).
 if(WIN32)
-    add_executable(mrst_updater WIN32
+    add_executable(${MRST_UPDATER_TARGET} WIN32
             updater/main.cpp
             updater/solUpdaterStrings.cpp
             updater/solUpdaterStrings.hpp
@@ -225,22 +265,28 @@ if(WIN32)
             updater/solUpdaterSwap.hpp
             updater/updater.rc
     )
+    # 앱과 같은 이유로 타깃 이름과 배포 파일 이름을 갈라 둔다.
+    set_target_properties(${MRST_UPDATER_TARGET} PROPERTIES
+            OUTPUT_NAME "${MRST_UPDATER_BASENAME}")
     # 생성된 mrst_version.h 를 RC 컴파일러가 찾을 수 있게 한다.
-    target_include_directories(mrst_updater PRIVATE "${CMAKE_BINARY_DIR}")
-    target_link_libraries(mrst_updater PRIVATE kernel32 user32 shell32)
+    target_include_directories(${MRST_UPDATER_TARGET} PRIVATE "${CMAKE_BINARY_DIR}")
+    # app.rc 와 같은 이유로 의존을 손으로 걸어 준다.
+    set_property(SOURCE updater/updater.rc APPEND PROPERTY
+            OBJECT_DEPENDS "${CMAKE_BINARY_DIR}/mrst_version.h")
+    target_link_libraries(${MRST_UPDATER_TARGET} PRIVATE kernel32 user32 shell32)
     if(MSVC)
-        target_compile_options(mrst_updater PRIVATE /utf-8 /permissive- /Zc:__cplusplus)
-        set_property(TARGET mrst_updater PROPERTY
+        target_compile_options(${MRST_UPDATER_TARGET} PRIVATE /utf-8 /permissive- /Zc:__cplusplus)
+        set_property(TARGET ${MRST_UPDATER_TARGET} PROPERTY
                 MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
 
     # 앱 옆에 놓아 개발 중에도 설치 흐름을 그대로 시험할 수 있게 한다.
     # (배포 ZIP 에도 이 위치로 들어간다.)
-    add_dependencies(${PROJECT_NAME} mrst_updater)
-    add_custom_command(TARGET mrst_updater POST_BUILD
+    add_dependencies(${PROJECT_NAME} ${MRST_UPDATER_TARGET})
+    add_custom_command(TARGET ${MRST_UPDATER_TARGET} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "$<TARGET_FILE:mrst_updater>" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-            COMMENT "Copying mrst_updater next to the app"
+            "$<TARGET_FILE:${MRST_UPDATER_TARGET}>" "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+            COMMENT "Copying the updater next to the app"
     )
 endif()
 
@@ -290,7 +336,12 @@ if(MRST_BUILD_TESTS)
     # 번역 무결성 테스트가 .ts 원본을 직접 파싱한다. .qm 은 :/i18n 에서 읽는다
     # (아래 qt_add_translations 가 mrst_tests 에도 같은 리소스를 붙인다).
     target_compile_definitions(mrst_tests PRIVATE
-            MRST_I18N_TS_DIR="${CMAKE_SOURCE_DIR}/translations")
+            MRST_I18N_TS_DIR="${CMAKE_SOURCE_DIR}/translations"
+            # 매니페스트 product 는 이미 배포된 클라이언트와의 와이어 계약이다.
+            # 테스트가 자기만의 리터럴을 들고 있으면 그 계약이 바뀌어도 초록불이
+            # 남으므로, CMake 가 실제 값을 넣어 준다. (이 타깃은 생성 헤더를
+            # include 하지 않는다 — include 경로에 빌드 디렉터리가 없다.)
+            MRST_UPDATE_PRODUCT_ID="${MRST_UPDATE_PRODUCT_ID}")
     target_include_directories(mrst_tests PRIVATE
             "${CMAKE_SOURCE_DIR}"
             "${CMAKE_SOURCE_DIR}/src"
@@ -427,7 +478,7 @@ if(WIN32 AND WINDEPLOYQT_EXE)
     set(MRST_REMOVALS "" CACHE STRING
             "이번 릴리스에서 사라진 최상위 항목 (세미콜론 구분). 업데이터가 이것만 추가로 치운다.")
     set(MRST_MIN_FROM_VERSION "" CACHE STRING
-            "제자리 교체를 지원하는 최소 설치 버전. 비우면 0.2.0.")
+            "제자리 교체를 지원하는 최소 설치 버전. 비우면 0.4.0 (0.4.0 에서 이름 세대가 갈렸다).")
     option(MRST_ALLOW_DIRTY "커밋되지 않은 변경이나 태그 없이도 패키징을 허용한다" OFF)
 
     add_custom_target(mrst_package
@@ -438,7 +489,7 @@ if(WIN32 AND WINDEPLOYQT_EXE)
                     -D "MRST_CONFIG=$<CONFIG>"
                     -D "MRST_WINDEPLOYQT=${WINDEPLOYQT_EXE}"
                     -D "MRST_APP_EXE=$<TARGET_FILE:${PROJECT_NAME}>"
-                    -D "MRST_UPDATER_EXE=$<TARGET_FILE:mrst_updater>"
+                    -D "MRST_UPDATER_EXE=$<TARGET_FILE:${MRST_UPDATER_TARGET}>"
                     -D "MRST_APP_PDB=$<TARGET_PDB_FILE:${PROJECT_NAME}>"
                     -D "MRST_REMOVALS=${MRST_REMOVALS}"
                     -D "MRST_MIN_FROM_VERSION=${MRST_MIN_FROM_VERSION}"
@@ -447,7 +498,7 @@ if(WIN32 AND WINDEPLOYQT_EXE)
             COMMENT "릴리스 패키지 생성 → ${MRST_PACKAGE_DIR}"
             VERBATIM USES_TERMINAL
     )
-    add_dependencies(mrst_package ${PROJECT_NAME} mrst_updater)
+    add_dependencies(mrst_package ${PROJECT_NAME} ${MRST_UPDATER_TARGET})
 
     # 업로드는 자격 정보를 다루므로 타깃을 나눈다. mrst_package 는 토큰을 모른다.
     add_custom_target(mrst_release

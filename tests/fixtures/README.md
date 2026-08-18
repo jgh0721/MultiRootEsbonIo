@@ -20,10 +20,10 @@ Sphinx 8 에서 `_static` checksum 오류를 내는 설정이라, override 가 �
 
 ```powershell
 # 워크스페이스만 열기
-MultiRoot-reST-CPP.exe <경로>\TestWorkspace
+"MultiRoot-reST Editor.exe" <경로>\TestWorkspace
 
 # 세 프로젝트의 파일을 동시에 열기 (LSP 풀 확인)
-MultiRoot-reST-CPP.exe <경로>\TestWorkspace `
+"MultiRoot-reST Editor.exe" <경로>\TestWorkspace `
     <경로>\TestWorkspace\DocA\index.rst `
     <경로>\TestWorkspace\DocB\source\index.rst `
     <경로>\TestWorkspace\DocC\source\index.rst

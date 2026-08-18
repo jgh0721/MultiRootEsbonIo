@@ -146,7 +146,7 @@ void TestAuthenticodeVerifier::acceptsOurOwnSignedBuild()
 {
     // 서명된 배포물이 있을 때만 도는 검사다. mrst_package 로 패키지를 만든 뒤
     // 그 경로를 넘기면 "우리 인증서를 실제로 알아보는가" 까지 확인할 수 있다:
-    //   set MRST_TEST_SIGNED_EXE=<package>\MultiRoot-reST-CPP-0.2.0\MultiRoot-reST-CPP.exe
+    //   set MRST_TEST_SIGNED_EXE=<package>\MultiRoot-reST-Editor-0.4.0\MultiRoot-reST Editor.exe
     const QString path = QProcessEnvironment::systemEnvironment()
                             .value( QStringLiteral( "MRST_TEST_SIGNED_EXE" ) );
     if( path.isEmpty() || !QFileInfo::exists( path ) )

@@ -4,8 +4,11 @@
 
 cmake_minimum_required(VERSION 3.21)
 
-set(MRST_PRODUCT   "MultiRoot-reST-CPP")
-set(MRST_STAGE_NAME   "${MRST_PRODUCT}-${MRST_VERSION}")
+include("${MRST_SOURCE_DIR}/cmake/MrstNames.cmake")
+
+# 에셋 이름은 PackageRelease 가 만든 것과 한 글자도 달라서는 안 된다 —
+# 같은 MrstNames 값에서 같은 방식으로 조립한다.
+set(MRST_STAGE_NAME   "${MRST_ARCHIVE_BASENAME}-${MRST_VERSION}")
 set(MRST_ZIP_NAME     "${MRST_STAGE_NAME}-win64.zip")
 set(MRST_SYMBOLS_NAME "${MRST_STAGE_NAME}-win64-symbols.zip")
 
@@ -58,4 +61,4 @@ if(NOT _rc EQUAL 0)
             "이미 같은 태그의 릴리스가 있다면 gh release upload --clobber 를 쓴다.")
 endif()
 
-message(STATUS "완료: https://github.com/jgh0721/MultiRootEsbonIo/releases/tag/v${MRST_VERSION}")
+message(STATUS "완료: https://github.com/${MRST_REPO_SLUG}/releases/tag/v${MRST_VERSION}")

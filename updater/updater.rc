@@ -26,9 +26,9 @@ BEGIN
             VALUE "CompanyName",      MRST_COMPANY_NAME
             VALUE "FileDescription",  "MultiRoot reST Updater"
             VALUE "FileVersion",      MRST_VERSION_STRING
-            VALUE "InternalName",     "mrst_updater"
+            VALUE "InternalName",     MRST_UPDATER_INTERNAL_NAME
             VALUE "LegalCopyright",   MRST_LEGAL_COPYRIGHT
-            VALUE "OriginalFilename", "mrst_updater.exe"
+            VALUE "OriginalFilename", MRST_UPDATER_ORIGINAL_FILENAME
             VALUE "ProductName",      MRST_PRODUCT_NAME
             VALUE "ProductVersion",   MRST_VERSION_STRING
         END

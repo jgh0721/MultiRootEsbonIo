@@ -19,9 +19,30 @@
 #define MRST_VERSION_STRING "@PROJECT_VERSION@"
 #define MRST_VERSION_TAG "v@PROJECT_VERSION@"
 
+// 화면에 보이는 제품 표기. **배포 파일 이름(MRST_APP_BASENAME)과 일부러 다르다.**
+//
+// 이 값은 QApplication::setApplicationName() 에도 들어가고(src/main.cpp), 그 이름이
+// QStandardPaths::AppLocalDataLocation =
+//   %LOCALAPPDATA%\<organizationName>\<applicationName>\TextHotExit
+// 를 결정한다(solShadowBackupStore.cpp). 바꾸면 기존 사용자의 **미저장 편집 백업이
+// 전부 고아가 된다** — 0.4.0 개명에서 실제로 빈 폴더가 새로 생기는 것을 확인했다.
+// 바꿔야 한다면 그 폴더 이관을 같은 커밋에 넣을 것.
 #define MRST_PRODUCT_NAME "MultiRoot reST Editor"
 #define MRST_FILE_DESCRIPTION "MultiRoot reStructuredText Editor"
-#define MRST_INTERNAL_NAME "@PROJECT_NAME@"
-#define MRST_ORIGINAL_FILENAME "@PROJECT_NAME@.exe"
+#define MRST_INTERNAL_NAME "@MRST_APP_BASENAME@"
+#define MRST_ORIGINAL_FILENAME "@MRST_APP_BASENAME@.exe"
+#define MRST_UPDATER_INTERNAL_NAME "@MRST_UPDATER_BASENAME@"
+#define MRST_UPDATER_ORIGINAL_FILENAME "@MRST_UPDATER_BASENAME@.exe"
+
+// 배포 파일 이름. 자동 업데이트가 스테이징에서 이 이름으로 파일을 찾고,
+// UpdateInstaller 가 이 이름으로 업데이터를 띄운다. 실행 중 프로세스 이름을
+// 쓰지 않는 이유: 이름을 바꾼 세대와 그 전 세대가 서로 다른 이름을 보게 된다.
+#define MRST_APP_EXE_NAME     "@MRST_APP_BASENAME@.exe"
+#define MRST_UPDATER_EXE_NAME "@MRST_UPDATER_BASENAME@.exe"
+
+// 자동 업데이트 제품 식별자. **이미 배포된 클라이언트와의 와이어 계약이다.**
+// 매니페스트의 product 와 한 글자라도 다르면 그 클라이언트는 파싱을 중단한다.
+// 근거와 변경 이력은 cmake/MrstNames.cmake 에 적어 두었다.
+#define MRST_UPDATE_PRODUCT_ID "@MRST_UPDATE_PRODUCT_ID@"
 #define MRST_COMPANY_NAME "MultiRoot reST"
 #define MRST_LEGAL_COPYRIGHT "Copyright (C) 2026 MultiRoot reST"

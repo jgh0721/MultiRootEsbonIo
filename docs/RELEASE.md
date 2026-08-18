@@ -26,8 +26,13 @@ gh auth login          # 토큰은 Windows 자격 증명 관리자에 보관된�
 실행 파일 리소스의 FileVersion 이 전부 파생된다.
 
 ```cmake
-project("MultiRoot-reST-CPP" VERSION 0.2.1 LANGUAGES CXX)
+project("MultiRoot-reST-Editor" VERSION 0.4.1 LANGUAGES CXX)
 ```
+
+**이름**(타깃 이름, 배포 파일 이름, 설정 파일 이름, 매니페스트 product, 아카이브
+이름)은 여기가 아니라 `cmake/MrstNames.cmake` 한 곳에서 정한다. 패키징 스크립트도
+같은 파일을 include 하므로 값이 두 벌로 갈라지지 않는다. 그 파일을 고칠 때는
+아래 **이름을 바꾸는 릴리스** 절을 먼저 읽을 것.
 
 ### 1-1. 번역 원본 갱신
 
@@ -44,6 +49,27 @@ git add translations
 
 `.qm` 은 exe 안에 임베드되므로 배포물에 파일이 늘지 않는다 — 스테이징 목록도
 windeployqt 인자도 건드릴 것이 없다.
+
+### 1-2. History.md 에 이번 버전을 적는다
+
+`History.md` 맨 위에 `## v<버전>` 절을 새로 얹는다(최신이 위). **UTF-8 BOM + CRLF**
+로 저장한다 — 0.3.1 까지는 CP949 였으므로 예전 파일을 편집기 기본값으로 열어
+이어 쓰면 기존 항목이 깨진다.
+
+형식은 사용자 관점의 짧은 불릿이다(커밋 제목을 그대로 옮기지 않는다).
+그리고 **사용자가 손으로 해야 할 일이 생기는 변경은 절 맨 앞에 굵게 적는다** —
+자동 업데이트가 끊기는 릴리스, 설정 형식이 바뀌는 릴리스, 수동으로 지워야 하는
+파일이 남는 릴리스가 그렇다. 릴리스 노트를 읽지 않는 사용자가 앱 안에서 볼 수
+있는 안내는 이것뿐인 경우가 많다.
+
+```markdown
+## v0.4.1
+
+**설정 형식이 바뀝니다. 처음 실행할 때 한 번 변환합니다.**
+
+* 무엇이 달라졌는지 한 줄
+* ...
+```
 
 ### 2. 커밋하고 태그 붙이기
 
@@ -98,7 +124,8 @@ cmake --build --preset package
 
 `package` 타깃이 하는 일:
 
-1. 깨끗한 스테이징 폴더에 `MultiRoot-reST-CPP.exe` 와 `mrst_updater.exe` 만 복사
+1. 깨끗한 스테이징 폴더에 `MultiRoot-reST Editor.exe` 와
+   `MultiRoot-reST Updater.exe` 만 복사
 2. 그 exe 를 인자로 `windeployqt` 실행 (Qt DLL, 플러그인, WebEngine 리소스)
 3. `tools/CertWithEV.cmd` 로 **우리 exe 2개만** 서명
    (Qt DLL 은 The Qt Company 서명이 이미 유효하고, `dxil.dll` 은 재서명하면 깨진다)
@@ -109,7 +136,7 @@ cmake --build --preset package
 8. 심볼 ZIP (PDB + 그 시점 exe) 생성
 
 빌드 디렉터리를 그대로 압축하지 않기 때문에, 런타임이 만드는 `Environment/`(238MB)
-와 사용자 설정 `MultiRoot-reST-CPP.ini` 는 **구조적으로** 배포물에 들어올 수 없다.
+와 사용자 설정 `MultiRoot-reST Editor.ini` 는 **구조적으로** 배포물에 들어올 수 없다.
 
 이번 버전에서 사라진 파일이 있으면 구성 시점에 알려 준다. 업데이터는 이 목록에
 적힌 것만 추가로 치우고 나머지는 건드리지 않는다.
@@ -117,6 +144,33 @@ cmake --build --preset package
 ```powershell
 cmake --preset RelWithDebInfo -DMRST_REMOVALS="Qt6Lottie.dll;예전이름.dll"
 ```
+
+### 3-1. 이름을 바꾸는 릴리스
+
+실행 파일 이름이나 `cmake/MrstNames.cmake` 의 값을 바꾸는 릴리스는 **구버전에서
+올라오는 자동 업데이트를 깨뜨린다.** 이유는 하나뿐이지만 되돌릴 수 없다:
+구버전 클라이언트는 내려받은 배포물에서 **자기 실행 파일 이름**을 찾아 서명과
+FileVersion 을 검증하고(`solUpdateService.cpp` 의 `startVerification`), 교체를
+수행하는 것도 **구버전 업데이터**다. 새 이름만 담긴 ZIP 으로는 그 검증이 성립하지
+않는다 — 그런데 실패는 166MB 를 **다 받은 뒤**에 일어나고, 사용자가 확인을 누를
+때마다 반복된다.
+
+그래서 이름을 바꿀 때는 `MRST_UPDATE_PRODUCT_ID` 도 **함께** 바꾼다. 구버전은
+매니페스트를 자기 제품이 아니라고 보고 파싱 단계에서 조용히 물러난다(내려받지
+않는다). 대가는 그 세대가 **영구히 수동 재설치 대상**이 되는 것이다.
+
+체크리스트:
+
+1. `cmake/MrstNames.cmake` 에서 파일 이름과 `MRST_UPDATE_PRODUCT_ID` 를 같은
+   커밋에서 바꾼다. product 만 그대로 두면 구버전이 받아 놓고 실패한다
+2. 설정 파일 이름을 바꿨으면 `uniqueLibs/solDocument_Defs.hpp` 의 두 리터럴도
+   맞춘다(구성 시점 검사가 어긋남을 잡아 준다). 마이그레이션은
+   `AppSettings::migrateLegacyFile()` 이 하고, 구 파일은 지우지 않는다
+3. `History.md` 절 맨 앞에 **수동 설치가 필요하다**고 굵게 적는다(1-2 절)
+4. GitHub 릴리스 노트에도 같은 안내를 넣는다. 구버전 앱은 사용자가 직접
+   [업데이트 확인] 을 누르지 않으면 아무것도 보여 주지 않는다
+5. 배포 아카이브 이름(`MRST_ARCHIVE_BASENAME`)에는 **공백을 넣지 않는다** —
+   매니페스트의 다운로드 URL 이 그 이름으로 조립되고 퍼센트 인코딩이 없다
 
 ### 4. 올리기
 
@@ -137,7 +191,7 @@ cmake --build --preset release
 2. 새 버전이면 창 위쪽에 비모달 바로 알린다. **내려받기는 사용자가 누를 때만** 시작한다
 3. 받은 ZIP 의 sha256 을 매니페스트와 대조 → `System32\tar.exe`(bsdtar)로 `.update/staging` 에 해제
 4. 해제된 exe 2개의 Authenticode 서명과 FileVersion 확인
-5. "지금 재시작" 을 누르면 앱이 저장 확인을 거쳐 닫히면서 `mrst_updater.exe` 를 띄운다
+5. "지금 재시작" 을 누르면 앱이 저장 확인을 거쳐 닫히면서 `MultiRoot-reST Updater.exe` 를 띄운다
 6. 업데이터가 앱 종료를 기다린 뒤 최상위 항목을 rename 으로 교체하고 앱을 다시 실행한다
 7. 새 버전이 한 번 정상 기동하면 `.update/backup` 을 지운다 (여기가 롤백을 포기하는 지점)
 
@@ -147,7 +201,7 @@ cmake --build --preset release
 
 ```powershell
 cd <설치폴더>
-.\mrst_updater.exe --rollback --target "<설치폴더>" --backup "<설치폴더>\.update\backup" --log "<설치폴더>\.update\rollback.log"
+& ".\MultiRoot-reST Updater.exe" --rollback --target "<설치폴더>" --backup "<설치폴더>\.update\backup" --log "<설치폴더>\.update\rollback.log"
 ```
 
 무슨 일이 있었는지는 `<설치폴더>\.update\updater.log` 와 `.update\result.ini` 에 남는다.

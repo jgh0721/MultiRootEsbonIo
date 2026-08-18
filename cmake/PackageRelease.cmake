@@ -8,6 +8,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 include("${MRST_SOURCE_DIR}/cmake/MrstDeployFlags.cmake")
+include("${MRST_SOURCE_DIR}/cmake/MrstNames.cmake")
 
 # ── 0. 가드 ───────────────────────────────────────────────
 # 멀티 구성 제너레이터에서는 구성 시점에 빌드 타입을 알 수 없으므로
@@ -16,10 +17,9 @@ if(MRST_CONFIG STREQUAL "Debug")
     message(FATAL_ERROR "패키징은 RelWithDebInfo/Release 에서만 한다 (현재: ${MRST_CONFIG}).")
 endif()
 
-set(MRST_REPO_SLUG "jgh0721/MultiRootEsbonIo")
-set(MRST_PRODUCT   "MultiRoot-reST-CPP")
-
-set(MRST_STAGE_NAME   "${MRST_PRODUCT}-${MRST_VERSION}")
+# 배포 아카이브 이름에는 공백을 쓰지 않는다 — 매니페스트의 다운로드 URL 이 이 이름으로
+# 조립되고 그 생성에는 퍼센트 인코딩이 없다. 근거는 cmake/MrstNames.cmake 에 적어 두었다.
+set(MRST_STAGE_NAME   "${MRST_ARCHIVE_BASENAME}-${MRST_VERSION}")
 set(MRST_STAGE_DIR    "${MRST_PACKAGE_DIR}/${MRST_STAGE_NAME}")
 set(MRST_ZIP_NAME     "${MRST_STAGE_NAME}-win64.zip")
 set(MRST_SYMBOLS_NAME "${MRST_STAGE_NAME}-win64-symbols.zip")
@@ -86,12 +86,35 @@ set(MRST_SIGN_CMD "${MRST_SOURCE_DIR}/tools/CertWithEV.cmd")
 if(EXISTS "${MRST_SIGN_CMD}")
     foreach(_name "${MRST_EXE_NAME}" "${MRST_UPDATER_NAME}")
         message(STATUS "[3/8] 서명: ${_name}")
-        execute_process(COMMAND cmd /c "${MRST_SIGN_CMD}" "${MRST_STAGE_DIR}/${_name}"
+        # cmd /c 를 거치지 않는다. execute_process 는 .cmd 를 직접 띄울 수 있고,
+        # cmd 를 끼우면 인용 규칙이 하나 더 겹친다 — 실측으로 확인했다:
+        #   cmd /s /c "\"스크립트\" \"인수\""  → "내부 또는 외부 명령이 아닙니다"
+        # 지금은 저장소 경로에 공백이 없어서 cmd 형태도 우연히 동작할 뿐이다.
+        execute_process(COMMAND "${MRST_SIGN_CMD}" "${MRST_STAGE_DIR}/${_name}"
                 RESULT_VARIABLE _rc)
         if(NOT _rc EQUAL 0)
             message(FATAL_ERROR "코드 서명 실패 (${_rc}): ${_name}\n"
                     "서명 없는 배포본은 만들지 않는다 — 클라이언트가 설치 전에 서명을 확인한다.")
         endif()
+
+        # 종료 코드를 믿지 않는다. 실측으로 물린 적이 있다: 파일 이름에 공백이 생긴
+        # 뒤 서명 도구가 "Signing 0 file. / Error: No files signed." 를 찍고도 0 을
+        # 반환해, 서명이 하나도 없는 ZIP 이 "패키징 완료" 로 나왔다. 그 배포본은
+        # 클라이언트가 설치 직전에 거부하므로, 사용자 손에 가서야 드러난다.
+        # (원인은 CertWithEV.cmd 가 인수를 "%1" 로 감싼 것 — 이미 인용된 값이 오면
+        #  이중 인용이 된다. 그 파일은 자격 정보 때문에 저장소에 없다: "%~1" 로 둘 것.)
+        execute_process(
+                COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command
+                        "(Get-AuthenticodeSignature -LiteralPath \"${MRST_STAGE_DIR}/${_name}\").Status"
+                OUTPUT_VARIABLE _sigStatus OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET RESULT_VARIABLE _sigRc)
+        if(NOT _sigRc EQUAL 0 OR NOT _sigStatus STREQUAL "Valid")
+            message(FATAL_ERROR
+                    "서명 확인 실패: ${_name} 의 Authenticode 상태가 '${_sigStatus}' 다 (Valid 여야 한다).\n"
+                    "서명 도구가 0 을 반환해도 실제로 서명하지 않는 경우가 있다.\n"
+                    "파일 이름에 공백이 있으면 tools/CertWithEV.cmd 가 인수를 \"%~1\" 로 받는지 확인할 것.")
+        endif()
+        message(STATUS "[3/8] 서명 확인: ${_name} → ${_sigStatus}")
     endforeach()
 else()
     message(WARNING "[3/8] tools/CertWithEV.cmd 가 없어 서명을 건너뛴다.\n"
@@ -110,7 +133,11 @@ foreach(_required
         message(FATAL_ERROR "배포물 누락: ${_required}")
     endif()
 endforeach()
-foreach(_forbidden Environment "${MRST_PRODUCT}.ini" mrst_tests.exe "${MRST_PRODUCT}.pdb" .update)
+# pdb 이름은 OUTPUT_NAME 을 따라가므로 추측하지 않고 실제 파일 이름에서 얻는다.
+# ini 는 두 세대 이름을 모두 막는다 — 개발 폴더에는 구 이름이 남아 있다.
+get_filename_component(MRST_PDB_NAME "${MRST_APP_PDB}" NAME)
+foreach(_forbidden Environment "${MRST_SETTINGS_INI}" "${MRST_LEGACY_SETTINGS_INI}"
+        mrst_tests.exe "${MRST_PDB_NAME}" .update)
     if(EXISTS "${MRST_STAGE_DIR}/${_forbidden}")
         message(FATAL_ERROR "패키지에 들어가면 안 되는 항목: ${_forbidden}")
     endif()
@@ -182,8 +209,11 @@ endif()
 
 # 이 버전보다 낮은 설치본은 제자리 교체를 지원하지 않는다는 뜻이다. 배치나 설정
 # 형식이 깨지는 릴리스에서만 올린다.
+# 0.4.0 에서 실행 파일 이름이 바뀌었다. 그 이전 세대는 매니페스트 product 가 달라
+# 이 파일을 자기 것으로 보지도 않으므로, 이 값은 0.4.0 이후 세대만의 하한이다.
+# 낮춰도 구버전에는 닿지 않는다.
 if(NOT MRST_MIN_FROM_VERSION)
-    set(MRST_MIN_FROM_VERSION "0.2.0")
+    set(MRST_MIN_FROM_VERSION "0.4.0")
 endif()
 
 # ── 7. 매니페스트 ─────────────────────────────────────────
