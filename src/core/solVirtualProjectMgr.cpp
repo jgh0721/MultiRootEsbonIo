@@ -45,6 +45,10 @@ exclude_patterns = ["**/_build/**", "**/.git/**", "**/.venv/**"]
 html_theme = "alabaster"
 )PY";
 
+/// ⚠ **번역 금지.** 이 값은 위 kConfTemplate 의 `project = "%1"` 자리에 그대로
+///   들어가 파이썬 소스가 된다. 번역문에 따옴표나 역슬래시가 하나라도 있으면
+///   conf.py 가 문법 오류가 되고 Sphinx 빌드가 통째로 실패한다. 화면에 보이는
+///   문자열이 아니라 생성 코드의 일부다.
 QString sanitizedProjectName( const QString& baseName )
 {
     return baseName.isEmpty() ? QStringLiteral( "문서" ) : baseName;

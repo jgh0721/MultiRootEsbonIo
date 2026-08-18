@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // 자주 사용되는 표준 라이브러리 및 Qt 헤더 포함
 #include <iostream>

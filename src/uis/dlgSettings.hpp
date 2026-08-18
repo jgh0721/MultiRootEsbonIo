@@ -20,9 +20,20 @@ public:
 
 signals:
     void                                settingsApplied();
+    /// "지금 확인" 을 눌렀다. 이 대화상자는 UpdateService 를 소유하지 않는다 —
+    /// 두 개가 돌면 상태 머신이 어긋나므로 MainWindow 가 가진 인스턴스에
+    /// 요청만 넘긴다.
+    void                                updateCheckRequested();
+
+public slots:
+    /// 마지막 확인 시각 라벨을 다시 읽는다. 대화상자가 열려 있는 동안
+    /// UpdateService 의 상태가 바뀌면 MainWindow 가 불러 준다.
+    void                                refreshUpdateStatus();
 
 protected:
     void                                showEvent( QShowEvent* Event ) override;
+    /// QEvent::LanguageChange 를 받아 페이지를 통째로 다시 만든다.
+    void                                changeEvent( QEvent* Event ) override;
 
 private slots:
     void                                on_btnOK_clicked( bool Checked = false );
@@ -32,7 +43,19 @@ private slots:
     void                                onResetShortcuts();
 
 private:
-    void                                setupUi();
+    /// 좌측 카테고리와 5개 페이지를 (다시) 만든다.
+    ///
+    /// 언어를 바꾸면 통째로 다시 부른다. 이 파일에는 tr() 이 170곳 넘게 있고
+    /// 거의 전부가 코드로 만든 위젯의 라벨이라, 별도의 retranslate 함수를 두면
+    /// 문자열이 두 벌이 되어 한쪽만 고치는 사고가 반드시 난다.
+    ///
+    /// 그래서 **여기에는 페이지와 함께 죽는 연결만** 둔다. 대화상자만큼 오래
+    /// 사는 객체(m_pythonEnvManager, Ui.lstCate)에 거는 연결은 생성자로 뺐다 —
+    /// 여기 두면 언어를 바꿀 때마다 하나씩 더 붙는다.
+    void                                buildPages();
+    /// 대화상자 수명 동안 한 번만 걸어야 하는 연결. 전부 람다라
+    /// Qt::UniqueConnection 을 쓸 수 없다(람다에 주면 fatal assert 다).
+    void                                connectPythonEnvSignals();
     void                                applyTitleBarTheme();
     QWidget*                            createGeneralPage();
     QWidget*                            createShortcutsPage();
@@ -45,6 +68,7 @@ private:
     void                                saveTextViewerSettings();
     void                                loadPreviewSettings();
     void                                savePreviewSettings();
+    void                                loadUpdateSettings();
     void                                loadEsbonioSettings();
     void                                saveEsbonioSettings();
     void                                refreshEsbonioStatus();
@@ -59,6 +83,7 @@ private:
     Ui::dlgSettings                     Ui;
 
     /// 공통 페이지
+    QComboBox*                          m_languageCombo = nullptr;
     QComboBox*                          m_themeCombo    = nullptr;
     QComboBox*                          m_themeScopeCombo = nullptr;
     QLabel*                             m_themeLexerListLabel = nullptr;
@@ -69,6 +94,10 @@ private:
     QPushButton*                        m_themeImportButton = nullptr;
     QPushButton*                        m_themeExportButton = nullptr;
     QPushButton*                        m_themeResetButton = nullptr;
+    QCheckBox*                          m_updateEnabledCheck = nullptr;
+    QSpinBox*                           m_updateIntervalSpin = nullptr;
+    QLabel*                             m_updateLastCheckedLabel = nullptr;
+    QPushButton*                        m_updateCheckNowButton = nullptr;
 
     /// 단축키 페이지
     QList<ShortcutItem>                 m_shortcuts;

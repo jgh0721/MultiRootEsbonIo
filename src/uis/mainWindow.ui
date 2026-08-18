@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string notr="true">MultiRoot reST Editor</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="horizontalLayout_2">
@@ -211,7 +211,7 @@
               <widget class="QWebEngineView" name="webEngineView" native="true">
                <property name="url" stdset="0">
                 <url>
-                 <string>about:blank</string>
+                 <string notr="true">about:blank</string>
                 </url>
                </property>
               </widget>
@@ -249,7 +249,7 @@
            </property>
            <widget class="QWidget" name="tabDiagnostics">
             <attribute name="title">
-             <string>진단 </string>
+             <string>진단</string>
             </attribute>
             <layout class="QVBoxLayout" name="verticalLayout_9">
              <property name="leftMargin">

@@ -1,6 +1,7 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "solRstOfflineCompletions.hpp"
 
+#include <QCoreApplication>
 #include <QObject>
 #include <QRegularExpression>
 #include <QSet>
@@ -15,9 +16,20 @@ constexpr int kKindKeyword = 14;
 constexpr int kKindFile = 17;
 constexpr int kKindReference = 18;
 
-/// detail 은 한국어라 UTF-8 바이트다(/utf-8 로 컴파일한다).
-/// QString 으로 바꿀 때 반드시 fromUtf8() 을 써야 한다. fromLatin1() 로 읽으면
-/// 팝업에 깨진 글자가 나온다.
+/// detail 은 자동완성 팝업에 그대로 보이는 문구라 번역 대상이다.
+///
+/// 정적 표라 tr() 을 쓸 수 없다 — tr() 은 실행 시점에 평가돼야 하는데 여기는
+/// 표의 초기화 목록이다. QT_TRANSLATE_NOOP 로 lupdate 에만 알려 두고, 실제
+/// 번역은 소비 지점에서 QCoreApplication::translate() 로 한다. translate() 는
+/// 소스 문자열을 UTF-8 로 읽고 번역을 못 찾으면 원문을 그대로 돌려주므로,
+/// 한국어 동작은 예전 QString::fromUtf8() 과 바이트 단위로 같다.
+///
+/// ⚠ 컨텍스트 "RstOfflineCompletions" 는 NOOP 과 translate() 양쪽이 글자 하나까지
+///   같아야 한다. 다르면 lupdate 는 항목을 만들지만 실행 시점에는 못 찾아
+///   조용히 원문이 나온다. QT_TRANSLATE_NOOP 은 컨텍스트를 리터럴로만 받으므로
+///   상수로 뺄 수 없다 — 그래서 양쪽에 그대로 적는다.
+///
+/// options 는 ASCII 옵션명 목록이라 번역하지 않는다.
 struct DirectiveSpec
 {
     const char* name;
@@ -29,63 +41,64 @@ struct DirectiveSpec
 const QVector< DirectiveSpec >& directiveTable()
 {
     static const QVector< DirectiveSpec > table{
-        { "note",         "참고 admonition",        "class name" },
-        { "warning",      "경고 admonition",        "class name" },
-        { "tip",          "팁 admonition",          "class name" },
-        { "important",    "중요 admonition",        "class name" },
-        { "caution",      "주의 admonition",        "class name" },
-        { "danger",       "위험 admonition",        "class name" },
-        { "attention",    "주목 admonition",        "class name" },
-        { "error",        "오류 admonition",        "class name" },
-        { "hint",         "힌트 admonition",        "class name" },
-        { "admonition",   "제목을 직접 쓰는 admonition", "class name" },
-        { "code-block",   "구문 강조 코드 블록",
+        { "note",         QT_TRANSLATE_NOOP( "RstOfflineCompletions", "참고 admonition" ),        "class name" },
+        { "warning",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "경고 admonition" ),        "class name" },
+        { "tip",          QT_TRANSLATE_NOOP( "RstOfflineCompletions", "팁 admonition" ),          "class name" },
+        { "important",    QT_TRANSLATE_NOOP( "RstOfflineCompletions", "중요 admonition" ),        "class name" },
+        { "caution",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "주의 admonition" ),        "class name" },
+        { "danger",       QT_TRANSLATE_NOOP( "RstOfflineCompletions", "위험 admonition" ),        "class name" },
+        { "attention",    QT_TRANSLATE_NOOP( "RstOfflineCompletions", "주목 admonition" ),        "class name" },
+        { "error",        QT_TRANSLATE_NOOP( "RstOfflineCompletions", "오류 admonition" ),        "class name" },
+        { "hint",         QT_TRANSLATE_NOOP( "RstOfflineCompletions", "힌트 admonition" ),        "class name" },
+        { "admonition",   QT_TRANSLATE_NOOP( "RstOfflineCompletions", "제목을 직접 쓰는 admonition" ), "class name" },
+        { "code-block",   QT_TRANSLATE_NOOP( "RstOfflineCompletions", "구문 강조 코드 블록" ),
           "linenos lineno-start emphasize-lines caption name dedent force class" },
-        { "code",         "코드 블록 (docutils)",   "number-lines class name" },
-        { "literalinclude", "파일 내용 삽입",
+        { "code",         QT_TRANSLATE_NOOP( "RstOfflineCompletions", "코드 블록 (docutils)" ),   "number-lines class name" },
+        { "literalinclude", QT_TRANSLATE_NOOP( "RstOfflineCompletions", "파일 내용 삽입" ),
           "language linenos lines start-after end-before emphasize-lines caption "
           "dedent tab-width encoding pyobject diff class name" },
-        { "include",      "다른 reST 파일 삽입",
+        { "include",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "다른 reST 파일 삽입" ),
           "start-line end-line start-after end-before literal code encoding tab-width" },
-        { "image",        "이미지",                 "alt height width scale align target class name" },
-        { "figure",       "캡션이 있는 이미지",
+        { "image",        QT_TRANSLATE_NOOP( "RstOfflineCompletions", "이미지" ),                 "alt height width scale align target class name" },
+        { "figure",       QT_TRANSLATE_NOOP( "RstOfflineCompletions", "캡션이 있는 이미지" ),
           "alt height width scale align target figwidth figclass class name" },
-        { "toctree",      "목차 트리",
+        { "toctree",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "목차 트리" ),
           "maxdepth caption numbered titlesonly glob hidden includehidden reversed name" },
-        { "table",        "제목이 있는 표",         "widths width align class name" },
-        { "list-table",   "리스트로 쓰는 표",
+        { "table",        QT_TRANSLATE_NOOP( "RstOfflineCompletions", "제목이 있는 표" ),         "widths width align class name" },
+        { "list-table",   QT_TRANSLATE_NOOP( "RstOfflineCompletions", "리스트로 쓰는 표" ),
           "header-rows stub-columns widths width align class name" },
-        { "csv-table",    "CSV 로 쓰는 표",
+        { "csv-table",    QT_TRANSLATE_NOOP( "RstOfflineCompletions", "CSV 로 쓰는 표" ),
           "header header-rows stub-columns widths file url encoding delim quote escape class name" },
-        { "math",         "수식 블록",              "label nowrap class name" },
-        { "rubric",       "제목처럼 보이는 단락",   "class name" },
-        { "topic",        "주제 블록",              "class name" },
-        { "sidebar",      "사이드바",               "subtitle class name" },
-        { "parsed-literal", "마크업이 해석되는 리터럴", "class name" },
-        { "epigraph",     "인용구",                 "class" },
-        { "highlights",   "요약 인용",              "class" },
-        { "pull-quote",   "발췌 인용",              "class" },
-        { "compound",     "복합 단락",              "class name" },
-        { "container",    "임의 컨테이너",          "name" },
-        { "raw",          "가공하지 않은 출력",     "file url encoding class name" },
-        { "replace",      "치환 정의 본문",         "" },
-        { "unicode",      "유니코드 치환",          "trim ltrim rtrim" },
-        { "date",         "날짜 치환",              "" },
-        { "contents",     "문서 내 목차",           "depth local backlinks class name" },
-        { "sectnum",      "섹션 번호 매기기",       "depth start prefix suffix" },
-        { "index",        "색인 항목",              "name" },
-        { "only",         "조건부 출력",            "" },
-        { "versionadded", "추가된 버전",            "" },
-        { "versionchanged", "변경된 버전",          "" },
-        { "deprecated",   "폐지 예정",              "" },
-        { "seealso",      "참고 자료",              "class name" },
-        { "centered",     "가운데 정렬 (구식)",     "" },
-        { "highlight",    "이후 코드 블록 언어 지정", "linenothreshold force" },
+        { "math",         QT_TRANSLATE_NOOP( "RstOfflineCompletions", "수식 블록" ),              "label nowrap class name" },
+        { "rubric",       QT_TRANSLATE_NOOP( "RstOfflineCompletions", "제목처럼 보이는 단락" ),   "class name" },
+        { "topic",        QT_TRANSLATE_NOOP( "RstOfflineCompletions", "주제 블록" ),              "class name" },
+        { "sidebar",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "사이드바" ),               "subtitle class name" },
+        { "parsed-literal", QT_TRANSLATE_NOOP( "RstOfflineCompletions", "마크업이 해석되는 리터럴" ), "class name" },
+        { "epigraph",     QT_TRANSLATE_NOOP( "RstOfflineCompletions", "인용구" ),                 "class" },
+        { "highlights",   QT_TRANSLATE_NOOP( "RstOfflineCompletions", "요약 인용" ),              "class" },
+        { "pull-quote",   QT_TRANSLATE_NOOP( "RstOfflineCompletions", "발췌 인용" ),              "class" },
+        { "compound",     QT_TRANSLATE_NOOP( "RstOfflineCompletions", "복합 단락" ),              "class name" },
+        { "container",    QT_TRANSLATE_NOOP( "RstOfflineCompletions", "임의 컨테이너" ),          "name" },
+        { "raw",          QT_TRANSLATE_NOOP( "RstOfflineCompletions", "가공하지 않은 출력" ),     "file url encoding class name" },
+        { "replace",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "치환 정의 본문" ),         "" },
+        { "unicode",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "유니코드 치환" ),          "trim ltrim rtrim" },
+        { "date",         QT_TRANSLATE_NOOP( "RstOfflineCompletions", "날짜 치환" ),              "" },
+        { "contents",     QT_TRANSLATE_NOOP( "RstOfflineCompletions", "문서 내 목차" ),           "depth local backlinks class name" },
+        { "sectnum",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "섹션 번호 매기기" ),       "depth start prefix suffix" },
+        { "index",        QT_TRANSLATE_NOOP( "RstOfflineCompletions", "색인 항목" ),              "name" },
+        { "only",         QT_TRANSLATE_NOOP( "RstOfflineCompletions", "조건부 출력" ),            "" },
+        { "versionadded", QT_TRANSLATE_NOOP( "RstOfflineCompletions", "추가된 버전" ),            "" },
+        { "versionchanged", QT_TRANSLATE_NOOP( "RstOfflineCompletions", "변경된 버전" ),          "" },
+        { "deprecated",   QT_TRANSLATE_NOOP( "RstOfflineCompletions", "폐지 예정" ),              "" },
+        { "seealso",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "참고 자료" ),              "class name" },
+        { "centered",     QT_TRANSLATE_NOOP( "RstOfflineCompletions", "가운데 정렬 (구식)" ),     "" },
+        { "highlight",    QT_TRANSLATE_NOOP( "RstOfflineCompletions", "이후 코드 블록 언어 지정" ), "linenothreshold force" },
     };
     return table;
 }
 
-/// detail 은 UTF-8 이다. DirectiveSpec 과 같은 주의가 필요하다.
+/// detail 은 DirectiveSpec 과 같다 — QT_TRANSLATE_NOOP 로 표시하고 소비 지점에서
+/// QCoreApplication::translate() 로 옮긴다.
 struct RoleSpec
 {
     const char* name;
@@ -95,35 +108,35 @@ struct RoleSpec
 const QVector< RoleSpec >& roleTable()
 {
     static const QVector< RoleSpec > table{
-        { "ref",       "레이블 참조" },
-        { "doc",       "문서 참조" },
-        { "download",  "파일 내려받기 링크" },
-        { "numref",    "번호로 참조" },
-        { "term",      "용어집 항목" },
-        { "abbr",      "약어" },
-        { "command",   "명령어" },
-        { "file",      "파일 경로" },
-        { "guilabel",  "GUI 레이블" },
-        { "kbd",       "키 입력" },
-        { "menuselection", "메뉴 경로" },
-        { "mailheader", "메일 헤더" },
-        { "manpage",   "man 페이지" },
-        { "program",   "프로그램 이름" },
-        { "samp",      "치환 가능한 코드" },
-        { "math",      "인라인 수식" },
-        { "eq",        "수식 참조" },
-        { "envvar",    "환경 변수" },
-        { "option",    "명령행 옵션" },
-        { "regexp",    "정규식" },
-        { "subscript", "아래 첨자" },
-        { "superscript", "위 첨자" },
-        { "title-reference", "제목 참조" },
-        { "pep",       "PEP 참조" },
-        { "rfc",       "RFC 참조" },
-        { "emphasis",  "강조" },
-        { "strong",    "굵게" },
-        { "literal",   "리터럴" },
-        { "code",      "코드" },
+        { "ref",       QT_TRANSLATE_NOOP( "RstOfflineCompletions", "레이블 참조" ) },
+        { "doc",       QT_TRANSLATE_NOOP( "RstOfflineCompletions", "문서 참조" ) },
+        { "download",  QT_TRANSLATE_NOOP( "RstOfflineCompletions", "파일 내려받기 링크" ) },
+        { "numref",    QT_TRANSLATE_NOOP( "RstOfflineCompletions", "번호로 참조" ) },
+        { "term",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "용어집 항목" ) },
+        { "abbr",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "약어" ) },
+        { "command",   QT_TRANSLATE_NOOP( "RstOfflineCompletions", "명령어" ) },
+        { "file",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "파일 경로" ) },
+        { "guilabel",  QT_TRANSLATE_NOOP( "RstOfflineCompletions", "GUI 레이블" ) },
+        { "kbd",       QT_TRANSLATE_NOOP( "RstOfflineCompletions", "키 입력" ) },
+        { "menuselection", QT_TRANSLATE_NOOP( "RstOfflineCompletions", "메뉴 경로" ) },
+        { "mailheader", QT_TRANSLATE_NOOP( "RstOfflineCompletions", "메일 헤더" ) },
+        { "manpage",   QT_TRANSLATE_NOOP( "RstOfflineCompletions", "man 페이지" ) },
+        { "program",   QT_TRANSLATE_NOOP( "RstOfflineCompletions", "프로그램 이름" ) },
+        { "samp",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "치환 가능한 코드" ) },
+        { "math",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "인라인 수식" ) },
+        { "eq",        QT_TRANSLATE_NOOP( "RstOfflineCompletions", "수식 참조" ) },
+        { "envvar",    QT_TRANSLATE_NOOP( "RstOfflineCompletions", "환경 변수" ) },
+        { "option",    QT_TRANSLATE_NOOP( "RstOfflineCompletions", "명령행 옵션" ) },
+        { "regexp",    QT_TRANSLATE_NOOP( "RstOfflineCompletions", "정규식" ) },
+        { "subscript", QT_TRANSLATE_NOOP( "RstOfflineCompletions", "아래 첨자" ) },
+        { "superscript", QT_TRANSLATE_NOOP( "RstOfflineCompletions", "위 첨자" ) },
+        { "title-reference", QT_TRANSLATE_NOOP( "RstOfflineCompletions", "제목 참조" ) },
+        { "pep",       QT_TRANSLATE_NOOP( "RstOfflineCompletions", "PEP 참조" ) },
+        { "rfc",       QT_TRANSLATE_NOOP( "RstOfflineCompletions", "RFC 참조" ) },
+        { "emphasis",  QT_TRANSLATE_NOOP( "RstOfflineCompletions", "강조" ) },
+        { "strong",    QT_TRANSLATE_NOOP( "RstOfflineCompletions", "굵게" ) },
+        { "literal",   QT_TRANSLATE_NOOP( "RstOfflineCompletions", "리터럴" ) },
+        { "code",      QT_TRANSLATE_NOOP( "RstOfflineCompletions", "코드" ) },
     };
     return table;
 }
@@ -297,7 +310,8 @@ QVector< Item > candidatesFor( const Context& context )
                     continue;
                 seen << name;
                 items.push_back( { name, name + QStringLiteral( ":: " ),
-                                  QString::fromUtf8( spec.detail ), kKindClass } );
+                                  QCoreApplication::translate( "RstOfflineCompletions", spec.detail ),
+                                  kKindClass } );
             }
             break;
         }
@@ -306,7 +320,8 @@ QVector< Item > candidatesFor( const Context& context )
             {
                 const QString name = QString::fromLatin1( spec.name );
                 items.push_back( { name, name + QStringLiteral( ":`" ),
-                                  QString::fromUtf8( spec.detail ), kKindKeyword } );
+                                  QCoreApplication::translate( "RstOfflineCompletions", spec.detail ),
+                                  kKindKeyword } );
             }
             break;
 

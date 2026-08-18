@@ -1,0 +1,128 @@
+# MultiRoot reST 용어집 — 탭 구분 (ko / en / ja / 비고)
+#
+# ts_export.py 가 이 표를 모든 번역 청크에 함께 실어 보낸다. 같은 낱말이 화면마다
+# 다르게 옮겨지는 것을 막는 것이 목적이다. 새 용어를 정할 때마다 여기에 적는다.
+#
+# 무번역 고정: Sphinx  Esbonio  Python  uv  reST  reStructuredText  Markdown
+#              Lexer  BOM  LSP  mermaid  CDN  ClearType  conf.py  UV
+#              MultiRoot reST Editor  Breathe  doxygen  JSON  XML  CSS  PDF
+#
+# ── 도메인 ────────────────────────────────────────────────
+프로젝트	Project	プロジェクト
+가상 프로젝트	Virtual project	仮想プロジェクト	conf.py 를 임시로 만드는 기능
+워크스페이스	Workspace	ワークスペース
+문서	Document	ドキュメント
+프리뷰	Preview	プレビュー	Sphinx 가 만든 HTML 미리보기
+미리보기	Preview	プレビュー	바꾸기 결과 미리보기. //: 주석으로 문맥을 구분한다
+개요	Outline	アウトライン
+용어집	Glossary	用語集
+진단	Diagnostics	診断
+심각도	Severity	重大度
+심볼	Symbol	シンボル
+자동 완성	Completion	補完
+스니펫	Snippet	スニペット
+활성 프로젝트	Active project	アクティブプロジェクト
+환경 구성	Environment setup	環境構成
+내장 환경	Bundled environment	内蔵環境
+외부 UV	External UV	外部 UV
+재구성	Reconfigure	再構成
+구성	Configure	構成
+# ── 편집기 ────────────────────────────────────────────────
+편집기	Editor	エディター
+텍스트 뷰어	Text viewer	テキストビューア
+코드 폴딩	Code folding	コード折りたたみ
+모두 접기	Fold all	すべて折りたたむ	코드의 foldAll 과 원문 니모닉(&F)에 맞춘다
+모두 펼치기	Unfold all	すべて展開	원문 니모닉 (&U)
+폴딩 마커	Folding marker	折りたたみマーカー
+마커	Marker	マーカー
+여백	Margin	余白
+줄 번호	Line number	行番号
+캐럿	Caret	キャレット
+들여쓰기	Indentation	インデント
+들여쓰기 가이드	Indent guide	インデントガイド
+탭 간격	Tab width	タブ幅
+자동 줄넘김	Word wrap	折り返し
+줄바꿈	Line ending	改行
+제어문자	Control characters	制御文字
+눈금자	Ruler	ルーラー
+행간	Line spacing	行間
+괄호 강조	Brace matching	括弧の対応表示
+찾기	Find	検索
+바꾸기	Replace	置換
+대/소문자 구분	Match case	大文字と小文字を区別
+단어 일치	Whole words	単語単位
+단어 단위	Whole words	単語単位
+정규식	Regular expression	正規表現
+선택 영역에서 검색	Search in selection	選択範囲内を検索
+글꼴	Font	フォント
+글꼴 렌더링	Font rendering	フォントレンダリング
+# ── 파일·저장 ─────────────────────────────────────────────
+인코딩	Encoding	エンコーディング
+BOM 있음	With BOM	BOM あり
+BOM 없음	Without BOM	BOM なし
+BOM 포함	With BOM	BOM あり
+대용량 파일	Large file	大きなファイル
+제한 모드	Limited mode	制限モード
+전체 로드	Full load	全体読み込み
+읽기 전용	Read-only	読み取り専用
+핫 엑시트	Hot exit	ホットイグジット
+미저장 편집	Unsaved edits	未保存の編集
+백업	Backup	バックアップ
+제목없음	Untitled	無題
+# ── 업데이트 ──────────────────────────────────────────────
+업데이트	Update	アップデート
+업데이터	Updater	アップデーター
+매니페스트	Manifest	マニフェスト
+이 버전 건너뛰기	Skip this version	このバージョンをスキップ
+내려받기	Download	ダウンロード
+릴리스 노트	Release notes	リリースノート
+설치 준비	Ready to install	インストール準備
+지금 재시작	Restart now	今すぐ再起動
+되돌리기	Roll back	ロールバック
+서명	Signature	署名
+검사값	Checksum	チェックサム
+# ── 테마 ──────────────────────────────────────────────────
+테마	Theme	テーマ
+라이트	Light	ライト
+다크	Dark	ダーク
+강조색	Accent color	アクセントカラー
+기본 팔레트	Base palette	ベースパレット
+편집 범위	Edit scope	編集範囲
+앱 배경	App background	アプリ背景
+표면	Surface	サーフェス
+보조 표면	Secondary surface	セカンダリサーフェス
+기본 글자	Primary text	基本テキスト
+보조 글자	Secondary text	補助テキスト
+테두리	Border	枠線
+툴바	Toolbar	ツールバー
+활성 탭	Active tab	アクティブタブ
+비활성 탭	Inactive tab	非アクティブタブ
+캔버스	Canvas	キャンバス
+하이라이트	Highlight	ハイライト
+주석	Comment	コメント	Lexer 스타일 이름
+키워드	Keyword	キーワード
+문자열	String	文字列
+식별자	Identifier	識別子
+연산자	Operator	演算子
+전처리	Preprocessor	プリプロセッサ
+변수	Variable	変数
+숫자	Number	数値
+타입	Type	型
+함수/클래스	Function/class	関数・クラス
+# ── 공통 UI ───────────────────────────────────────────────
+공통	General	全般	설정 카테고리 / 단축키 카테고리
+설정	Settings	設定
+언어	Language	言語
+표시 언어	Display language	表示言語
+시스템 설정 따름	Follow system setting	システム設定に従う
+단축키	Shortcuts	ショートカット
+적용	Apply	適用
+확인	OK	OK
+취소	Cancel	キャンセル
+기본값 복원	Restore defaults	既定値に戻す
+가져오기	Import	インポート
+내보내기	Export	エクスポート
+찾아보기	Browse	参照
+지금 확인	Check now	今すぐ確認
+없음	None	なし
+전체	All	すべて

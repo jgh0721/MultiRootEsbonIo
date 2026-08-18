@@ -36,6 +36,8 @@ endif()
 find_package(Qt6 REQUIRED COMPONENTS
         Core Core5Compat Gui Widgets Svg PrintSupport UiTools Network
         WebChannel WebEngineCore WebEngineWidgets
+        # lupdate / lrelease / lconvert. 빌드 도구라 링크 대상은 아니다.
+        LinguistTools
 )
 
 # ── 외부 라이브러리 (FetchContent) ────────────────────────
@@ -45,7 +47,13 @@ include(cmake/BuildQlementine.cmake)
 # windeployqt 인자를 개발 빌드와 릴리스 패키징이 함께 쓴다.
 include(cmake/MrstDeployFlags.cmake)
 
-qt_standard_project_setup()
+# 소스 문자열의 원어가 한국어라는 사실을 여기 한 곳에서만 선언한다.
+# 아래 qt_add_translations() 가 이 값으로 .ts 파일 이름과 <TS sourcelanguage="ko">,
+# 그리고 복수형 전용 mrst_ko.ts 의 생성 여부를 정한다.
+qt_standard_project_setup(
+        I18N_SOURCE_LANGUAGE      ko
+        I18N_TRANSLATED_LANGUAGES en ja
+)
 
 add_executable(${PROJECT_NAME}
         src/stdafx.h
@@ -73,6 +81,8 @@ add_executable(${PROJECT_NAME}
         src/core/solThemeManager.hpp
         src/core/solGlossaryIndex.cpp
         src/core/solGlossaryIndex.hpp
+        src/core/solLanguageManager.cpp
+        src/core/solLanguageManager.hpp
         src/core/solShadowBackupStore.cpp
         src/core/solShadowBackupStore.hpp
         src/core/solSphinxScanner.cpp
@@ -250,6 +260,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_GlossaryParsing.cpp
             tests/tst_UpdateVersioning.cpp
             tests/tst_AuthenticodeVerifier.cpp
+            tests/tst_Translations.cpp
             # 테스트 대상 프로덕션 소스는 OBJECT 라이브러리로 빼지 않고 명시 나열한다
             # (globbing 금지 + 단일 타깃이라는 이 프로젝트의 규칙을 따른다).
             src/editor/RstContainerLexer.cpp
@@ -265,7 +276,13 @@ if(MRST_BUILD_TESTS)
             src/utils/AuthenticodeVerifier.cpp
             src/core/solSphinxDiagnostics.cpp
             src/core/solSphinxScanner.cpp
+            src/core/solLanguageManager.cpp
+            src/core/solLanguageManager.hpp
     )
+    # 번역 무결성 테스트가 .ts 원본을 직접 파싱한다. .qm 은 :/i18n 에서 읽는다
+    # (아래 qt_add_translations 가 mrst_tests 에도 같은 리소스를 붙인다).
+    target_compile_definitions(mrst_tests PRIVATE
+            MRST_I18N_TS_DIR="${CMAKE_SOURCE_DIR}/translations")
     target_include_directories(mrst_tests PRIVATE
             "${CMAKE_SOURCE_DIR}"
             "${CMAKE_SOURCE_DIR}/src"
@@ -288,6 +305,57 @@ if(MRST_BUILD_TESTS)
 
     add_test(NAME mrst_tests COMMAND mrst_tests)
 endif()
+
+# ── 번역 ──────────────────────────────────────────────────
+# .qm 을 exe 안에 넣는다(:/i18n/mrst_<lang>.qm). 배포 ZIP 에 파일이 한 개도 늘지
+# 않으므로 PackageRelease.cmake 의 필수/금지 목록도, windeployqt 인자도, 자동
+# 업데이트(ZIP 통째 교체) 경로도 건드릴 것이 없다. 느슨한 .qm 파일로 배포하면
+# 개발 빌드에서는 되고 릴리스에서만 번역이 사라진다.
+set(MRST_I18N_TARGETS ${PROJECT_NAME})
+if(TARGET mrst_tests)
+    # 테스트가 :/i18n 을 직접 읽어 .qm 무결성을 검사한다.
+    list(APPEND MRST_I18N_TARGETS mrst_tests)
+endif()
+
+# lupdate 는 프로젝트 모드에서도 .qrc 를 "안에 든 파일 목록" 으로 펼친 뒤
+# (projectprocessor.cpp: expandQrcFiles), 확장자를 모르는 파일을 전부 C++ 파서로
+# 넘긴다(trlib/trparser.cpp: processSources). 우리 qrc 에는 67MB 짜리 uv.exe 가
+# 들어 있고 번역할 문자열은 하나도 없다. removeExcludedSources() 가 qrc 전개보다
+# 먼저 돌기 때문에 이 한 줄로 전개 자체가 막힌다.
+set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY
+        QT_EXCLUDE_SOURCES_FROM_TRANSLATION "src/MultiRoot-reST-CPP.qrc")
+
+qt_add_translations(
+        TARGETS         ${MRST_I18N_TARGETS}
+        # 생략하면 CMake 가 이 호출을 디렉터리 끝으로 미루고 이 스코프의 모든
+        # 타깃 — qlementine / ScintillaEditBaseQt / LexillaStatic, 전부 file(GLOB)
+        # 로 수천 파일 — 을 lupdate 대상으로 긁어모은다.
+        SOURCE_TARGETS  ${PROJECT_NAME}
+        TS_FILE_DIR     "${CMAKE_SOURCE_DIR}/translations"
+        TS_FILE_BASE    mrst
+        RESOURCE_PREFIX "/i18n"          # 기존 /python /preview /icons /themes 와 겹치지 않는다
+
+        # Qt 자신의 문자열(QMessageBox 버튼, QColorDialog, 비네이티브 QFileDialog)을
+        # 우리 .qm 안에 함께 굽는다. windeployqt 는 --no-translations 라 Qt 의 .qm 을
+        # 배포하지 않는데, 이렇게 하면 배포 파일을 늘리지 않고도 표준 대화상자가
+        # 번역되고 런타임은 QTranslator 를 하나만 설치하면 된다.
+        #
+        # 카탈로그를 명시하지 않으면 WebEngineCore 때문에 qtwebengine 카탈로그가
+        # 딸려 오는데, Qt 6.11.1 에는 qtwebengine_ja.qm 이 아예 없어서 구성할 때마다
+        # 경고가 뜬다. qtbase 하나로 못 박는다.
+        MERGE_QT_TRANSLATIONS
+        QT_TRANSLATION_CATALOGS qtbase
+
+        # -locations none : .ts 에 파일 경로/줄 번호를 남기지 않는다. 남기면 코드가
+        #                   한 줄만 밀려도 700개 항목이 통째로 diff 에 뜨고 브랜치마다
+        #                   충돌한다. 컨텍스트 이름(=클래스명)만으로 위치는 충분하다.
+        # -sort-messages  : 컨텍스트 안에서 순서를 고정한다. 문자열이 하나 늘어도
+        #                   그 자리만 바뀐다.
+        LUPDATE_OPTIONS  -locations none -sort-messages
+
+        # 번역문이 원문과 같은 항목은 굽지 않는다 (어차피 원문으로 폴백된다).
+        LRELEASE_OPTIONS -removeidentical
+)
 
 # ── DLL 배포 (Windows) ────────────────────────────────────
 if(WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)

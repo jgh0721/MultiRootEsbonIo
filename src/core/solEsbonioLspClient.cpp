@@ -251,7 +251,7 @@ void LspClient::start(const SphinxProject& project, const QString& pythonExe, co
     });
     process_->start();
     if (!process_->waitForStarted(5000)) {
-        emit logMessage(QStringLiteral("Esbonio 시작 실패: %1").arg(pythonExe));
+        emit logMessage(tr("Esbonio 시작 실패: %1").arg(pythonExe));
         return;
     }
 
@@ -259,7 +259,7 @@ void LspClient::start(const SphinxProject& project, const QString& pythonExe, co
     // 종료해서는 손자가 남으므로 Job Object 로 묶어 앱과 함께 정리되게 한다.
     assignToKillOnExitJob(process_->processId());
 
-    emit logMessage(QStringLiteral("Esbonio 시작: %1").arg(activeProjectId_));
+    emit logMessage(tr("Esbonio 시작: %1").arg(activeProjectId_));
     initialize();
 }
 

@@ -130,7 +130,9 @@ void FindReplaceWidget::setupUi()
 
     // Btn3: 필터 버튼 (메뉴)
     m_filterBtn = new QToolButton(this);
-    m_filterBtn->setText(tr("⫶"));
+    // 글리프는 번역 대상이 아니다. tr() 로 감싸면 번역자 화면에 뜻 없는 기호가
+    // 뜨고, 실수로 글자로 바뀌면 버튼 모양이 깨진다.
+    m_filterBtn->setText(QStringLiteral("⫶"));
     m_filterBtn->setToolTip(tr("필터"));
     m_filterBtn->setAutoRaise(true);
     m_filterBtn->setPopupMode(QToolButton::InstantPopup);
@@ -146,7 +148,7 @@ void FindReplaceWidget::setupUi()
 
     // Btn4: 메뉴 버튼
     m_menuBtn = new QToolButton(this);
-    m_menuBtn->setText(tr("☰"));
+    m_menuBtn->setText(QStringLiteral("☰"));
     m_menuBtn->setToolTip(tr("옵션"));
     m_menuBtn->setAutoRaise(true);
     m_menuBtn->setPopupMode(QToolButton::InstantPopup);
@@ -297,8 +299,11 @@ void FindReplaceWidget::setMatchCount(int count)
     if (!m_countLabel)
         return;
 
+    // 언어가 바뀌면 라벨을 다시 만들어야 하는데, 표시된 텍스트에서 개수를
+    // 되읽을 방법이 없다. 마지막 값을 들고 있는다.
+    m_lastMatchCount = count;
     const bool show = count >= 0 && !(m_searchEdit && m_searchEdit->text().isEmpty());
-    m_countLabel->setText(show ? tr("결과 %1 개").arg(count) : QString());
+    m_countLabel->setText(show ? tr("결과 %n 개", nullptr, count) : QString());
     m_countLabel->setVisible(show);
 }
 
@@ -307,8 +312,9 @@ void FindReplaceWidget::setExcludedCount(int count)
     if (!m_excludedCountLabel)
         return;
 
+    m_lastExcludedCount = count;
     const bool show = count > 0 && !(m_searchEdit && m_searchEdit->text().isEmpty());
-    m_excludedCountLabel->setText(show ? tr("제외 %1 개").arg(count) : QString());
+    m_excludedCountLabel->setText(show ? tr("제외 %n 개", nullptr, count) : QString());
     m_excludedCountLabel->setVisible(show);
 }
 
@@ -335,16 +341,57 @@ void FindReplaceWidget::updatePlaceholderText()
     if (!m_searchEdit)
         return;
 
-    QStringList modes;
-    if (m_caseBtn && m_caseBtn->isChecked())
-        modes << tr("대/소문자 구분");
-    if (m_wordBtn && m_wordBtn->isChecked())
-        modes << tr("단어 일치");
+    // 번역된 낱말을 번역된 구분자로 잇지 않는다. 조합이 네 가지뿐이라 문장을
+    // 그대로 넷 만든다 — 일본어는 나열 구분자가 "、" 이고 언어에 따라 괄호가
+    // 자연스러운데, tr(", ") 로는 어느 쪽도 맞출 수 없다.
+    const bool matchCase  = m_caseBtn && m_caseBtn->isChecked();
+    const bool wholeWords = m_wordBtn && m_wordBtn->isChecked();
 
-    if (modes.isEmpty())
-        m_searchEdit->setPlaceholderText(tr("검색"));
+    if (matchCase && wholeWords)
+        m_searchEdit->setPlaceholderText(tr("검색 (대/소문자 구분, 단어 일치)"));
+    else if (matchCase)
+        m_searchEdit->setPlaceholderText(tr("검색 (대/소문자 구분)"));
+    else if (wholeWords)
+        m_searchEdit->setPlaceholderText(tr("검색 (단어 일치)"));
     else
-        m_searchEdit->setPlaceholderText(modes.join(tr(", ")));
+        m_searchEdit->setPlaceholderText(tr("검색"));
+}
+
+void FindReplaceWidget::changeEvent(QEvent* event)
+{
+    // LanguageChange 는 최상위 위젯에서 자식 트리로 재귀 전달되므로, 편집기
+    // 안쪽 깊이 있는 이 위젯도 그대로 받는다.
+    if (event && event->type() == QEvent::LanguageChange)
+        retranslateUi();
+    QWidget::changeEvent(event);
+}
+
+void FindReplaceWidget::retranslateUi()
+{
+    m_toggleBtn->setToolTip(tr("바꾸기 표시/숨기기"));
+    m_caseBtn->setToolTip(tr("대/소문자 구분"));
+    m_wordBtn->setToolTip(tr("단어 일치"));
+    m_prevBtn->setToolTip(tr("이전 찾기 (Shift+F3)"));
+    m_nextBtn->setToolTip(tr("다음 찾기 (F3)"));
+    m_filterBtn->setToolTip(tr("필터"));
+    m_menuBtn->setToolTip(tr("옵션"));
+    m_closeBtn->setToolTip(tr("닫기 (ESC)"));
+
+    m_searchInSelectionAction->setText(tr("선택 영역에서 검색"));
+    m_autoScrollAction->setText(tr("입력 결과로 스크롤"));
+
+    m_replaceEdit->setPlaceholderText(tr("바꿀 내용"));
+    m_replaceBtn->setText(tr("바꾸기(&R)"));
+    m_replaceBtn->setToolTip(tr("현재 강조된 항목 바꾸기"));
+    m_replaceAllBtn->setText(tr("모두 바꾸기(&A)"));
+    m_replaceAllBtn->setToolTip(tr("검색된 모든 항목 바꾸기"));
+    m_excludeBtn->setText(tr("제외(&E)"));
+    m_excludeBtn->setToolTip(tr("현재 항목을 바꾸기 대상에서 제외"));
+
+    // 검색 placeholder 와 개수 라벨은 현재 값에서 다시 만든다.
+    updatePlaceholderText();
+    setMatchCount(m_lastMatchCount);
+    setExcludedCount(m_lastExcludedCount);
 }
 
 // ═══════════════════════════════════════════════════════════

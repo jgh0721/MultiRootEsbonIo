@@ -1,6 +1,7 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "main.hpp"
 
+#include "core/solLanguageManager.hpp"
 #include "core/solQlementineTheme.hpp"
 #include "core/solThemeManager.hpp"
 #include "MainWindow.hpp"
@@ -19,6 +20,15 @@ int main( int argc, char* argv[] )
     // 창 / 작업 표시줄 / Alt+Tab 아이콘. 탐색기가 보여 주는 .exe 아이콘은
     // 이것과 별개로 resources/app.rc 의 ICON 리소스가 담당한다.
     QApplication::setWindowIcon( QIcon( QStringLiteral( ":/icons/app.png" ) ) );
+
+    // 번역기를 테마·창보다 **먼저** 건다. MainWindow 생성자가 이미 tr() 을 수십
+    // 번 부르므로, 번역기가 그보다 늦게 붙으면 LanguageChange 를 받을 위젯이
+    // 아직 없어서 첫 화면만 원문(한국어)으로 굳는다.
+    //
+    // AppSettings 가 QApplication::applicationDirPath() 를 쓰므로 QApplication
+    // 생성 뒤여야 한다. 번역기 자체는 싱글톤이 값으로 들고 있다 — 아래
+    // do{}while(false) 블록 안에 스택 객체로 두면 블록을 벗어나는 순간 파괴된다.
+    LanguageManager::installAtStartup();
 
     do
     {

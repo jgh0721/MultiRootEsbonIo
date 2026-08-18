@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <QObject>
 #include <QWidget>
@@ -6,6 +6,25 @@
 #include <QHash>
 #include <QList>
 #include <QString>
+
+/// 색상 편집 범위 식별자.
+///
+/// 화면에 보이는 범위 이름(scopeLabel)과 코드가 비교에 쓰는 값을 갈라 놓는다.
+/// tr() 로 만든 문자열을 그대로 식별자로 쓰면, 언어를 바꾸는 순간 콤보에 남아
+/// 있던 userData 와 새로 만든 표의 값이 달라져 그 범위가 통째로 걸러진다.
+/// 같은 원문이 ThemeManager 와 QSettingsDialog 두 컨텍스트에 존재하므로
+/// 번역자가 한쪽만 다르게 옮겨도 같은 일이 벌어진다.
+namespace ThemeScopeIds
+{
+    inline constexpr auto                   kCommon          = "common";
+    inline constexpr auto                   kPdf             = "pdf";
+    inline constexpr auto                   kImage           = "image";
+    inline constexpr auto                   kMarkdown        = "markdown";
+    inline constexpr auto                   kText            = "text";
+    inline constexpr auto                   kTextLexer       = "text.lexer";
+    inline constexpr auto                   kTextLexerDetail = "text.lexer.detail";
+    inline constexpr auto                   kTextLexerRst    = "text.lexer.rst";
+}
 
 /// 전역 테마 관리자 (싱글톤)
 class ThemeManager : public QObject
@@ -19,6 +38,9 @@ public:
     struct ColorEntry {
         QString key;
         QString label;
+        /// ThemeScopeIds 중 하나. 번역하지 않는다 — 비교는 전부 이 값으로 한다.
+        QString groupId;
+        /// 화면에 보이는 범위 이름. editableColorEntries() 가 scopeLabel() 로 채운다.
         QString group;
     };
 
@@ -42,6 +64,9 @@ public:
     QHash< QString, QColor >            effectiveColors( Theme theme ) const;
 
     static QList<ColorEntry>            editableColorEntries();
+    /// ThemeScopeIds 값을 화면에 보일 이름으로 바꾼다. 범위 이름을 만드는 곳은
+    /// 여기 하나뿐이라, 설정 대화상자가 만드는 항목과 문자열이 어긋날 수 없다.
+    static QString                      scopeLabel( const QString& groupId );
     static QHash<QString, QColor>       defaultColors( Theme theme );
     static QString                      themeName( Theme theme );
 

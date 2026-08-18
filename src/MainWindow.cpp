@@ -390,7 +390,8 @@ MainWindow::MainWindow( QWidget* parent )
     // WA_OpaquePaintEvent 는 붙이지 않는다. QTabWidget 은 탭 베이스와 프레임만 그려
     // 자기 영역을 전부 채우지 않으므로, 배경 지우기를 끄면 리사이즈 때 잔상이 남는다.
 
-    Ui.webEngineView->setHtml( QStringLiteral( "<h1>MultiRoot reST</h1><p>셸이 시작되었습니다.</p>" ) );
+    //: 문서를 열기 전 프리뷰 영역에 보이는 시작 화면. <h1>/<p> 태그는 그대로 둘 것.
+    Ui.webEngineView->setHtml( tr( "<h1>MultiRoot reST</h1><p>셸이 시작되었습니다.</p>" ) );
 
     Ui.splFolderWithOutlineOnSide->setMinimumWidth( 200 );
     Ui.frmBottom->setMinimumHeight( 150 );
@@ -519,41 +520,58 @@ MainWindow::~MainWindow()
 // ═══════════════════════════════════════════════════════════
 // 메뉴
 // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// 메뉴는 만들 때와 언어를 바꿀 때가 같은 문자열 표를 쓴다.
+//
+// createMenus() 는 구조/단축키/연결만 만들고 표시 문자열은 하나도 쓰지 않는다.
+// 문자열은 전부 retranslateMenus() 한 곳에 있고, createMenus() 가 마지막에
+// 그것을 부른다. 문자열이 두 벌로 갈라질 수 없고, 항목을 추가하고 표에 넣는 것을
+// 잊으면 한국어에서도 빈 메뉴로 즉시 드러난다.
+//
+// **메뉴를 다시 만들지 않는 이유**: menuBar()->clear() 는 QMenu 객체를 지우지
+// 않는다. 옛 QAction 이 MainWindow 자손으로 살아남고, 그 대부분이
+// Qt::ApplicationShortcut 이다. QSettingsDialog::ApplyShortcutsToActions() 가
+// findChildren<QAction*>() 로 옛것과 새것 모두에 같은 단축키를 걸면 Qt 는
+// 모호한 단축키로 보고 **둘 다 발동시키지 않는다** — 언어를 한 번 바꾸면
+// Ctrl+S 가 죽는다. (같은 함정이 QBaseEditor.cpp 에도 적혀 있다.)
+// ═══════════════════════════════════════════════════════════
 void MainWindow::createMenus()
 {
-    auto* fileMenu = menuBar()->addMenu( tr( "파일(&F)" ) );
+    auto* fileMenu = menuBar()->addMenu( QString() );
+    fileMenu->setObjectName( QStringLiteral( "menu.file" ) );
 
-    auto* newAction = fileMenu->addAction( tr( "새 파일(&N)" ), this, &MainWindow::onFileNew );
+    auto* newAction = fileMenu->addAction( QString(), this, &MainWindow::onFileNew );
     newAction->setObjectName( QStringLiteral( "file.new" ) );
     newAction->setProperty( "mv.shortcutId", QStringLiteral( "file.new" ) );
     newAction->setShortcut( QKeySequence::New );
     newAction->setShortcutContext( Qt::ApplicationShortcut );
 
-    auto* openAction = fileMenu->addAction( tr( "열기..." ), this, &MainWindow::onFileOpen );
+    auto* openAction = fileMenu->addAction( QString(), this, &MainWindow::onFileOpen );
     openAction->setObjectName( QStringLiteral( "file.open" ) );
 
-    auto* openWorkspace = fileMenu->addAction( tr( "워크스페이스 열기(&O)..." ), QKeySequence::Open, this, &MainWindow::onWorkspaceOpen );
+    auto* openWorkspace = fileMenu->addAction( QString(), QKeySequence::Open, this, &MainWindow::onWorkspaceOpen );
     openWorkspace->setObjectName( QStringLiteral( "file.openWorkspace" ) );
     openWorkspace->setProperty( "mv.shortcutId", QStringLiteral( "file.openWorkspace" ) );
     openWorkspace->setShortcut( QKeySequence::Open );
     openWorkspace->setShortcutContext( Qt::ApplicationShortcut );
 
-    m_saveAction = fileMenu->addAction( tr( "저장(&S)" ), this, &MainWindow::onFileSave );
+    m_saveAction = fileMenu->addAction( QString(), this, &MainWindow::onFileSave );
     m_saveAction->setObjectName( QStringLiteral( "file.save" ) );
     m_saveAction->setProperty( "mv.shortcutId", QStringLiteral( "file.save" ) );
     m_saveAction->setShortcut( QKeySequence::Save );
     m_saveAction->setShortcutContext( Qt::ApplicationShortcut );
 
-    m_saveAsAction = fileMenu->addAction( tr( "다른 이름으로 저장(&A)..." ), this, &MainWindow::onFileSaveAs );
+    m_saveAsAction = fileMenu->addAction( QString(), this, &MainWindow::onFileSaveAs );
     m_saveAsAction->setObjectName( QStringLiteral( "file.saveAs" ) );
     m_saveAsAction->setProperty( "mv.shortcutId", QStringLiteral( "file.saveAs" ) );
     m_saveAsAction->setShortcut( QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_S ) );
     m_saveAsAction->setShortcutContext( Qt::ApplicationShortcut );
 
-    m_recentMenu = fileMenu->addMenu( tr( "최근 파일(&R)" ) );
+    m_recentMenu = fileMenu->addMenu( QString() );
+    m_recentMenu->setObjectName( QStringLiteral( "menu.recent" ) );
 
     fileMenu->addSeparator();
-    auto* closeTabAction = fileMenu->addAction( tr( "현재 탭 닫기(&C)" ), this, [this] {
+    auto* closeTabAction = fileMenu->addAction( QString(), this, [this] {
         if( m_tabWidget )
             onCloseTab( m_tabWidget->currentIndex() );
     } );
@@ -563,20 +581,27 @@ void MainWindow::createMenus()
     closeTabAction->setShortcutContext( Qt::ApplicationShortcut );
 
     fileMenu->addSeparator();
-    fileMenu->addAction( tr( "종료(&X)" ), QKeySequence::Quit, QApplication::instance(), &QApplication::quit );
+    auto* quitAction = fileMenu->addAction( QString(), QKeySequence::Quit, QApplication::instance(),
+                                            &QApplication::quit );
+    quitAction->setObjectName( QStringLiteral( "app.quit" ) );
 
-    auto* editMenu = menuBar()->addMenu( tr( "편집(&E)" ) );
-    m_copyAction = editMenu->addAction( tr( "복사(&C)" ), this, &MainWindow::onCopy );
+    auto* editMenu = menuBar()->addMenu( QString() );
+    editMenu->setObjectName( QStringLiteral( "menu.edit" ) );
+    m_copyAction = editMenu->addAction( QString(), this, &MainWindow::onCopy );
+    // objectName 이 없으면 retranslateMenus() 가 찾지 못한다. 겸사겸사 단축키
+    // 설정 표에 편집 항목을 넣을 수 있는 자리도 생긴다.
+    m_copyAction->setObjectName( QStringLiteral( "edit.copy" ) );
     m_copyAction->setShortcut( QKeySequence::Copy );
     m_copyAction->setShortcutContext( Qt::ApplicationShortcut );
     m_copyAction->setEnabled( false );
-    m_pasteAction = editMenu->addAction( tr( "붙여넣기(&P)" ), this, &MainWindow::onPaste );
+    m_pasteAction = editMenu->addAction( QString(), this, &MainWindow::onPaste );
+    m_pasteAction->setObjectName( QStringLiteral( "edit.paste" ) );
     m_pasteAction->setShortcut( QKeySequence::Paste );
     m_pasteAction->setShortcutContext( Qt::ApplicationShortcut );
     m_pasteAction->setEnabled( false );
 
     editMenu->addSeparator();
-    auto* completionAction = editMenu->addAction( tr( "자동 완성(&M)" ), this, [this] {
+    auto* completionAction = editMenu->addAction( QString(), this, [this] {
         if( controller_ != nullptr )
             controller_->requestCompletion();
     } );
@@ -584,14 +609,16 @@ void MainWindow::createMenus()
     completionAction->setShortcut( QKeySequence( Qt::CTRL | Qt::Key_Space ) );
     completionAction->setShortcutContext( Qt::WindowShortcut );
 
-    auto* viewMenu = menuBar()->addMenu( tr( "보기(&V)" ) );
-    viewMenu->addAction( tr( "테마 전환" ), this, &MainWindow::onThemeToggle );
+    auto* viewMenu = menuBar()->addMenu( QString() );
+    viewMenu->setObjectName( QStringLiteral( "menu.view" ) );
+    auto* themeToggleAction = viewMenu->addAction( QString(), this, &MainWindow::onThemeToggle );
+    themeToggleAction->setObjectName( QStringLiteral( "view.themeToggle" ) );
 
     // 코드 접기. 마진의 [-] 를 하나씩 누르는 것 말고 문서 전체를 한 번에
     // 여닫는 수단이 있어야 개요처럼 쓸 수 있다. 접기 자체를 켜고 끄는 것은
     // 설정(텍스트 편집기 > 코드 폴딩)에 있다.
     viewMenu->addSeparator();
-    auto* foldAllAction = viewMenu->addAction( tr( "모두 접기(&F)" ), this, [this] {
+    auto* foldAllAction = viewMenu->addAction( QString(), this, [this] {
         if( QTextView* view = textViewOf( currentView() ) )
             view->foldAll( true );
     } );
@@ -599,7 +626,7 @@ void MainWindow::createMenus()
     foldAllAction->setShortcut( QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_Minus ) );
     foldAllAction->setShortcutContext( Qt::WindowShortcut );
 
-    auto* unfoldAllAction = viewMenu->addAction( tr( "모두 펼치기(&U)" ), this, [this] {
+    auto* unfoldAllAction = viewMenu->addAction( QString(), this, [this] {
         if( QTextView* view = textViewOf( currentView() ) )
             view->foldAll( false );
     } );
@@ -607,11 +634,177 @@ void MainWindow::createMenus()
     unfoldAllAction->setShortcut( QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_Plus ) );
     unfoldAllAction->setShortcutContext( Qt::WindowShortcut );
 
-    auto* settingsMenu = menuBar()->addMenu( tr( "설정(&S)" ) );
-    auto* settingsAction = settingsMenu->addAction( tr( "설정(&I)..." ), this, &MainWindow::onSettings );
+    auto* settingsMenu = menuBar()->addMenu( QString() );
+    settingsMenu->setObjectName( QStringLiteral( "menu.settings" ) );
+    auto* settingsAction = settingsMenu->addAction( QString(), this, &MainWindow::onSettings );
     settingsAction->setObjectName( QStringLiteral( "app.settings" ) );
     settingsAction->setShortcut( QKeySequence( Qt::CTRL | Qt::Key_I ) );
     settingsAction->setShortcutContext( Qt::ApplicationShortcut );
+
+    // 도움말 메뉴를 새로 만들지 않는다. 항목 하나짜리 최상위 메뉴가 생기고,
+    // 확인 주기가 바로 옆 설정에 있으므로 같은 메뉴에 두는 편이 자연스럽다.
+    settingsMenu->addSeparator();
+    auto* checkUpdateAction = settingsMenu->addAction( QString(), this, [this] {
+        if( updateService_ != nullptr )
+            updateService_->checkAsync( /*userInitiated=*/true );
+    } );
+    checkUpdateAction->setObjectName( QStringLiteral( "app.checkUpdate" ) );
+
+    retranslateMenus();
+}
+
+void MainWindow::changeEvent( QEvent* event )
+{
+    // 번역기를 갈아 끼우면 QApplication 이 LanguageChange 를 **모든 최상위
+    // 위젯에 post** 하고, 각 QWidget::event() 가 자식 트리로 재귀 전달한다.
+    // 그래서 여기 하나만 잡으면 된다 — 생성자에서 건 앱 전역 eventFilter 에서
+    // 처리하면 위젯 수만큼 호출되고, updateViewerToolBar() 가 지금 이벤트를
+    // 받고 있는 툴바를 delete(=deleteLater 가 아니다) 해 버린다.
+    if( event != nullptr && event->type() == QEvent::LanguageChange )
+        retranslateUi();
+
+    // 부모 구현을 삼키지 않는다. StyleChange / FontChange / WindowStateChange 도
+    // 같은 함수로 들어온다.
+    QMainWindow::changeEvent( event );
+}
+
+void MainWindow::retranslateUi()
+{
+    // ⚠ mainWindow.ui 의 windowTitle 이 플레이스홀더 "MainWindow" 라서 이 호출이
+    //    창 제목을 덮어쓴다. 아래에서 updateTitle() 로 되돌린다.
+    //    (여기서 살아나는 것: 개요 탭 "활성 문서"/"프로젝트", 하단 탭 "진단"/"로그".)
+    Ui.retranslateUi( this );
+
+    retranslateMenus();
+    updateRecentFilesMenu();            // "(없음)" 항목
+
+    if( Ui.tblDiagnostics != nullptr )
+    {
+        Ui.tblDiagnostics->setHorizontalHeaderLabels( { tr( "심각도" ), tr( "파일" ), tr( "줄" ),
+                                                        tr( "메시지" ), tr( "출처" ) } );
+    }
+
+    retranslateWorkspaceSearchTab();
+
+    // 개요 트리는 플레이스홀더를 보여 주는 중일 때만 손댄다. 실제 심볼이
+    // 들어 있으면 그건 문서 내용이라 번역 대상이 아니다.
+    retranslateOutlinePlaceholders();
+
+    if( missingDepBar_ != nullptr )
+    {
+        if( auto* b = missingDepBar_->findChild< QPushButton* >( QStringLiteral( "missingDep.install" ) ) )
+            b->setText( tr( "설치" ) );
+        if( auto* b = missingDepBar_->findChild< QPushButton* >( QStringLiteral( "missingDep.ignore" ) ) )
+            b->setText( tr( "무시" ) );
+        if( missingDepBar_->isVisible() && !missingDepPending_.isEmpty() )
+        {
+            missingDepLabel_->setText( tr( "Sphinx 확장/테마를 찾을 수 없습니다: %1" )
+                                          .arg( missingDepPending_.join( QStringLiteral( ", " ) ) ) );
+        }
+    }
+
+    retranslateUpdateBar();
+
+    // 뷰어 도구모음은 QTextView 가 통째로 다시 만든다. 편집기 라벨(언어/인코딩/
+    // 줄바꿈/탭 간격)이 여기서 한꺼번에 해결된다 — 테마 전환이 이미 같은 경로를
+    // 쓰고 있다.
+    updateViewerToolBar();
+
+    updateEnvStatusChip();
+    if( m_loadingCancelButton != nullptr )
+        m_loadingCancelButton->setText( tr( "취소" ) );
+
+    // Ui.retranslateUi() 가 덮어쓴 창 제목을 되돌린다. 순서가 뒤바뀌면 제목
+    // 표시줄에 "MainWindow" 가 남는다.
+    updateTitle();
+}
+
+void MainWindow::retranslateWorkspaceSearchTab()
+{
+    if( searchTabPage_ == nullptr || Ui.tabStatistics == nullptr )
+        return;
+
+    const int index = Ui.tabStatistics->indexOf( searchTabPage_ );
+    if( index >= 0 )
+        Ui.tabStatistics->setTabText( index, tr( "검색" ) );
+
+    if( auto* b = searchTabPage_->findChild< QPushButton* >( QStringLiteral( "search.find" ) ) )
+        b->setText( tr( "찾기" ) );
+    if( auto* b = searchTabPage_->findChild< QPushButton* >( QStringLiteral( "search.preview" ) ) )
+        b->setText( tr( "바꾸기 미리보기" ) );
+    if( searchApplyButton_ != nullptr )
+        searchApplyButton_->setText( tr( "적용" ) );
+    if( searchQueryEdit_ != nullptr )
+        searchQueryEdit_->setPlaceholderText( tr( "찾을 내용" ) );
+    if( searchReplaceEdit_ != nullptr )
+        searchReplaceEdit_->setPlaceholderText( tr( "바꿀 내용" ) );
+    if( searchCaseBox_ != nullptr )
+        searchCaseBox_->setText( tr( "대/소문자 구분" ) );
+    if( searchWordBox_ != nullptr )
+        searchWordBox_->setText( tr( "단어 단위" ) );
+    if( searchRegexBox_ != nullptr )
+        searchRegexBox_->setText( tr( "정규식" ) );
+    // 상태 라벨은 마지막 검색 결과라 지운다. 개수를 되읽을 방법이 없고, 낡은
+    // 언어로 남겨 두는 것보다 비워 두는 편이 정직하다.
+    if( searchStatusLabel_ != nullptr && !searchStatusLabel_->text().isEmpty() )
+        searchStatusLabel_->setText( tr( "워크스페이스와 찾을 내용을 지정하세요." ) );
+}
+
+void MainWindow::retranslateUpdateBar()
+{
+    if( updateBar_ == nullptr )
+        return;
+
+    updateNotesButton_->setText( tr( "릴리스 노트" ) );
+    updateSkipButton_ ->setText( tr( "이 버전 건너뛰기" ) );
+    updateLaterButton_->setText( tr( "나중에" ) );
+
+    // 라벨과 실행 버튼은 상태에 따라 문구가 다르다. 떠 있을 때만 상태에서 다시
+    // 만든다 (숨겨져 있으면 다음에 뜰 때 새 언어로 채워진다).
+    if( !updateBar_->isVisible() || updateService_ == nullptr )
+        return;
+    if( updateService_->state() == mrst::UpdateService::State::ReadyToInstall )
+        showUpdateReady( updateService_->available().version );
+    else
+        showUpdateAvailable( updateService_->available() );
+}
+
+void MainWindow::retranslateMenus()
+{
+    // 검색 범위를 menuBar() 로 좁힌다. MainWindow 전체에서 찾으면 편집기가 만든
+    // QAction 과 objectName 이 겹칠 수 있다.
+    const auto menuTitle = [this]( const char* name, const QString& title ) {
+        if( auto* menu = menuBar()->findChild< QMenu* >( QLatin1String( name ) ) )
+            menu->setTitle( title );
+    };
+    const auto actionText = [this]( const char* name, const QString& text ) {
+        if( auto* action = menuBar()->findChild< QAction* >( QLatin1String( name ) ) )
+            action->setText( text );
+    };
+
+    menuTitle ( "menu.file",          tr( "파일(&F)" ) );
+    actionText( "file.new",           tr( "새 파일(&N)" ) );
+    actionText( "file.open",          tr( "열기..." ) );
+    actionText( "file.openWorkspace", tr( "워크스페이스 열기(&O)..." ) );
+    actionText( "file.save",          tr( "저장(&S)" ) );
+    actionText( "file.saveAs",        tr( "다른 이름으로 저장(&A)..." ) );
+    menuTitle ( "menu.recent",        tr( "최근 파일(&R)" ) );
+    actionText( "tab.close",          tr( "현재 탭 닫기(&C)" ) );
+    actionText( "app.quit",           tr( "종료(&X)" ) );
+
+    menuTitle ( "menu.edit",          tr( "편집(&E)" ) );
+    actionText( "edit.copy",          tr( "복사(&C)" ) );
+    actionText( "edit.paste",         tr( "붙여넣기(&P)" ) );
+    actionText( "editor.completion",  tr( "자동 완성(&M)" ) );
+
+    menuTitle ( "menu.view",          tr( "보기(&V)" ) );
+    actionText( "view.themeToggle",   tr( "테마 전환" ) );
+    actionText( "editor.foldAll",     tr( "모두 접기(&F)" ) );
+    actionText( "editor.unfoldAll",   tr( "모두 펼치기(&U)" ) );
+
+    menuTitle ( "menu.settings",      tr( "설정(&S)" ) );
+    actionText( "app.settings",       tr( "설정(&I)..." ) );
+    actionText( "app.checkUpdate",    tr( "업데이트 확인(&U)..." ) );
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1150,15 +1343,25 @@ void MainWindow::onFileNew()
 
 void MainWindow::onFileOpen()
 {
+    // 필터 이름만 번역하고 글롭 패턴과 ";;" 구분자는 코드가 만든다. 통째로
+    // tr() 에 넣으면 번역자가 전각 괄호를 쓰거나 ";;" 를 하나로 줄이는 순간
+    // 파일이 하나도 보이지 않는다.
+    static const QString kAllSupported =
+        QStringLiteral( "*.rst *.txt *.log *.ini *.cfg *.xml *.json *.html *.htm *.css "
+                        "*.js *.ts *.cpp *.c *.h *.hpp *.py *.java *.md *.markdown" );
+    static const QString kText =
+        QStringLiteral( "*.txt *.log *.ini *.cfg *.xml *.json *.html *.css *.js *.cpp *.c *.h *.py" );
+
+    const QStringList filters{
+        QStringLiteral( "%1 (%2)" ).arg( tr( "모든 지원 파일" ), kAllSupported ),
+        QStringLiteral( "reStructuredText (*.rst)" ),
+        QStringLiteral( "%1 (%2)" ).arg( tr( "텍스트" ), kText ),
+        QStringLiteral( "%1 (*.md *.markdown)" ).arg( tr( "마크다운" ) ),
+        QStringLiteral( "%1 (*)" ).arg( tr( "모든 파일" ) ),
+    };
+
     const QStringList files = QFileDialog::getOpenFileNames( this,
-        tr( "파일 열기" ), {},
-        tr( "모든 지원 파일 (*.rst *.txt *.log *.ini *.cfg *.xml *.json *.html *.htm *.css "
-            "*.js *.ts *.cpp *.c *.h *.hpp *.py *.java *.md *.markdown);;"
-            "reStructuredText (*.rst);;"
-            "텍스트 (*.txt *.log *.ini *.cfg *.xml *.json *.html *.css *.js *.cpp *.c *.h *.py);;"
-            "마크다운 (*.md *.markdown);;"
-            "모든 파일 (*)" )
-    );
+        tr( "파일 열기" ), {}, filters.join( QStringLiteral( ";;" ) ) );
     for( const auto& f : files )
         openFile( f );
 }
@@ -1168,7 +1371,7 @@ void MainWindow::onWorkspaceOpen()
     //if( !confirmSaveAll() )
     //    return;
     const QString startDir = controller_ ? controller_->workspaceRoot() : QString{};
-    const QString folder = QFileDialog::getExistingDirectory( this, QStringLiteral( "워크스페이스 폴더 열기" ), startDir );
+    const QString folder = QFileDialog::getExistingDirectory( this, tr( "워크스페이스 폴더 열기" ), startDir );
     if( !folder.isEmpty() )
         setWorkspace( folder );
 }
@@ -1426,7 +1629,8 @@ void MainWindow::updateTitle()
 {
     auto* v = currentView();
     if( v )
-        setWindowTitle( QStringLiteral( "MultiRoot reST Editor — %1" ).arg( v->title() ) );
+        //: 창 제목. %1 은 현재 문서 이름이다. 제품 이름은 옮기지 않는다.
+        setWindowTitle( tr( "MultiRoot reST Editor — %1" ).arg( v->title() ) );
     else
         setWindowTitle( tr( "MultiRoot reST Editor" ) );
 }
@@ -1864,7 +2068,7 @@ void MainWindow::openDroppedPaths( const QStringList& paths )
     }
 
     if( openedRequests > 0 )
-        statusBar()->showMessage( tr( "드롭한 항목 %1개를 처리했습니다." ).arg( openedRequests ), 2500 );
+        statusBar()->showMessage( tr( "드롭한 항목 %n개를 처리했습니다.", nullptr, openedRequests ), 2500 );
 }
 
 void MainWindow::openDroppedDirectory( const QString& dirPath )
@@ -2129,6 +2333,10 @@ namespace {
 /// 개요 항목에 붙이는 (경로, 줄) 데이터 역할.
 constexpr int kOutlinePathRole = Qt::UserRole;
 constexpr int kOutlineLineRole = Qt::UserRole + 1;
+/// 개요 트리가 "지금 안내 문구를 보여 주는 중" 임을 표시한다. 언어가 바뀌면
+/// 그 문구만 다시 칠해야 하는데, 표시된 텍스트로는 어느 안내인지 알 수 없다
+/// (번역되어 있으므로). 그래서 번역하지 않는 식별자를 함께 심는다.
+constexpr int kOutlinePlaceholderRole = Qt::UserRole + 2;
 
 QString outlineItemLabel( const mrst::OutlineSymbol& symbol )
 {
@@ -2157,12 +2365,17 @@ void addOutlineSymbols( QTreeWidgetItem* parent, QTreeWidget* tree,
     }
 }
 
-void setOutlinePlaceholder( QTreeWidget* tree, const QString& text )
+/// id 는 번역하지 않는 식별자다. 비워 두면(컨트롤러가 준 사유 문구처럼) 언어가
+/// 바뀌어도 다시 칠하지 않는다 — 무슨 말이었는지 되살릴 방법이 없기 때문이다.
+void setOutlinePlaceholder( QTreeWidget* tree, const QString& text, const char* id = nullptr )
 {
     if( tree == nullptr )
         return;
     tree->clear();
-    tree->addTopLevelItem( new QTreeWidgetItem( QStringList{ text } ) );
+    auto* item = new QTreeWidgetItem( QStringList{ text } );
+    if( id != nullptr )
+        item->setData( 0, kOutlinePlaceholderRole, QString::fromLatin1( id ) );
+    tree->addTopLevelItem( item );
 }
 
 }  // namespace
@@ -2181,8 +2394,8 @@ void MainWindow::setupOutlineTrees()
         connect( tree, &QTreeWidget::itemActivated, this, &MainWindow::onOutlineItemActivated );
         connect( tree, &QTreeWidget::itemDoubleClicked, this, &MainWindow::onOutlineItemActivated );
     }
-    setOutlinePlaceholder( Ui.treOutlineDocument, tr( "열린 문서가 없습니다." ) );
-    setOutlinePlaceholder( Ui.treOutlineProject, tr( "활성 Sphinx 프로젝트가 없습니다." ) );
+    setOutlinePlaceholder( Ui.treOutlineDocument, tr( "열린 문서가 없습니다." ), "noDocument" );
+    setOutlinePlaceholder( Ui.treOutlineProject, tr( "활성 Sphinx 프로젝트가 없습니다." ), "noProject" );
 
     connect( controller_, &mrst::WorkspaceController::documentOutlineReady, this,
             [this]( const QString&, const QVector< mrst::OutlineSymbol >& symbols ) {
@@ -2191,7 +2404,7 @@ void MainWindow::setupOutlineTrees()
                     return;
                 if( symbols.isEmpty() )
                 {
-                    setOutlinePlaceholder( tree, tr( "문서 심볼이 없습니다." ) );
+                    setOutlinePlaceholder( tree, tr( "문서 심볼이 없습니다." ), "noSymbols" );
                     return;
                 }
                 tree->clear();
@@ -2207,7 +2420,7 @@ void MainWindow::setupOutlineTrees()
                     return;
                 if( documents.isEmpty() )
                 {
-                    setOutlinePlaceholder( tree, tr( "활성 프로젝트에 reST 문서가 없습니다." ) );
+                    setOutlinePlaceholder( tree, tr( "활성 프로젝트에 reST 문서가 없습니다." ), "noRstDocs" );
                     return;
                 }
 
@@ -2227,7 +2440,7 @@ void MainWindow::setupOutlineTrees()
                 if( truncated > 0 )
                 {
                     tree->addTopLevelItem( new QTreeWidgetItem(
-                        QStringList{ tr( "… %1개 문서 생략" ).arg( truncated ) } ) );
+                        QStringList{ tr( "… %n개 문서 생략", nullptr, truncated ) } ) );
                 }
                 tree->expandToDepth( 0 );
             } );
@@ -2236,6 +2449,28 @@ void MainWindow::setupOutlineTrees()
             [this]( const QString& reason ) {
                 setOutlinePlaceholder( Ui.treOutlineDocument, reason );
             } );
+}
+
+void MainWindow::retranslateOutlinePlaceholders()
+{
+    // 안내 문구를 보여 주는 중일 때만 손댄다. 실제 심볼이 들어 있으면 그건
+    // 문서 내용이라 번역 대상이 아니다.
+    const auto retranslate = []( QTreeWidget* tree ) {
+        if( tree == nullptr || tree->topLevelItemCount() != 1 )
+            return;
+        QTreeWidgetItem* item = tree->topLevelItem( 0 );
+        const QString    id   = item->data( 0, kOutlinePlaceholderRole ).toString();
+        if( id == QLatin1String( "noDocument" ) )
+            item->setText( 0, MainWindow::tr( "열린 문서가 없습니다." ) );
+        else if( id == QLatin1String( "noProject" ) )
+            item->setText( 0, MainWindow::tr( "활성 Sphinx 프로젝트가 없습니다." ) );
+        else if( id == QLatin1String( "noSymbols" ) )
+            item->setText( 0, MainWindow::tr( "문서 심볼이 없습니다." ) );
+        else if( id == QLatin1String( "noRstDocs" ) )
+            item->setText( 0, MainWindow::tr( "활성 프로젝트에 reST 문서가 없습니다." ) );
+    };
+    retranslate( Ui.treOutlineDocument );
+    retranslate( Ui.treOutlineProject );
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2259,8 +2494,11 @@ void MainWindow::setupWorkspaceSearchTab()
     controls->addWidget( searchQueryEdit_, 1 );
     controls->addWidget( searchReplaceEdit_, 1 );
 
+    // 지역 변수지만 retranslateUi() 가 이름으로 찾아 다시 칠한다.
     auto* findButton = new QPushButton( tr( "찾기" ), page );
+    findButton->setObjectName( QStringLiteral( "search.find" ) );
     auto* previewButton = new QPushButton( tr( "바꾸기 미리보기" ), page );
+    previewButton->setObjectName( QStringLiteral( "search.preview" ) );
     searchApplyButton_ = new QPushButton( tr( "적용" ), page );
     searchApplyButton_->setEnabled( false );
     controls->addWidget( findButton );
@@ -2285,6 +2523,7 @@ void MainWindow::setupWorkspaceSearchTab()
     searchResultTree_->setUniformRowHeights( true );
     layout->addWidget( searchResultTree_, 1 );
 
+    searchTabPage_ = page;
     Ui.tabStatistics->addTab( page, tr( "검색" ) );
 
     connect( findButton, &QPushButton::clicked, this, &MainWindow::runWorkspaceSearch );
@@ -2409,8 +2648,8 @@ void MainWindow::applyWorkspaceReplace()
     // 되돌리기가 없는 작업이라 반드시 확인한다.
     if( QMessageBox::question(
             this, tr( "바꾸기 적용" ),
-            tr( "파일 %1개를 실제로 바꿉니다. 되돌릴 수 없습니다. 계속할까요?" )
-                .arg( pendingReplacePaths_.size() ) ) != QMessageBox::Yes )
+            tr( "파일 %n개를 실제로 바꿉니다. 되돌릴 수 없습니다. 계속할까요?", nullptr,
+                static_cast< int >( pendingReplacePaths_.size() ) ) ) != QMessageBox::Yes )
     {
         return;
     }
@@ -2421,7 +2660,7 @@ void MainWindow::applyWorkspaceReplace()
 
     pendingReplacePaths_.clear();
     searchApplyButton_->setEnabled( false );
-    searchStatusLabel_->setText( tr( "파일 %1개를 바꿨습니다." ).arg( changed.size() ) );
+    searchStatusLabel_->setText( tr( "파일 %n개를 바꿨습니다.", nullptr, static_cast< int >( changed.size() ) ) );
     appendLog( tr( "워크스페이스 바꾸기: 파일 %1개 변경" ).arg( changed.size() ) );
 
     // 열려 있는 탭은 디스크와 어긋난 상태가 된다. 사용자가 알아야 한다.
@@ -2604,7 +2843,9 @@ void MainWindow::setupMissingDependencyBar()
     layout->addWidget( missingDepLabel_, 1 );
 
     auto* installButton = new QPushButton( tr( "설치" ), missingDepBar_ );
+    installButton->setObjectName( QStringLiteral( "missingDep.install" ) );
     auto* ignoreButton = new QPushButton( tr( "무시" ), missingDepBar_ );
+    ignoreButton->setObjectName( QStringLiteral( "missingDep.ignore" ) );
     layout->addWidget( installButton );
     layout->addWidget( ignoreButton );
 

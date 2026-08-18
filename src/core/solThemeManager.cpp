@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "core/solThemeManager.hpp"
 #include "core/solAppSettings.hpp"
 #include "core/solQlementineTheme.hpp"
@@ -154,110 +154,132 @@ QHash< QString, QColor > ThemeManager::effectiveColors( Theme theme ) const
     return colors;
 }
 
+QString ThemeManager::scopeLabel( const QString& groupId )
+{
+    // 범위 이름을 만드는 곳은 여기 하나다. 항목 표에서 tr() 로 되풀이하면 같은
+    // 원문이 94번 반복되고, 설정 대화상자가 만드는 상세 항목과 문자열이
+    // 어긋나는 순간 그 범위가 통째로 걸러진다.
+    if( groupId == QLatin1String( ThemeScopeIds::kCommon ) )          return tr( "공통" );
+    if( groupId == QLatin1String( ThemeScopeIds::kPdf ) )             return tr( "PDF" );
+    if( groupId == QLatin1String( ThemeScopeIds::kImage ) )           return tr( "IMAGE" );
+    if( groupId == QLatin1String( ThemeScopeIds::kMarkdown ) )        return tr( "Markdown" );
+    if( groupId == QLatin1String( ThemeScopeIds::kText ) )            return tr( "TEXT" );
+    if( groupId == QLatin1String( ThemeScopeIds::kTextLexer ) )       return tr( "TEXT Lexer" );
+    if( groupId == QLatin1String( ThemeScopeIds::kTextLexerDetail ) ) return tr( "TEXT Lexer 상세" );
+    if( groupId == QLatin1String( ThemeScopeIds::kTextLexerRst ) )    return tr( "TEXT Lexer reST" );
+    // 모르는 식별자는 그대로 보여 준다. 빈 칸보다는 낫고, 새 범위를 추가하고
+    // 여기 넣는 것을 잊었다는 사실이 화면에 바로 드러난다.
+    return groupId;
+}
+
 QList< ThemeManager::ColorEntry > ThemeManager::editableColorEntries()
 {
-    return {
-        { QStringLiteral( "common.background" ), tr( "앱 배경" ), tr( "공통" ) },
-        { QStringLiteral( "common.surface" ), tr( "표면/패널" ), tr( "공통" ) },
-        { QStringLiteral( "common.surfaceAlt" ), tr( "보조 표면" ), tr( "공통" ) },
-        { QStringLiteral( "common.foreground" ), tr( "기본 글자" ), tr( "공통" ) },
-        { QStringLiteral( "common.foregroundMuted" ), tr( "보조 글자" ), tr( "공통" ) },
-        { QStringLiteral( "common.accent" ), tr( "강조색" ), tr( "공통" ) },
-        { QStringLiteral( "common.border" ), tr( "테두리" ), tr( "공통" ) },
-        { QStringLiteral( "common.toolbar" ), tr( "툴바" ), tr( "공통" ) },
-        { QStringLiteral( "common.tabActive" ), tr( "활성 탭" ), tr( "공통" ) },
-        { QStringLiteral( "common.tabInactive" ), tr( "비활성 탭" ), tr( "공통" ) },
-        { QStringLiteral( "common.canvas" ), tr( "캔버스 영역" ), tr( "공통" ) },
+    QList< ColorEntry > entries = {
+        { QStringLiteral( "common.background" ), tr( "앱 배경" ), QLatin1String( ThemeScopeIds::kCommon ) },
+        { QStringLiteral( "common.surface" ), tr( "표면/패널" ), QLatin1String( ThemeScopeIds::kCommon ) },
+        { QStringLiteral( "common.surfaceAlt" ), tr( "보조 표면" ), QLatin1String( ThemeScopeIds::kCommon ) },
+        { QStringLiteral( "common.foreground" ), tr( "기본 글자" ), QLatin1String( ThemeScopeIds::kCommon ) },
+        { QStringLiteral( "common.foregroundMuted" ), tr( "보조 글자" ), QLatin1String( ThemeScopeIds::kCommon ) },
+        { QStringLiteral( "common.accent" ), tr( "강조색" ), QLatin1String( ThemeScopeIds::kCommon ) },
+        { QStringLiteral( "common.border" ), tr( "테두리" ), QLatin1String( ThemeScopeIds::kCommon ) },
+        { QStringLiteral( "common.toolbar" ), tr( "툴바" ), QLatin1String( ThemeScopeIds::kCommon ) },
+        { QStringLiteral( "common.tabActive" ), tr( "활성 탭" ), QLatin1String( ThemeScopeIds::kCommon ) },
+        { QStringLiteral( "common.tabInactive" ), tr( "비활성 탭" ), QLatin1String( ThemeScopeIds::kCommon ) },
+        { QStringLiteral( "common.canvas" ), tr( "캔버스 영역" ), QLatin1String( ThemeScopeIds::kCommon ) },
 
-        { QStringLiteral( "pdf.canvas" ), tr( "PDF 캔버스" ), tr( "PDF" ) },
-        { QStringLiteral( "pdf.pageGap" ), tr( "PDF 페이지 간격" ), tr( "PDF" ) },
-        { QStringLiteral( "pdf.searchHighlight" ), tr( "PDF 검색 하이라이트" ), tr( "PDF" ) },
-        { QStringLiteral( "pdf.searchCurrent" ), tr( "PDF 현재 검색 결과" ), tr( "PDF" ) },
-        { QStringLiteral( "pdf.textSelection" ), tr( "PDF 텍스트 선택" ), tr( "PDF" ) },
-        { QStringLiteral( "pdf.imageSelection" ), tr( "PDF 이미지 선택" ), tr( "PDF" ) },
-        { QStringLiteral( "pdf.annotation" ), tr( "PDF 기본 주석" ), tr( "PDF" ) },
+        { QStringLiteral( "pdf.canvas" ), tr( "PDF 캔버스" ), QLatin1String( ThemeScopeIds::kPdf ) },
+        { QStringLiteral( "pdf.pageGap" ), tr( "PDF 페이지 간격" ), QLatin1String( ThemeScopeIds::kPdf ) },
+        { QStringLiteral( "pdf.searchHighlight" ), tr( "PDF 검색 하이라이트" ), QLatin1String( ThemeScopeIds::kPdf ) },
+        { QStringLiteral( "pdf.searchCurrent" ), tr( "PDF 현재 검색 결과" ), QLatin1String( ThemeScopeIds::kPdf ) },
+        { QStringLiteral( "pdf.textSelection" ), tr( "PDF 텍스트 선택" ), QLatin1String( ThemeScopeIds::kPdf ) },
+        { QStringLiteral( "pdf.imageSelection" ), tr( "PDF 이미지 선택" ), QLatin1String( ThemeScopeIds::kPdf ) },
+        { QStringLiteral( "pdf.annotation" ), tr( "PDF 기본 주석" ), QLatin1String( ThemeScopeIds::kPdf ) },
 
-        { QStringLiteral( "image.canvas" ), tr( "이미지 캔버스" ), tr( "IMAGE" ) },
-        { QStringLiteral( "image.draw" ), tr( "이미지 기본 그리기" ), tr( "IMAGE" ) },
-        { QStringLiteral( "image.selection" ), tr( "이미지 선택/크롭" ), tr( "IMAGE" ) },
-        { QStringLiteral( "image.compositeOutline" ), tr( "이미지 합성 경계" ), tr( "IMAGE" ) },
-        { QStringLiteral( "image.handleFill" ), tr( "이미지 핸들 배경" ), tr( "IMAGE" ) },
-        { QStringLiteral( "image.handleBorder" ), tr( "이미지 핸들 테두리" ), tr( "IMAGE" ) },
-        { QStringLiteral( "image.accept" ), tr( "이미지 승인 버튼" ), tr( "IMAGE" ) },
-        { QStringLiteral( "image.cancel" ), tr( "이미지 취소 버튼" ), tr( "IMAGE" ) },
+        { QStringLiteral( "image.canvas" ), tr( "이미지 캔버스" ), QLatin1String( ThemeScopeIds::kImage ) },
+        { QStringLiteral( "image.draw" ), tr( "이미지 기본 그리기" ), QLatin1String( ThemeScopeIds::kImage ) },
+        { QStringLiteral( "image.selection" ), tr( "이미지 선택/크롭" ), QLatin1String( ThemeScopeIds::kImage ) },
+        { QStringLiteral( "image.compositeOutline" ), tr( "이미지 합성 경계" ), QLatin1String( ThemeScopeIds::kImage ) },
+        { QStringLiteral( "image.handleFill" ), tr( "이미지 핸들 배경" ), QLatin1String( ThemeScopeIds::kImage ) },
+        { QStringLiteral( "image.handleBorder" ), tr( "이미지 핸들 테두리" ), QLatin1String( ThemeScopeIds::kImage ) },
+        { QStringLiteral( "image.accept" ), tr( "이미지 승인 버튼" ), QLatin1String( ThemeScopeIds::kImage ) },
+        { QStringLiteral( "image.cancel" ), tr( "이미지 취소 버튼" ), QLatin1String( ThemeScopeIds::kImage ) },
 
-        { QStringLiteral( "markdown.background" ), tr( "Markdown 문서 배경" ), tr( "Markdown" ) },
-        { QStringLiteral( "markdown.foreground" ), tr( "Markdown 본문" ), tr( "Markdown" ) },
-        { QStringLiteral( "markdown.link" ), tr( "Markdown 링크" ), tr( "Markdown" ) },
-        { QStringLiteral( "markdown.heading" ), tr( "Markdown 제목" ), tr( "Markdown" ) },
-        { QStringLiteral( "markdown.border" ), tr( "Markdown 테두리" ), tr( "Markdown" ) },
-        { QStringLiteral( "markdown.codeBackground" ), tr( "Markdown 코드 배경" ), tr( "Markdown" ) },
-        { QStringLiteral( "markdown.inlineCode" ), tr( "Markdown 인라인 코드" ), tr( "Markdown" ) },
-        { QStringLiteral( "markdown.blockquote" ), tr( "Markdown 인용문" ), tr( "Markdown" ) },
-        { QStringLiteral( "markdown.taskChecked" ), tr( "Markdown 체크 항목" ), tr( "Markdown" ) },
+        { QStringLiteral( "markdown.background" ), tr( "Markdown 문서 배경" ), QLatin1String( ThemeScopeIds::kMarkdown ) },
+        { QStringLiteral( "markdown.foreground" ), tr( "Markdown 본문" ), QLatin1String( ThemeScopeIds::kMarkdown ) },
+        { QStringLiteral( "markdown.link" ), tr( "Markdown 링크" ), QLatin1String( ThemeScopeIds::kMarkdown ) },
+        { QStringLiteral( "markdown.heading" ), tr( "Markdown 제목" ), QLatin1String( ThemeScopeIds::kMarkdown ) },
+        { QStringLiteral( "markdown.border" ), tr( "Markdown 테두리" ), QLatin1String( ThemeScopeIds::kMarkdown ) },
+        { QStringLiteral( "markdown.codeBackground" ), tr( "Markdown 코드 배경" ), QLatin1String( ThemeScopeIds::kMarkdown ) },
+        { QStringLiteral( "markdown.inlineCode" ), tr( "Markdown 인라인 코드" ), QLatin1String( ThemeScopeIds::kMarkdown ) },
+        { QStringLiteral( "markdown.blockquote" ), tr( "Markdown 인용문" ), QLatin1String( ThemeScopeIds::kMarkdown ) },
+        { QStringLiteral( "markdown.taskChecked" ), tr( "Markdown 체크 항목" ), QLatin1String( ThemeScopeIds::kMarkdown ) },
 
-        { QStringLiteral( "text.background" ), tr( "Text 편집기 배경" ), tr( "TEXT" ) },
-        { QStringLiteral( "text.foreground" ), tr( "Text 기본 글자" ), tr( "TEXT" ) },
-        { QStringLiteral( "text.currentLine" ), tr( "Text 현재 줄" ), tr( "TEXT" ) },
-        { QStringLiteral( "text.selection" ), tr( "Text 선택 배경" ), tr( "TEXT" ) },
-        { QStringLiteral( "text.selectionForeground" ), tr( "Text 선택 글자" ), tr( "TEXT" ) },
-        { QStringLiteral( "text.caret" ), tr( "Text 캐럿" ), tr( "TEXT" ) },
-        { QStringLiteral( "text.marginBackground" ), tr( "Text 여백 배경" ), tr( "TEXT" ) },
-        { QStringLiteral( "text.marginForeground" ), tr( "Text 줄 번호" ), tr( "TEXT" ) },
-        { QStringLiteral( "text.indentGuide" ), tr( "Text 들여쓰기 가이드" ), tr( "TEXT" ) },
-        { QStringLiteral( "text.foldMarker" ), tr( "Text 폴딩 마커" ), tr( "TEXT" ) },
-        { QStringLiteral( "text.braceMatch" ), tr( "Text 괄호 일치" ), tr( "TEXT" ) },
-        { QStringLiteral( "text.braceMismatch" ), tr( "Text 괄호 오류" ), tr( "TEXT" ) },
-        { QStringLiteral( "text.lexer.comment" ), tr( "Lexer 주석" ), tr( "TEXT Lexer" ) },
-        { QStringLiteral( "text.lexer.number" ), tr( "Lexer 숫자" ), tr( "TEXT Lexer" ) },
-        { QStringLiteral( "text.lexer.keyword" ), tr( "Lexer 키워드" ), tr( "TEXT Lexer" ) },
-        { QStringLiteral( "text.lexer.type" ), tr( "Lexer 타입/보조 키워드" ), tr( "TEXT Lexer" ) },
-        { QStringLiteral( "text.lexer.string" ), tr( "Lexer 문자열" ), tr( "TEXT Lexer" ) },
-        { QStringLiteral( "text.lexer.preprocessor" ), tr( "Lexer 전처리/속성" ), tr( "TEXT Lexer" ) },
-        { QStringLiteral( "text.lexer.operator" ), tr( "Lexer 연산자" ), tr( "TEXT Lexer" ) },
-        { QStringLiteral( "text.lexer.identifier" ), tr( "Lexer 식별자" ), tr( "TEXT Lexer" ) },
-        { QStringLiteral( "text.lexer.function" ), tr( "Lexer 함수/클래스" ), tr( "TEXT Lexer" ) },
-        { QStringLiteral( "text.lexer.variable" ), tr( "Lexer 변수" ), tr( "TEXT Lexer" ) },
+        { QStringLiteral( "text.background" ), tr( "Text 편집기 배경" ), QLatin1String( ThemeScopeIds::kText ) },
+        { QStringLiteral( "text.foreground" ), tr( "Text 기본 글자" ), QLatin1String( ThemeScopeIds::kText ) },
+        { QStringLiteral( "text.currentLine" ), tr( "Text 현재 줄" ), QLatin1String( ThemeScopeIds::kText ) },
+        { QStringLiteral( "text.selection" ), tr( "Text 선택 배경" ), QLatin1String( ThemeScopeIds::kText ) },
+        { QStringLiteral( "text.selectionForeground" ), tr( "Text 선택 글자" ), QLatin1String( ThemeScopeIds::kText ) },
+        { QStringLiteral( "text.caret" ), tr( "Text 캐럿" ), QLatin1String( ThemeScopeIds::kText ) },
+        { QStringLiteral( "text.marginBackground" ), tr( "Text 여백 배경" ), QLatin1String( ThemeScopeIds::kText ) },
+        { QStringLiteral( "text.marginForeground" ), tr( "Text 줄 번호" ), QLatin1String( ThemeScopeIds::kText ) },
+        { QStringLiteral( "text.indentGuide" ), tr( "Text 들여쓰기 가이드" ), QLatin1String( ThemeScopeIds::kText ) },
+        { QStringLiteral( "text.foldMarker" ), tr( "Text 폴딩 마커" ), QLatin1String( ThemeScopeIds::kText ) },
+        { QStringLiteral( "text.braceMatch" ), tr( "Text 괄호 일치" ), QLatin1String( ThemeScopeIds::kText ) },
+        { QStringLiteral( "text.braceMismatch" ), tr( "Text 괄호 오류" ), QLatin1String( ThemeScopeIds::kText ) },
+        { QStringLiteral( "text.lexer.comment" ), tr( "Lexer 주석" ), QLatin1String( ThemeScopeIds::kTextLexer ) },
+        { QStringLiteral( "text.lexer.number" ), tr( "Lexer 숫자" ), QLatin1String( ThemeScopeIds::kTextLexer ) },
+        { QStringLiteral( "text.lexer.keyword" ), tr( "Lexer 키워드" ), QLatin1String( ThemeScopeIds::kTextLexer ) },
+        { QStringLiteral( "text.lexer.type" ), tr( "Lexer 타입/보조 키워드" ), QLatin1String( ThemeScopeIds::kTextLexer ) },
+        { QStringLiteral( "text.lexer.string" ), tr( "Lexer 문자열" ), QLatin1String( ThemeScopeIds::kTextLexer ) },
+        { QStringLiteral( "text.lexer.preprocessor" ), tr( "Lexer 전처리/속성" ), QLatin1String( ThemeScopeIds::kTextLexer ) },
+        { QStringLiteral( "text.lexer.operator" ), tr( "Lexer 연산자" ), QLatin1String( ThemeScopeIds::kTextLexer ) },
+        { QStringLiteral( "text.lexer.identifier" ), tr( "Lexer 식별자" ), QLatin1String( ThemeScopeIds::kTextLexer ) },
+        { QStringLiteral( "text.lexer.function" ), tr( "Lexer 함수/클래스" ), QLatin1String( ThemeScopeIds::kTextLexer ) },
+        { QStringLiteral( "text.lexer.variable" ), tr( "Lexer 변수" ), QLatin1String( ThemeScopeIds::kTextLexer ) },
 
-        { QStringLiteral( "text.lexer.cpp.comment" ), tr( "C++ 주석" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.cpp.keyword" ), tr( "C++ 키워드" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.cpp.string" ), tr( "C++ 문자열" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.cpp.function" ), tr( "C++ 함수/클래스" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.python.comment" ), tr( "Python 주석" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.python.keyword" ), tr( "Python 키워드" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.python.string" ), tr( "Python 문자열" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.python.function" ), tr( "Python 함수/클래스" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.json.keyword" ), tr( "JSON true/false/null" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.json.string" ), tr( "JSON 문자열" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.json.function" ), tr( "JSON 속성명" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.xml.keyword" ), tr( "XML/HTML 태그" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.xml.preprocessor" ), tr( "XML/HTML 속성" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.css.keyword" ), tr( "CSS 선택자" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.css.preprocessor" ), tr( "CSS 속성" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.bash.variable" ), tr( "Bash 변수" ), tr( "TEXT Lexer 상세" ) },
-        { QStringLiteral( "text.lexer.sql.keyword" ), tr( "SQL 키워드" ), tr( "TEXT Lexer 상세" ) },
+        { QStringLiteral( "text.lexer.cpp.comment" ), tr( "C++ 주석" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.cpp.keyword" ), tr( "C++ 키워드" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.cpp.string" ), tr( "C++ 문자열" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.cpp.function" ), tr( "C++ 함수/클래스" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.python.comment" ), tr( "Python 주석" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.python.keyword" ), tr( "Python 키워드" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.python.string" ), tr( "Python 문자열" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.python.function" ), tr( "Python 함수/클래스" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.json.keyword" ), tr( "JSON true/false/null" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.json.string" ), tr( "JSON 문자열" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.json.function" ), tr( "JSON 속성명" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.xml.keyword" ), tr( "XML/HTML 태그" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.xml.preprocessor" ), tr( "XML/HTML 속성" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.css.keyword" ), tr( "CSS 선택자" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.css.preprocessor" ), tr( "CSS 속성" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.bash.variable" ), tr( "Bash 변수" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
+        { QStringLiteral( "text.lexer.sql.keyword" ), tr( "SQL 키워드" ), QLatin1String( ThemeScopeIds::kTextLexerDetail ) },
 
         // reStructuredText 는 Lexilla 렉서가 없어 자체 컨테이너 렉서로 칠한다.
         // directive/role 은 Esbonio 자동완성으로 확인되기 전까지 UNKNOWN 색을 쓴다.
-        { QStringLiteral( "text.lexer.rst.title" ), tr( "reST 제목" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.transition" ), tr( "reST 구분선" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.comment" ), tr( "reST 주석" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.explicitMarkup" ), tr( "reST 명시적 마크업(..)" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.directiveValid" ), tr( "reST directive (확인됨)" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.directiveInvalid" ), tr( "reST directive (알 수 없음)" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.directiveUnknown" ), tr( "reST directive (미확인)" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.roleValid" ), tr( "reST role (확인됨)" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.roleInvalid" ), tr( "reST role (알 수 없음)" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.roleUnknown" ), tr( "reST role (미확인)" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.literal" ), tr( "reST 리터럴 블록" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.inlineLiteral" ), tr( "reST 인라인 리터럴(``)" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.emphasis" ), tr( "reST 강조(*)" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.strong" ), tr( "reST 굵게(**)" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.interpreted" ), tr( "reST 해석 텍스트" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.hyperlink" ), tr( "reST 하이퍼링크" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.substitution" ), tr( "reST 치환(|..|)" ), tr( "TEXT Lexer reST" ) },
-        { QStringLiteral( "text.lexer.rst.fieldName" ), tr( "reST 필드명" ), tr( "TEXT Lexer reST" ) },
+        { QStringLiteral( "text.lexer.rst.title" ), tr( "reST 제목" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.transition" ), tr( "reST 구분선" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.comment" ), tr( "reST 주석" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.explicitMarkup" ), tr( "reST 명시적 마크업(..)" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.directiveValid" ), tr( "reST directive (확인됨)" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.directiveInvalid" ), tr( "reST directive (알 수 없음)" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.directiveUnknown" ), tr( "reST directive (미확인)" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.roleValid" ), tr( "reST role (확인됨)" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.roleInvalid" ), tr( "reST role (알 수 없음)" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.roleUnknown" ), tr( "reST role (미확인)" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.literal" ), tr( "reST 리터럴 블록" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.inlineLiteral" ), tr( "reST 인라인 리터럴(``)" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.emphasis" ), tr( "reST 강조(*)" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.strong" ), tr( "reST 굵게(**)" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.interpreted" ), tr( "reST 해석 텍스트" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.hyperlink" ), tr( "reST 하이퍼링크" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.substitution" ), tr( "reST 치환(|..|)" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.rst.fieldName" ), tr( "reST 필드명" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
     };
+
+    for( ColorEntry& entry : entries )
+        entry.group = scopeLabel( entry.groupId );
+    return entries;
 }
 
 QHash< QString, QColor > ThemeManager::defaultColors( Theme theme )

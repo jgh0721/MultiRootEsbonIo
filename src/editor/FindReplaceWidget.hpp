@@ -51,9 +51,15 @@ signals:
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
+    /// QEvent::LanguageChange. 이 위젯은 편집기 탭이 사는 동안 계속 살아 있어서
+    /// "다음에 열릴 때 새 언어" 로는 해결되지 않는다.
+    void changeEvent(QEvent* event) override;
 
 private:
     void setupUi();
+    /// 표시 문자열을 다시 넣는다. 위젯이 20개 남짓이라 setupUi() 와 문자열이
+    /// 겹치는 것을 감수하는 편이 표를 따로 두는 것보다 읽기 쉽다.
+    void retranslateUi();
     void updatePlaceholderText();
 
     // ── 상단 행: 검색 ──
@@ -85,6 +91,10 @@ private:
     bool m_replaceMode = false;
     int  m_selectionStart = 0;
     int  m_selectionEnd = 0;
+    /// 언어가 바뀌면 개수 라벨을 다시 만들어야 하는데, 표시된 텍스트에서 숫자를
+    /// 되읽을 방법이 없다.
+    int  m_lastMatchCount = -1;
+    int  m_lastExcludedCount = 0;
 };
 
 

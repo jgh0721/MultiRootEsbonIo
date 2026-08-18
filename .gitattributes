@@ -1,0 +1,8 @@
+# lupdate / lrelease / Qt Linguist 는 .ts 를 항상 LF 로 쓴다
+# (qttools/shared/ts.cpp: saveTS). 이 저장소는 core.autocrlf=true 라 그냥 두면
+# CRLF 로 체크아웃되고, 도구가 저장할 때마다 파일 전체가 "수정됨" 으로 뜬다.
+translations/*.ts   text eol=lf working-tree-encoding=UTF-8
+
+# lrelease 산출물. .gitignore 로 막아 두었지만, 실수로 add 되더라도
+# 텍스트로 취급해 깨뜨리지 않도록 못 박는다.
+*.qm                binary

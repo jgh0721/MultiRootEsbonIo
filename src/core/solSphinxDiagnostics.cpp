@@ -1,6 +1,7 @@
 ﻿#include "stdafx.h"
 #include "solSphinxDiagnostics.hpp"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QHash>
@@ -55,18 +56,25 @@ QString fileUriToPath(const QString& uri) {
     return QFileInfo(url.toLocalFile()).absoluteFilePath();
 }
 
+/// LSP 의 숫자 severity 를 사람이 읽을 이름으로.
+///
+/// 진단 표의 "심각도" 열과 툴팁에만 쓰인다 — 비교나 파싱에는 쓰지 않으므로
+/// 번역해도 안전하다. (외부 프로세스 출력에 들어 있는 WARNING/ERROR 문자열은
+/// 아래 parseSphinxBuildDiagnostics() 의 정규식이 다루며, 그쪽은 번역 금지다.)
+///
+/// namespace 함수라 tr() 이 없다. 컨텍스트를 직접 적는다.
 QString severityLabel(int severity) {
     switch (severity) {
     case 1:
-        return QStringLiteral("Error");
+        return QCoreApplication::translate("SphinxDiagnostics", "Error");
     case 2:
-        return QStringLiteral("Warning");
+        return QCoreApplication::translate("SphinxDiagnostics", "Warning");
     case 3:
-        return QStringLiteral("Information");
+        return QCoreApplication::translate("SphinxDiagnostics", "Information");
     case 4:
-        return QStringLiteral("Hint");
+        return QCoreApplication::translate("SphinxDiagnostics", "Hint");
     default:
-        return QStringLiteral("Unknown");
+        return QCoreApplication::translate("SphinxDiagnostics", "Unknown");
     }
 }
 
@@ -126,6 +134,9 @@ QVector<DiagnosticEntry> parseLspDiagnostics(const QString& uri, const QJsonArra
 }
 
 QVector<DiagnosticEntry> parseSphinxBuildDiagnostics(const QString& output, const QString& workingDirectory) {
+    // ⚠ 이 패턴은 sphinx-build 가 뱉은 **외부 프로세스 출력**을 읽는다. 번역
+    //   대상이 아니며, 서브프로세스에 LANG/LC_ALL 을 주입해서도 안 된다 —
+    //   Sphinx 출력이 로컬라이즈되는 순간 진단이 하나도 잡히지 않는다.
     static const QRegularExpression re(QStringLiteral(R"(^(.+?):(\d+):\s*(WARNING|ERROR|CRITICAL):\s*(.*)$)"));
     QVector<DiagnosticEntry> entries;
     const QStringList lines = output.split(QRegularExpression(QStringLiteral("\r?\n")), Qt::SkipEmptyParts);

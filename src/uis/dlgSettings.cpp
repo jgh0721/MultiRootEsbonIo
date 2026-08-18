@@ -3,6 +3,8 @@
 
 #include "core/solAppSettings.hpp"
 #include "core/solPythonEnvMgr.hpp"
+#include "core/solUpdateManifest.hpp"
+#include "core/solLanguageManager.hpp"
 #include "core/solThemeManager.hpp"
 #include "core/solShadowBackupStore.hpp"
 #include "uniqueLibs/solEncodingDetector.hpp"
@@ -118,18 +120,23 @@ namespace
     QList<ThemeManager::ColorEntry> lexerDetailEntries(const QString& lexerKey)
     {
         const QString lexer = lexerKey.trimmed().isEmpty() ? QStringLiteral("cpp") : lexerKey.trimmed();
-        const QString group = QSettingsDialog::tr("TEXT Lexer 상세");
+        // 범위는 식별자로 넣고 표시 이름은 ThemeManager 한 곳에서만 만든다.
+        // 여기서 tr("TEXT Lexer 상세") 를 따로 부르면 ThemeManager 컨텍스트의
+        // 같은 원문과 별개 번역 항목이 되어, 둘이 어긋나는 순간 이 범위를 고른
+        // 사용자에게 빈 표가 보인다.
+        const QString groupId = QLatin1String(ThemeScopeIds::kTextLexerDetail);
+        const QString group   = ThemeManager::scopeLabel(groupId);
         return {
-            {QStringLiteral("text.lexer.%1.comment").arg(lexer), QSettingsDialog::tr("%1 주석").arg(lexer), group},
-            {QStringLiteral("text.lexer.%1.number").arg(lexer), QSettingsDialog::tr("%1 숫자").arg(lexer), group},
-            {QStringLiteral("text.lexer.%1.keyword").arg(lexer), QSettingsDialog::tr("%1 키워드").arg(lexer), group},
-            {QStringLiteral("text.lexer.%1.type").arg(lexer), QSettingsDialog::tr("%1 타입/보조 키워드").arg(lexer), group},
-            {QStringLiteral("text.lexer.%1.string").arg(lexer), QSettingsDialog::tr("%1 문자열").arg(lexer), group},
-            {QStringLiteral("text.lexer.%1.preprocessor").arg(lexer), QSettingsDialog::tr("%1 전처리/속성").arg(lexer), group},
-            {QStringLiteral("text.lexer.%1.operator").arg(lexer), QSettingsDialog::tr("%1 연산자").arg(lexer), group},
-            {QStringLiteral("text.lexer.%1.identifier").arg(lexer), QSettingsDialog::tr("%1 식별자").arg(lexer), group},
-            {QStringLiteral("text.lexer.%1.function").arg(lexer), QSettingsDialog::tr("%1 함수/클래스").arg(lexer), group},
-            {QStringLiteral("text.lexer.%1.variable").arg(lexer), QSettingsDialog::tr("%1 변수").arg(lexer), group},
+            {QStringLiteral("text.lexer.%1.comment").arg(lexer), QSettingsDialog::tr("%1 주석").arg(lexer), groupId, group},
+            {QStringLiteral("text.lexer.%1.number").arg(lexer), QSettingsDialog::tr("%1 숫자").arg(lexer), groupId, group},
+            {QStringLiteral("text.lexer.%1.keyword").arg(lexer), QSettingsDialog::tr("%1 키워드").arg(lexer), groupId, group},
+            {QStringLiteral("text.lexer.%1.type").arg(lexer), QSettingsDialog::tr("%1 타입/보조 키워드").arg(lexer), groupId, group},
+            {QStringLiteral("text.lexer.%1.string").arg(lexer), QSettingsDialog::tr("%1 문자열").arg(lexer), groupId, group},
+            {QStringLiteral("text.lexer.%1.preprocessor").arg(lexer), QSettingsDialog::tr("%1 전처리/속성").arg(lexer), groupId, group},
+            {QStringLiteral("text.lexer.%1.operator").arg(lexer), QSettingsDialog::tr("%1 연산자").arg(lexer), groupId, group},
+            {QStringLiteral("text.lexer.%1.identifier").arg(lexer), QSettingsDialog::tr("%1 식별자").arg(lexer), groupId, group},
+            {QStringLiteral("text.lexer.%1.function").arg(lexer), QSettingsDialog::tr("%1 함수/클래스").arg(lexer), groupId, group},
+            {QStringLiteral("text.lexer.%1.variable").arg(lexer), QSettingsDialog::tr("%1 변수").arg(lexer), groupId, group},
         };
     }
 
@@ -140,7 +147,12 @@ QSettingsDialog::QSettingsDialog( QWidget* Parent )
 {
     Ui.setupUi( this );
 
-    setupUi();
+    // 페이지를 다시 만들어도 **한 번만** 걸려 있어야 하는 연결들. buildPages()
+    // 안에 두면 언어를 바꿀 때마다 하나씩 더 붙는다.
+    connect( Ui.lstCate, &QListWidget::currentRowChanged, Ui.stkWidget, &QStackedWidget::setCurrentIndex );
+    connectPythonEnvSignals();
+
+    buildPages();
 
     // 여기서 테마를 바꾸면(미리보기 포함) 제목 표시줄도 같이 따라가야 한다.
     connect( &ThemeManager::instance(), &ThemeManager::themeChanged, this,
@@ -304,23 +316,54 @@ void QSettingsDialog::onResetShortcuts()
     }
 }
 
-void QSettingsDialog::setupUi()
+void QSettingsDialog::changeEvent( QEvent* Event )
 {
+    if( Event != nullptr && Event->type() == QEvent::LanguageChange )
+    {
+        // 다시 만들기 전에 [적용] 대기 중인 편집을 커밋한다. 단축키 / 텍스트
+        // 뷰어 / 프리뷰 / Esbonio 페이지는 즉시 저장이 아니라서, 그냥 다시
+        // 만들면 방금 입력한 값이 조용히 사라진다. 사용자는 이미 즉시 저장인
+        // 공통 페이지의 언어 콤보를 건드려 변경을 확정한 참이므로, 나머지도
+        // 함께 확정하는 편이 잃는 것이 없다.
+        on_btnApply_clicked();
+
+        // .ui 쪽 문자열(창 제목, 확인/취소). btnApply 의 플레이스홀더
+        // "PushButton" 도 여기서 되살아나는데, buildPages() 가 다시 덮는다.
+        Ui.retranslateUi( this );
+        buildPages();
+        applyTitleBarTheme();
+    }
+    QDialog::changeEvent( Event );
+}
+
+void QSettingsDialog::buildPages()
+{
+    // 보고 있던 페이지로 돌아온다. 언어 콤보는 "공통" 에 있으니 지금은 늘 0
+    // 이지만, 다른 경로로 언어가 바뀌어도 페이지가 튀지 않는다.
+    const int previousRow = qMax( 0, Ui.lstCate->currentRow() );
+
     Ui.stkWidget->setContentsMargins( 0, 0, 0, 0 );
     while( Ui.stkWidget->count() > 0 )
     {
         QWidget* page = Ui.stkWidget->widget( 0 );
         Ui.stkWidget->removeWidget( page );
+        // 지금 지우면 진행 중인 시그널이 발밑을 잃는다. 아래에서 새 페이지가
+        // 멤버 포인터를 다시 채우므로 옛 위젯을 가리키는 시간은 없다.
         page->deleteLater();
     }
 
     Ui.lstCate->setFixedWidth( 140 );
-    Ui.lstCate->clear();
-    Ui.lstCate->addItem( tr( "공통" ) );
-    Ui.lstCate->addItem( tr( "단축키" ) );
-    Ui.lstCate->addItem( tr( "텍스트 뷰어" ) );
-    Ui.lstCate->addItem( tr( "프리뷰" ) );
-    Ui.lstCate->addItem( tr( "Python/Esbonio" ) );
+    {
+        // clear() → addItem() 도중에 currentRowChanged 가 튀어 나가면
+        // stkWidget 이 아직 비어 있는 상태로 setCurrentIndex 를 받는다.
+        const QSignalBlocker blocker( Ui.lstCate );
+        Ui.lstCate->clear();
+        Ui.lstCate->addItem( tr( "공통" ) );
+        Ui.lstCate->addItem( tr( "단축키" ) );
+        Ui.lstCate->addItem( tr( "텍스트 뷰어" ) );
+        Ui.lstCate->addItem( tr( "프리뷰" ) );
+        Ui.lstCate->addItem( tr( "Python/Esbonio" ) );
+    }
 
     Ui.stkWidget->addWidget( createGeneralPage() );
     Ui.stkWidget->addWidget( createShortcutsPage() );
@@ -328,20 +371,105 @@ void QSettingsDialog::setupUi()
     Ui.stkWidget->addWidget( createPreviewPage() );
     Ui.stkWidget->addWidget( createEsbonioPage() );
 
+    // .ui 에는 "PushButton" 이라고 적혀 있다. Ui.retranslateUi() 를 부르면
+    // 그 값이 되살아나므로 여기서 매번 덮어써야 한다.
     Ui.btnApply->setText( tr( "적용(&A)" ) );
 
-    connect( Ui.lstCate, &QListWidget::currentRowChanged, Ui.stkWidget, &QStackedWidget::setCurrentIndex );
-    Ui.lstCate->setCurrentRow( 0 );
+    Ui.lstCate->setCurrentRow( previousRow );
 
     loadShortcuts();
     loadTextViewerSettings();
     loadEsbonioSettings();
 }
 
+void QSettingsDialog::connectPythonEnvSignals()
+{
+    if( m_pythonEnvManager == nullptr )
+        m_pythonEnvManager = new mrst::PythonEnvManager( this );
+
+    // 아래 람다들이 건드리는 위젯은 페이지를 다시 만들 때마다 새것으로 바뀐다.
+    // 전부 this 를 캡처하고 멤버 포인터를 null 검사한 뒤 쓰므로, 연결은 그대로
+    // 두고 위젯만 갈아 끼우면 된다.
+    connect( m_pythonEnvManager, &mrst::PythonEnvManager::bootstrapLog, this, [this]( const QString& text ) {
+        if( m_pythonEnvLog != nullptr && !text.isEmpty() )
+            m_pythonEnvLog->append( text );
+    } );
+
+    // 진행률/취소는 비동기 부트스트랩과 함께 동작한다. 대화상자를 닫아도
+    // 구성은 백그라운드에서 계속된다.
+    connect( m_pythonEnvManager, &mrst::PythonEnvManager::progressChanged, this,
+            [this]( const int percent, const QString& phase ) {
+                if( m_pythonEnvProgress == nullptr )
+                    return;
+                m_pythonEnvProgress->setVisible( true );
+                if( percent < 0 )
+                {
+                    m_pythonEnvProgress->setRange( 0, 0 );   // 불확정
+                }
+                else
+                {
+                    m_pythonEnvProgress->setRange( 0, 100 );
+                    m_pythonEnvProgress->setValue( percent );
+                }
+                m_pythonEnvProgress->setFormat( phase );
+            } );
+
+    connect( m_pythonEnvManager, &mrst::PythonEnvManager::stateChanged, this,
+            [this]( const mrst::EnvState ) {
+                const bool busy = m_pythonEnvManager->isBusy();
+                if( m_configurePythonButton != nullptr )
+                    m_configurePythonButton->setEnabled( !busy );
+                if( m_cancelPythonButton != nullptr )
+                    m_cancelPythonButton->setEnabled( busy );
+                if( m_pythonEnvProgress != nullptr && !busy )
+                    m_pythonEnvProgress->setVisible( false );
+                refreshEsbonioStatus();
+            } );
+
+    connect( m_pythonEnvManager, &mrst::PythonEnvManager::failed, this, [this]( const QString& message ) {
+        QMessageBox::critical( this, tr( "Python/Esbonio 환경 구성 실패" ), message );
+    } );
+
+    connect( m_pythonEnvManager, &mrst::PythonEnvManager::readyChanged, this, [this]( const bool ready ) {
+        if( ready )
+            QMessageBox::information( this, tr( "Python/Esbonio 환경 구성" ), tr( "환경 구성이 완료되었습니다." ) );
+    } );
+}
+
 QWidget* QSettingsDialog::createGeneralPage()
 {
     auto* page   = new QWidget( this );
     auto* layout = new QVBoxLayout( page );
+
+    // ── 언어 ──
+    // 테마 그룹이 stretch 1 을 먹으므로 자동 업데이트 그룹과 마찬가지로 반드시
+    // 그 앞에 넣는다. 뒤에 붙이면 색상 테이블에 눌려 거의 보이지 않는다.
+    auto* languageGroup = new QGroupBox( tr( "언어" ), page );
+    auto* languageForm  = new QFormLayout( languageGroup );
+
+    m_languageCombo = new QComboBox( languageGroup );
+    for( const auto& entry : LanguageManager::availableLanguages() )
+        m_languageCombo->addItem( entry.displayName, entry.code );
+    languageForm->addRow( tr( "표시 언어:" ), m_languageCombo );
+
+    {
+        // 로드가 곧 저장이 되지 않게 막는다. 지금은 connect 보다 앞이라 없어도
+        // 되지만, 순서가 바뀌는 순간 되먹임이 생긴다.
+        const QSignalBlocker blocker( m_languageCombo );
+        const int index = m_languageCombo->findData( LanguageManager::instance().selectedLanguage() );
+        m_languageCombo->setCurrentIndex( index < 0 ? 0 : index );
+    }
+
+    connect( m_languageCombo, QOverload< int >::of( &QComboBox::currentIndexChanged ), this, [this]( int ) {
+        // 공통 페이지는 즉시 저장이다. setLanguage() 가 저장까지 하고, 뒤이은
+        // QEvent::LanguageChange 가 changeEvent() 로 들어와 이 페이지를 통째로
+        // 다시 만든다. 여기서 settingsApplied() 를 내보내지 않는 이유는,
+        // changeEvent() 가 다시 만들기 직전에 on_btnApply_clicked() 로 이미
+        // 내보내기 때문이다.
+        LanguageManager::instance().setLanguage( m_languageCombo->currentData().toString() );
+    } );
+
+    layout->addWidget( languageGroup );
 
     auto* themeGroup  = new QGroupBox( tr( "테마" ), page );
     auto* themeLayout = new QVBoxLayout( themeGroup );
@@ -351,6 +479,15 @@ QWidget* QSettingsDialog::createGeneralPage()
     m_themeCombo = new QComboBox( page );
     m_themeCombo->addItem( tr( "라이트" ), static_cast< int >( ThemeManager::Light ) );
     m_themeCombo->addItem( tr( "다크" ), static_cast< int >( ThemeManager::Dark ) );
+    {
+        // 현재 테마로 맞춰 둔다. 이게 없으면 다크로 실행해도 콤보는 "라이트" 를
+        // 보이고, 그 뒤 색상 셀을 더블클릭하거나 [기본값 복원] 을 누르기만 해도
+        // applyThemePreview() 가 콤보 값을 진실로 믿고 setTheme(Light) 를 불러
+        // 다크 테마를 라이트로 되돌린 채 설정에 저장해 버린다.
+        const QSignalBlocker blocker( m_themeCombo );
+        m_themeCombo->setCurrentIndex(
+            m_themeCombo->findData( static_cast< int >( ThemeManager::instance().currentTheme() ) ) );
+    }
     formLayout->addRow( tr( "테마 모드:" ), m_themeCombo );
 
     m_themeNameLabel = new QLabel( themeGroup );
@@ -360,8 +497,9 @@ QWidget* QSettingsDialog::createGeneralPage()
     m_themeScopeCombo->addItem( tr( "전체" ), QString() );
     for( const auto& entry : ThemeManager::editableColorEntries() )
     {
-        if( m_themeScopeCombo->findData( entry.group ) < 0 )
-            m_themeScopeCombo->addItem( entry.group, entry.group );
+        // 보이는 것은 번역된 이름, 들고 있는 것은 번역하지 않는 식별자다.
+        if( m_themeScopeCombo->findData( entry.groupId ) < 0 )
+            m_themeScopeCombo->addItem( entry.group, entry.groupId );
     }
     formLayout->addRow( tr( "편집 범위:" ), m_themeScopeCombo );
 
@@ -399,7 +537,66 @@ QWidget* QSettingsDialog::createGeneralPage()
     m_themeColorTable->setEditTriggers( QAbstractItemView::NoEditTriggers );
     themeLayout->addWidget( m_themeColorTable, 1 );
 
+    // ── 자동 업데이트 ──
+    // 테마 그룹이 stretch 1 을 먹으므로 이 그룹은 반드시 그 앞에 넣는다.
+    // 뒤에 붙이면 색상 테이블에 눌려 거의 보이지 않는다.
+    auto* updateGroup  = new QGroupBox( tr( "자동 업데이트" ), page );
+    auto* updateLayout = new QVBoxLayout( updateGroup );
+
+    m_updateEnabledCheck = new QCheckBox( tr( "자동으로 업데이트 확인" ), updateGroup );
+    m_updateEnabledCheck->setToolTip( tr( "앱을 시작한 뒤 백그라운드로 확인합니다.\n"
+                                          "새 버전을 찾으면 알려 주기만 하고, 내려받기는 "
+                                          "직접 누를 때만 시작합니다." ) );
+    updateLayout->addWidget( m_updateEnabledCheck );
+
+    auto* intervalRow    = new QWidget( updateGroup );
+    auto* intervalLayout = new QHBoxLayout( intervalRow );
+    intervalLayout->setContentsMargins( 0, 0, 0, 0 );
+
+    intervalLayout->addWidget( new QLabel( tr( "확인 주기:" ), intervalRow ) );
+    m_updateIntervalSpin = new QSpinBox( intervalRow );
+    m_updateIntervalSpin->setRange( 1, mrst::kMaxCheckIntervalDays );
+    //: 자동 업데이트 확인 주기 스핀박스의 접미사. 숫자 바로 뒤에 붙는다.
+    //: 앞 공백을 포함해서 번역할 것 — 영어 " days", 일본어 " 日ごと".
+    m_updateIntervalSpin->setSuffix( tr( " 일마다" ) );
+    intervalLayout->addWidget( m_updateIntervalSpin );
+
+    intervalLayout->addSpacing( 16 );
+    intervalLayout->addWidget( new QLabel( tr( "마지막 확인:" ), intervalRow ) );
+    m_updateLastCheckedLabel = createValueLabel( intervalRow );
+    intervalLayout->addWidget( m_updateLastCheckedLabel );
+    intervalLayout->addStretch( 1 );
+
+    m_updateCheckNowButton = new QPushButton( tr( "지금 확인" ), intervalRow );
+    intervalLayout->addWidget( m_updateCheckNowButton );
+    updateLayout->addWidget( intervalRow );
+
+    layout->addWidget( updateGroup );
     layout->addWidget( themeGroup, 1 );
+
+    loadUpdateSettings();
+
+    // 프리뷰 페이지와 같은 즉시 저장이다. 공통 페이지에는 saveGeneralSettings()
+    // 가 없고 테마 위젯도 전부 즉시 반영이라, 여기만 [적용] 을 요구하면 같은
+    // 페이지 안에서 동작이 갈린다.
+    const auto storeInterval = [this] {
+        // 체크를 끄면 0 을 저장한다. 0 은 "확인하지 않음" 센티널이다
+        // (preview/unsavedEditMaxReadMs 의 "0 = 제한 없음" 과 같은 관례).
+        const int days = m_updateEnabledCheck->isChecked() ? m_updateIntervalSpin->value() : 0;
+        AppSettings().setValue( QStringLiteral( "update/checkIntervalDays" ), days );
+        emit settingsApplied();
+    };
+    connect( m_updateEnabledCheck, &QCheckBox::toggled, this,
+            [ this, intervalRow, storeInterval ]( const bool checked ) {
+                intervalRow->setEnabled( checked );
+                storeInterval();
+            } );
+    connect( m_updateIntervalSpin, &QSpinBox::valueChanged, this,
+            [ storeInterval ]( int ) { storeInterval(); } );
+    connect( m_updateCheckNowButton, &QPushButton::clicked, this,
+            [ this ] { emit updateCheckRequested(); } );
+
+    intervalRow->setEnabled( m_updateEnabledCheck->isChecked() );
 
     connect( m_themeCombo, QOverload< int >::of( &QComboBox::currentIndexChanged ), this, [this] {
         populateThemeColorTable();
@@ -410,7 +607,8 @@ QWidget* QSettingsDialog::createGeneralPage()
         populateThemeColorTable();
     } );
     connect( m_themeLexerList, &QListWidget::currentItemChanged, this, [this]( QListWidgetItem*, QListWidgetItem* ) {
-        if( m_themeScopeCombo&& m_themeScopeCombo->currentData().toString() == tr( "TEXT Lexer 상세" ))
+        if( m_themeScopeCombo&& m_themeScopeCombo->currentData().toString()
+            == QLatin1String( ThemeScopeIds::kTextLexerDetail ) )
         populateThemeColorTable();
     } );
     connect( m_themeColorTable, &QTableWidget::cellDoubleClicked, this, [this]( int row, int column ) {
@@ -441,7 +639,7 @@ QWidget* QSettingsDialog::createGeneralPage()
     } );
     connect( m_themeImportButton, &QPushButton::clicked, this, [this] {
         const QString filePath = QFileDialog::getOpenFileName( this, tr( "테마 가져오기" ), QString(),
-                                                               tr( "MultiViewer Theme (*.json);;JSON (*.json)" ) );
+                                                               QStringLiteral( "MultiViewer Theme (*.json);;JSON (*.json)" ) );
         if( filePath.isEmpty() )
             return;
         QString errorMessage;
@@ -462,7 +660,7 @@ QWidget* QSettingsDialog::createGeneralPage()
                                                                  ThemeManager::Theme >( m_themeCombo->currentData()
                                                                 .toInt() ) ).replace( QLatin1Char( ' ' ),
                                                                  QLatin1Char( '-' ) ) ),
-                                                         tr( "MultiViewer Theme (*.json);;JSON (*.json)" ) );
+                                                         QStringLiteral( "MultiViewer Theme (*.json);;JSON (*.json)" ) );
         if( filePath.isEmpty() )
             return;
         if( !filePath.endsWith( QStringLiteral( ".json" ), Qt::CaseInsensitive ) )
@@ -472,6 +670,11 @@ QWidget* QSettingsDialog::createGeneralPage()
         if( !ThemeManager::instance().exportThemeFile( filePath, &errorMessage ) )
             QMessageBox::warning( this, tr( "테마 내보내기 실패" ), errorMessage );
     } );
+
+    // 색상 표를 처음부터 채운다. 지금까지는 사용자가 테마 모드나 편집 범위를
+    // 한 번 건드리기 전까지 빈 표가 보였다 — 위젯은 다 만들어 두고 아무도
+    // populateThemeColorTable() 을 부르지 않았기 때문이다.
+    populateThemeColorTable();
 
     return page;
 }
@@ -509,7 +712,7 @@ QWidget* QSettingsDialog::createEditorPage()
     m_textFontCombo = new QFontComboBox( page );
     m_textFontSizeSpin = new QSpinBox( page );
     m_textFontSizeSpin->setRange( 6, 72 );
-    m_textFontSizeSpin->setSuffix( tr( " pt" ) );
+    m_textFontSizeSpin->setSuffix( QStringLiteral( " pt" ) );
     fontRow->addWidget( m_textFontCombo );
     fontRow->addWidget( m_textFontSizeSpin );
     layout->addRow( tr( "기본 글꼴:" ), fontRow );
@@ -527,7 +730,7 @@ QWidget* QSettingsDialog::createEditorPage()
     m_textLineSpacingSpin->setRange( 1.0, 3.0 );
     m_textLineSpacingSpin->setSingleStep( 0.1 );
     m_textLineSpacingSpin->setDecimals( 1 );
-    m_textLineSpacingSpin->setSuffix( tr( " x" ) );
+    m_textLineSpacingSpin->setSuffix( QStringLiteral( " x" ) );
     m_textLineSpacingSpin->setToolTip( tr( "글꼴의 기본 행 높이를 기준으로 한 배율입니다. 1.0은 글꼴 기본 행간입니다." ) );
     layout->addRow( tr( "행간 배율:" ), m_textLineSpacingSpin );
 
@@ -536,7 +739,7 @@ QWidget* QSettingsDialog::createEditorPage()
     m_textRulerFontCombo = new QFontComboBox( page );
     m_textRulerFontSizeSpin = new QSpinBox( page );
     m_textRulerFontSizeSpin->setRange( 6, 36 );
-    m_textRulerFontSizeSpin->setSuffix( tr( " pt" ) );
+    m_textRulerFontSizeSpin->setSuffix( QStringLiteral( " pt" ) );
     rulerFontRow->addWidget( m_textRulerFontCombo );
     rulerFontRow->addWidget( m_textRulerFontSizeSpin );
     layout->addRow( tr( "눈금자 글꼴:" ), rulerFontRow );
@@ -641,7 +844,7 @@ QWidget* QSettingsDialog::createEditorPage()
     // 대용량 파일 기준
     m_textLargeFileMBSpin = new QSpinBox( page );
     m_textLargeFileMBSpin->setRange( 1, 100 );
-    m_textLargeFileMBSpin->setSuffix( tr( " MB" ) );
+    m_textLargeFileMBSpin->setSuffix( QStringLiteral( " MB" ) );
     layout->addRow( tr( "대용량 파일 기준:" ), m_textLargeFileMBSpin );
 
     return page;
@@ -689,7 +892,7 @@ QWidget* QSettingsDialog::createPreviewPage()
     m_previewUnsavedMaxReadSpin = new QSpinBox( limitRow );
     m_previewUnsavedMaxReadSpin->setRange( 0, 60000 );
     m_previewUnsavedMaxReadSpin->setSingleStep( 100 );
-    m_previewUnsavedMaxReadSpin->setSuffix( tr( " ms" ) );
+    m_previewUnsavedMaxReadSpin->setSuffix( QStringLiteral( " ms" ) );
     m_previewUnsavedMaxReadSpin->setToolTip(
         tr( "0 이면 제한하지 않습니다." ) );
     limitLayout->addWidget( m_previewUnsavedMaxReadSpin );
@@ -776,11 +979,49 @@ void QSettingsDialog::savePreviewSettings()
     }
 }
 
+void QSettingsDialog::loadUpdateSettings()
+{
+    if( m_updateEnabledCheck == nullptr )
+        return;
+
+    const AppSettings settings;
+    const int days = mrst::clampCheckIntervalDays(
+        settings.value( QStringLiteral( "update/checkIntervalDays" ),
+                        mrst::kDefaultCheckIntervalDays ).toInt() );
+
+    // 로드하면서 즉시 저장 시그널이 되먹임하지 않게 막는다.
+    {
+        const QSignalBlocker blocker( m_updateEnabledCheck );
+        m_updateEnabledCheck->setChecked( days > 0 );
+    }
+    {
+        const QSignalBlocker blocker( m_updateIntervalSpin );
+        // 0 은 센티널이라 스핀박스에 넣을 수 없다. 체크를 다시 켤 때 쓸 값으로
+        // 기본 주기를 보여 준다.
+        m_updateIntervalSpin->setValue( days > 0 ? days : mrst::kDefaultCheckIntervalDays );
+    }
+
+    refreshUpdateStatus();
+}
+
+void QSettingsDialog::refreshUpdateStatus()
+{
+    if( m_updateLastCheckedLabel == nullptr )
+        return;
+
+    // 저장은 UTC ISO 문자열이다. 사람에게는 지역 시각으로 보여 준다.
+    const QDateTime last = QDateTime::fromString(
+        AppSettings().value( QStringLiteral( "update/lastCheckedAt" ) ).toString(), Qt::ISODate );
+    m_updateLastCheckedLabel->setText(
+        last.isValid() ? last.toLocalTime().toString( QStringLiteral( "yyyy-MM-dd HH:mm" ) )
+                       : tr( "(없음)" ) );
+}
+
 QWidget* QSettingsDialog::createEsbonioPage()
 {
-    if( m_pythonEnvManager == nullptr )
-        m_pythonEnvManager = new mrst::PythonEnvManager( this );
-
+    // m_pythonEnvManager 는 생성자의 connectPythonEnvSignals() 가 만든다.
+    // 이 함수는 언어를 바꿀 때마다 다시 도는데, 매니저는 대화상자만큼 오래
+    // 살아야 하고 거기 건 연결도 한 벌이어야 한다.
     auto* page   = new QWidget( this );
     auto* layout = new QVBoxLayout( page );
 
@@ -876,57 +1117,12 @@ QWidget* QSettingsDialog::createEsbonioPage()
 
     connect( m_uvBrowseButton, &QPushButton::clicked, this, [this] {
         const QString selected = QFileDialog::getOpenFileName( this, tr( "UV 실행 파일 선택" ), m_uvPathEdit->text(),
-                                                               tr( "UV 실행 파일 (uv.exe);;실행 파일 (*.exe);;모든 파일 (*.*)" ) );
+                                                               QStringLiteral( "%1 (uv.exe);;%2 (*.exe);;%3 (*.*)" ).arg( tr( "UV 실행 파일" ), tr( "실행 파일" ), tr( "모든 파일" ) ) );
         if( selected.isEmpty() )
             return;
         m_uvPathEdit->setText( nativePath( selected ) );
         saveEsbonioSettings();
         refreshEsbonioStatus();
-    } );
-
-    connect( m_pythonEnvManager, &mrst::PythonEnvManager::bootstrapLog, this, [this]( const QString& text ) {
-        if( m_pythonEnvLog != nullptr && !text.isEmpty() )
-            m_pythonEnvLog->append( text );
-    } );
-
-    // 진행률/취소는 비동기 부트스트랩과 함께 동작한다. 대화상자를 닫아도
-    // 구성은 백그라운드에서 계속된다.
-    connect( m_pythonEnvManager, &mrst::PythonEnvManager::progressChanged, this,
-            [this]( const int percent, const QString& phase ) {
-                if( m_pythonEnvProgress == nullptr )
-                    return;
-                m_pythonEnvProgress->setVisible( true );
-                if( percent < 0 )
-                {
-                    m_pythonEnvProgress->setRange( 0, 0 );   // 불확정
-                }
-                else
-                {
-                    m_pythonEnvProgress->setRange( 0, 100 );
-                    m_pythonEnvProgress->setValue( percent );
-                }
-                m_pythonEnvProgress->setFormat( phase );
-            } );
-
-    connect( m_pythonEnvManager, &mrst::PythonEnvManager::stateChanged, this,
-            [this]( const mrst::EnvState ) {
-                const bool busy = m_pythonEnvManager->isBusy();
-                if( m_configurePythonButton != nullptr )
-                    m_configurePythonButton->setEnabled( !busy );
-                if( m_cancelPythonButton != nullptr )
-                    m_cancelPythonButton->setEnabled( busy );
-                if( m_pythonEnvProgress != nullptr && !busy )
-                    m_pythonEnvProgress->setVisible( false );
-                refreshEsbonioStatus();
-            } );
-
-    connect( m_pythonEnvManager, &mrst::PythonEnvManager::failed, this, [this]( const QString& message ) {
-        QMessageBox::critical( this, tr( "Python/Esbonio 환경 구성 실패" ), message );
-    } );
-
-    connect( m_pythonEnvManager, &mrst::PythonEnvManager::readyChanged, this, [this]( const bool ready ) {
-        if( ready )
-            QMessageBox::information( this, tr( "Python/Esbonio 환경 구성" ), tr( "환경 구성이 완료되었습니다." ) );
     } );
 
     connect( m_configurePythonButton, &QPushButton::clicked, this, [this] {
@@ -1123,7 +1319,7 @@ void QSettingsDialog::populateThemeColorTable()
     if( m_themeNameLabel )
         m_themeNameLabel->setText( ThemeManager::themeName( theme ) );
 
-    const QString detailScope   = tr( "TEXT Lexer 상세" );
+    const QString detailScope   = QLatin1String( ThemeScopeIds::kTextLexerDetail );
     const QString currentScope  = m_themeScopeCombo ? m_themeScopeCombo->currentData().toString() : QString();
     const QString selectedLexer = ( m_themeLexerList && m_themeLexerList->currentItem() )
                                       ? m_themeLexerList->currentItem()->data( Qt::UserRole ).toString()
@@ -1132,7 +1328,7 @@ void QSettingsDialog::populateThemeColorTable()
     auto entries = ThemeManager::editableColorEntries();
     for( int i = entries.size() - 1; i >= 0; --i )
     {
-        if( entries.at( i ).group == detailScope )
+        if( entries.at( i ).groupId == detailScope )
             entries.removeAt( i );
     }
     if( currentScope == detailScope )
@@ -1166,6 +1362,9 @@ void QSettingsDialog::populateThemeColorTable()
         auto* groupItem = new QTableWidgetItem( entry.group );
         groupItem->setFlags( groupItem->flags() & ~Qt::ItemIsEditable );
         groupItem->setData( Qt::UserRole, entry.key );
+        // 범위 필터가 쓰는 값. 보이는 텍스트(entry.group)는 번역되므로 그것으로
+        // 비교하면 언어를 바꾼 순간 모든 행이 숨는다.
+        groupItem->setData( Qt::UserRole + 2, entry.groupId );
         m_themeColorTable->setItem( row, 0, groupItem );
 
         auto* labelItem = new QTableWidgetItem( entry.label );
@@ -1224,7 +1423,7 @@ void QSettingsDialog::applyThemeScopeFilter()
         return;
 
     const QString scope            = m_themeScopeCombo->currentData().toString();
-    const bool    lexerDetailScope = scope == tr( "TEXT Lexer 상세" );
+    const bool    lexerDetailScope = scope == QLatin1String( ThemeScopeIds::kTextLexerDetail );
     if( m_themeLexerListLabel )
         m_themeLexerListLabel->setVisible( lexerDetailScope );
     if( m_themeLexerList )
@@ -1233,7 +1432,9 @@ void QSettingsDialog::applyThemeScopeFilter()
     for( int row = 0; row < m_themeColorTable->rowCount(); ++row )
     {
         const auto* groupItem = m_themeColorTable->item( row, 0 );
-        const bool  visible   = scope.isEmpty() || ( groupItem && groupItem->text() == scope );
+        const bool  visible   = scope.isEmpty()
+                                || ( groupItem
+                                     && groupItem->data( Qt::UserRole + 2 ).toString() == scope );
         m_themeColorTable->setRowHidden( row, !visible );
         for( int column = 0; column < m_themeColorTable->columnCount(); ++column )
         {

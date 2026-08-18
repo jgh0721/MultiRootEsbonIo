@@ -165,6 +165,11 @@ void TextLexerRegistry::buildIndexes()
     m_profileIndexByName.clear();
     m_languageByExtension.clear();
 
+    // ⚠ displayName 은 **번역 금지**다. 화면(도구모음 언어 콤보)에 보이기도
+    //   하지만 동시에 m_profileIndexByName 의 키이고, 콤보의 currentTextChanged
+    //   가 그 텍스트를 그대로 setLanguage() 로 되돌려 준다. 번역하는 순간 언어
+    //   선택이 아무 프로파일도 찾지 못한다. 값들은 어차피 고유명사다
+    //   (C++, Python, Markdown, None...).
     for (qsizetype i = 0; i < m_profiles.size(); ++i) {
         const TextLexerProfile& profile = m_profiles[i];
         const QString displayName = normalizedLanguageName(profile.displayName);

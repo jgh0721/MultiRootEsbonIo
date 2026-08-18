@@ -81,7 +81,7 @@
       <item>
        <widget class="QPushButton" name="btnApply">
         <property name="text">
-         <string>PushButton</string>
+         <string>적용(&amp;A)</string>
         </property>
        </widget>
       </item>

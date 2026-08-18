@@ -7,9 +7,10 @@
   },
   "configurePresets": [
     {
-      "name": "Debug",
+      "name": "Debug-Local",
+      "displayName": "Debug (로컬 Qt/MSVC 경로)",
+      "description": "CMakePresets.json 의 프리셋은 같은 이름으로 덮어쓸 수 없다. 스키마에 없는 필드('override' 등)가 하나라도 있으면 CMake 가 프리셋 파일 전체를 읽지 못하므로, 로컬 값은 -Local 프리셋으로 상속해서 얹는다.",
       "inherits": "Debug",
-      "override": true,
       "environment": {
         "V143_MSVC_ROOT": "C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC/14.44.35207"
       },
@@ -18,9 +19,20 @@
       }
     },
     {
-      "name": "Release",
+      "name": "Release-Local",
+      "displayName": "Release (로컬 Qt/MSVC 경로)",
       "inherits": "Release",
-      "override": true,
+      "environment": {
+        "V143_MSVC_ROOT": "C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC/14.44.35207"
+      },
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "D:/Qt/6.11.1/msvc2022_64"
+      }
+    },
+    {
+      "name": "RelWithDebInfo-Local",
+      "displayName": "RelWithDebInfo (로컬 Qt/MSVC 경로)",
+      "inherits": "RelWithDebInfo",
       "environment": {
         "V143_MSVC_ROOT": "C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC/14.44.35207"
       },
@@ -31,15 +43,19 @@
   ],
   "buildPresets": [
     {
-      "name": "Debug",
-      "configurePreset": "Debug",
+      "name": "Debug-Local",
+      "configurePreset": "Debug-Local",
       "configuration": "Debug"
     },
     {
-      "name": "Release",
-      "configurePreset": "Release",
+      "name": "Release-Local",
+      "configurePreset": "Release-Local",
       "configuration": "Release"
+    },
+    {
+      "name": "RelWithDebInfo-Local",
+      "configurePreset": "RelWithDebInfo-Local",
+      "configuration": "RelWithDebInfo"
     }
   ]
 }
-  

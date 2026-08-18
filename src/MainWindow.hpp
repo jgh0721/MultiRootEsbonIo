@@ -69,6 +69,9 @@ public slots:
 
 protected:
     bool                                eventFilter( QObject* watched, QEvent* event ) override;
+    /// QEvent::LanguageChange 를 여기서 받는다. 앱 전역 eventFilter 가 아니라
+    /// 이쪽인 이유는 retranslateUi() 옆 주석에 적어 두었다.
+    void                                changeEvent( QEvent* event ) override;
     void                                closeEvent( QCloseEvent* event ) override;
     void                                dragEnterEvent( QDragEnterEvent* event ) override;
     void                                dragMoveEvent( QDragMoveEvent* event ) override;
@@ -105,6 +108,14 @@ private:
     };
 
     void createMenus();
+    /// 메뉴의 표시 문자열을 (다시) 넣는다. createMenus() 가 마지막에 부르고,
+    /// 언어가 바뀌면 다시 부른다. 메뉴 문자열은 여기에만 있다.
+    void retranslateMenus();
+    /// 언어가 바뀌었을 때 창 전체를 다시 칠한다. changeEvent() 가 부른다.
+    void retranslateUi();
+    void retranslateWorkspaceSearchTab();
+    void retranslateOutlinePlaceholders();
+    void retranslateUpdateBar();
     void                                setupCentralContainer();
     QString normalizeFilePath( const QString& filePath ) const;
     void                                applyThemeToView( QBaseView* view ) const;
@@ -245,6 +256,9 @@ private:
     QString                             workspaceRoot_;
 
     // 검색 탭 위젯들. .ui 를 건드리지 않고 코드로 만든다.
+    /// 검색 탭의 페이지 위젯. 탭 제목을 다시 칠할 때 indexOf() 에 쓴다
+    /// (런타임에 붙인 탭이라 uic 의 retranslateUi() 가 건드리지 않는다).
+    QWidget*                            searchTabPage_ = nullptr;
     QLineEdit*                          searchQueryEdit_ = nullptr;
     QLineEdit*                          searchReplaceEdit_ = nullptr;
     QCheckBox*                          searchCaseBox_ = nullptr;

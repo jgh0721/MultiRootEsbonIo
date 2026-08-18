@@ -1,6 +1,6 @@
 {
   "version": 8,
-  
+
   "cmakeMinimumRequired": {
     "major": 3,
     "minor": 28,
@@ -33,7 +33,78 @@
       "inherits": "base-msvc-x64",
       "binaryDir": "${sourceDir}/_build/${presetName}",
       "generator": "Visual Studio 17 2022"
+    },
+    {
+      "name": "RelWithDebInfo",
+      "displayName": "RelWithDebInfo (릴리스 패키징)",
+      "description": "배포 ZIP 을 만드는 구성. 크래시 덤프를 심볼화할 PDB 가 함께 나온다.",
+      "inherits": "base-msvc-x64",
+      "binaryDir": "${sourceDir}/_build/${presetName}",
+      "generator": "Visual Studio 17 2022"
+    },
+    {
+      "name": "Debug-Tests",
+      "displayName": "Debug (유닛 테스트 포함)",
+      "description": "mrst_tests 를 켠 구성. 번역 무결성 검사가 여기서 돈다.",
+      "inherits": "Debug",
+      "binaryDir": "${sourceDir}/_build/Debug-Tests",
+      "cacheVariables": {
+        "MRST_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    {
+      "name": "Debug",
+      "configurePreset": "Debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "Debug-Tests",
+      "configurePreset": "Debug-Tests",
+      "configuration": "Debug"
+    },
+    {
+      "name": "update-translations",
+      "displayName": "번역 원본(.ts) 갱신",
+      "description": "소스에서 문자열을 다시 수집한다. 소스 트리의 translations/*.ts 를 고치므로 패키징 전에 반드시 커밋할 것.",
+      "configurePreset": "Debug-Tests",
+      "configuration": "Debug",
+      "targets": [ "update_translations" ]
+    },
+    {
+      "name": "Release",
+      "configurePreset": "Release",
+      "configuration": "Release"
+    },
+    {
+      "name": "RelWithDebInfo",
+      "configurePreset": "RelWithDebInfo",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "package",
+      "displayName": "릴리스 패키지 생성",
+      "configurePreset": "RelWithDebInfo",
+      "configuration": "RelWithDebInfo",
+      "targets": [ "mrst_package" ]
+    },
+    {
+      "name": "release",
+      "displayName": "GitHub 릴리스 업로드",
+      "configurePreset": "RelWithDebInfo",
+      "configuration": "RelWithDebInfo",
+      "targets": [ "mrst_release" ]
+    }
+  ],
+
+  "testPresets": [
+    {
+      "name": "Debug-Tests",
+      "configurePreset": "Debug-Tests",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
     }
   ]
 }
-  

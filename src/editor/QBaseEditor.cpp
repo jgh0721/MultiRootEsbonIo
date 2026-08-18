@@ -685,7 +685,11 @@ bool QTextView::saveWithEncodingDialog( const QString& initialFilePath )
 
     TextSaveDialog dialog( this );
     dialog.setWindowTitle( tr( "다른 이름으로 저장" ) );
-    dialog.setDialogFilters( { tr( "텍스트 파일 (*.*)" ) }, tr( "텍스트 파일 (*.*)" ) );
+    // 두 인자가 **정확히 같은 문자열**이어야 selectNameFilter 가 매칭된다.
+    // tr() 을 두 번 부르지 않고 한 번 만들어 돌려 쓴다. 글롭은 코드가 붙인다.
+    const QString textFilter = QStringLiteral( "%1 (*.*)" ).arg( tr( "텍스트 파일" ) );
+    dialog.setDialogFilters( { textFilter }, textFilter );
+    //: 이름을 정하지 않은 새 문서의 기본 파일명. 확장자 .txt 는 유지할 것.
     dialog.setInitialFilePath( initialFilePath.isEmpty() ? tr( "새 텍스트 파일.txt" ) : initialFilePath );
     dialog.setEncodingOptions( availableEncodings(),
                               preferredSaveEncoding(),
@@ -845,7 +849,10 @@ bool QTextView::openHotExitBackup( const QString& untitledId )
         ? newHotExitUntitledId()
         : snapshot.untitledId.trimmed();
     m_filePath.clear();
-    setDisplayTitle( snapshot.displayTitle.trimmed().isEmpty() ? tr( "제목없음" ) : snapshot.displayTitle.trimmed() );
+    // 값을 그대로 쓰지 않는다. 예전 버전이 남긴 백업에는 그때의 UI 언어로 만든
+    // "제목없음" 이 들어 있어서, 그걸 되살리면 지금 언어와 어긋난다. 비워 두면
+    // title() 이 지금 언어의 기본 이름을 돌려준다.
+    setDisplayTitle( {} );
     emit sigTitleChanged( title() );
 
     m_fileSession.clear();
@@ -917,7 +924,11 @@ void QTextView::writeHotExitBackupNow( bool synchronous )
     TextShadowBackupStore::Snapshot snapshot;
     snapshot.isUntitled = isUntitled;
     snapshot.untitledId = isUntitled ? m_hotExitUntitledId : QString();
-    snapshot.displayTitle = isUntitled ? title() : QString();
+    // 번역문을 백업 파일에 넣지 않는다. 이름 없는 문서의 제목은 언제나
+    // tr("제목없음") 이므로, 여기 담아 두면 한국어로 만든 백업을 영어 UI 에서
+    // 복원했을 때 탭 하나만 한국어로 남는다. 비워 두면 title() 이 지금 언어로
+    // 만들어 준다.
+    snapshot.displayTitle = QString();
     snapshot.originalFilePath = m_filePath;
     snapshot.text = m_editor->text();
     snapshot.encoding = m_encoding;
