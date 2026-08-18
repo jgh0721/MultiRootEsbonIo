@@ -58,6 +58,26 @@ git push origin v0.2.1
 어긋나면 멈춘다 — 어떤 소스에서 나왔는지 알 수 없는 배포물을 만들지 않기 위해서다.
 시험 삼아 만들어 볼 때만 `-DMRST_ALLOW_DIRTY=ON` 으로 넘긴다.
 
+이 검사는 `git status --porcelain` 이라 **커밋할 생각이 없는 untracked 파일도 걸린다**
+(메모 파일, 개인 스크립트 등). 검사가 도는 시점은 `mrst_package` 가 `cmake -P` 를
+실행하는 그 순간뿐이므로, 3단계 **직전**에 치워 두고 4단계가 끝나면 되돌리면 된다.
+
+```powershell
+git stash push -u -m "릴리스 중 임시 보관"
+# 3, 4 단계 진행
+git stash pop
+```
+
+`stash pop` 이 `<파일> already exists, no checkout` 으로 **통째로** 실패하는 경우가 있다 —
+치워 둔 사이에 그 파일을 편집기에서 저장하면 그렇게 된다. 이때 스태시는 지워지지 않으니
+워킹 트리의 최신본을 살릴지 스태시본을 살릴지 직접 고른다. 스태시에 든 untracked 파일은
+세 번째 부모에 있다.
+
+```powershell
+git show 'stash@{0}^3:<경로>' | Out-File -Encoding utf8 <비교용 사본>
+git stash drop        # 최신본을 살리기로 했다면
+```
+
 ### 3. 빌드하고 패키징하기
 
 ```powershell
@@ -65,6 +85,16 @@ cmake --preset RelWithDebInfo
 cmake --build --preset RelWithDebInfo
 cmake --build --preset package
 ```
+
+**`CMakeUserPresets.json` 의 `-Local` 프리셋으로 구성하지 않는다.** 구성 프리셋의
+`binaryDir` 은 `_build/${presetName}` 이라, `RelWithDebInfo` 를 상속해도
+`RelWithDebInfo-Local` 은 `_build/RelWithDebInfo-Local` 이라는 **새 디렉터리**를 만든다.
+그런데 `package`/`release` 빌드 프리셋은 `configurePreset: RelWithDebInfo` 를 가리키므로
+`_build/RelWithDebInfo` 를 본다 — 방금 빌드한 것과 **다른 곳을 패키징**하게 된다.
+
+`-Local` 프리셋이 얹어 주던 값은 이미 `_build/RelWithDebInfo` 캐시에 `Qt6_DIR` 로 남아
+있으니, vcvars64 환경만 잡고 위 명령을 그대로 쓰면 재구성된다. 그 디렉터리에는 지난
+릴리스의 오브젝트가 남아 있어 증분 빌드도 훨씬 빠르다.
 
 `package` 타깃이 하는 일:
 
