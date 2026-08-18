@@ -5,6 +5,7 @@
 #include "core/solUpdateInstaller.hpp"
 #include "core/solUvTaskRunner.hpp"
 #include "utils/AuthenticodeVerifier.hpp"
+#include "utils/solBackgroundWork.hpp"
 
 #include "mrst_version.h"
 
@@ -628,6 +629,11 @@ void UpdateService::startVerification()
 
         for( const QString& path : { appPath, updaterPath } )
         {
+            // 90MB exe 전체를 해시한다. verifyAuthenticode() 안(WinVerifyTrust)은
+            // 취소할 수 없으므로, 최소한 두 번째 파일로 넘어가지는 않게 한다.
+            if( isShuttingDown() )
+                return;
+
             if( !QFileInfo::exists( path ) )
             {
                 message = UpdateService::tr( "배포 파일에 %1 이 없습니다." )

@@ -4,6 +4,7 @@
 #include "core/solAppSettings.hpp"
 #include "core/solShadowBackupStore.hpp"
 #include "core/solThemeManager.hpp"
+#include "utils/solBackgroundWork.hpp"
 
 #include "ColumnRulerWidget.hpp"
 #include "FindReplaceWidget.hpp"
@@ -309,7 +310,11 @@ bool QTextView::openFile( const QString& filePath )
                                              }, Qt::QueuedConnection );
         },
                                          [self, requestId] {
-                                             return !self || self->m_openRequestId.load() != requestId;
+                                             // 앱이 내려가는 중이면 읽기를 중단한다.
+                                             // 큰 파일을 읽는 중에 창을 닫으면 그 읽기가
+                                             // 끝날 때까지 프로세스가 남았다.
+                                             return mrst::isShuttingDown() || !self
+                                                 || self->m_openRequestId.load() != requestId;
                                          },
                                          &wasCanceled );
 
@@ -478,7 +483,7 @@ bool QTextView::saveWithEncoding( const QString& filePath, const QString& encodi
     updateLoadingProgress( tr( "텍스트 저장 준비 중..." ), 0, 1000 );
 
     QPointer<QTextView> self( this );
-    QThreadPool::globalInstance()->start( [ self,
+    mrst::persistencePool().start( [ self,
                                           requestId,
                                           effectivePath,
                                           encoding,
@@ -958,7 +963,7 @@ void QTextView::writeHotExitBackupNow( bool synchronous )
         return;
     }
 
-    QThreadPool::globalInstance()->start( [snapshot = std::move( snapshot )] {
+    mrst::persistencePool().start( [snapshot = std::move( snapshot )] {
         TextShadowBackupStore::saveSnapshot( snapshot );
     } );
 }

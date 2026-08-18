@@ -14,6 +14,7 @@
 #include "editor/QBaseEditor.hpp"
 #include "uis/dlgSettings.hpp"
 #include "utils/DwmTitleBar.hpp"
+#include "utils/solBackgroundWork.hpp"
 #include "utils/solPhaseTrace.hpp"
 
 #include <QWebEnginePage>
@@ -46,6 +47,7 @@
 #include <QPushButton>
 #include <QSet>
 #include <QSignalBlocker>
+#include <QThreadPool>
 #include <QTimer>
 #include <QUrl>
 
@@ -1597,9 +1599,22 @@ void MainWindow::closeEvent( QCloseEvent* event )
     if( controller_ )
         controller_->beginShutdown();
 
+    // 워커 스레드에도 알린다. 용어집(최대 2000문서)·개요(최대 500문서)·워크스페이스
+    // 스캔·서명 검증(90MB 해시)·업데이트 잔재 삭제(150~400MB)는 전부 끝까지 도는
+    // 동안 프로세스를 붙잡는다. 결과는 어차피 버려지므로 일찍 멈추는 편이 낫다.
+    mrst::requestShutdown();
+
+    // 아직 시작하지 않은 배경 작업은 통째로 버린다. 저장과 hot-exit 스냅샷은
+    // persistencePool() 로 분리되어 있어 영향받지 않는다 — 그것을 버리면
+    // 데이터가 사라진다.
+    QThreadPool::globalInstance()->clear();
+
     // 사용자가 취소를 눌러 종료가 되돌아가는 경로가 둘 있다. 어느 쪽이든
     // 표시를 되돌리고 활성 문서를 다시 반영해야 프리뷰/LSP 가 되살아난다.
     const auto abortShutdown = [this] {
+        // 워커 표시를 먼저 지운다. 남겨 두면 이후 세션 동안 개요·용어집·스캔이
+        // 전부 즉시 포기한다.
+        mrst::cancelShutdownRequest();
         if( controller_ == nullptr )
             return;
         controller_->endShutdown();

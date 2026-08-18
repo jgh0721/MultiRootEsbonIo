@@ -1,6 +1,8 @@
 ﻿#include "stdafx.h"
 #include "solRestOutlineService.hpp"
 
+#include "utils/solBackgroundWork.hpp"
+
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -197,6 +199,11 @@ QStringList collectProjectDocuments( const QString& sourceRoot, const QString& r
                           QDirIterator::Subdirectories );
     while( iterator.hasNext() )
     {
+        // 앱이 내려가는 중이면 그만둔다. 여기까지 모은 것은 어차피 버려진다.
+        // 끝까지 도는 동안 프로세스가 살아 있는 것이 실제 문제였다.
+        if( isShuttingDown() )
+            return {};
+
         const QString absolute = iterator.next();
         const QFileInfo info( absolute );
         if( !suffixes.contains( info.suffix().toCaseFolded() ) )
@@ -256,6 +263,10 @@ QVector< OutlineDocumentEntry > buildProjectOutline( const QString& sourceRoot,
     entries.reserve( documents.size() );
     for( const QString& path : documents )
     {
+        // 문서마다 파일을 열고 전부 읽는다(상한 500). 종료 중이면 멈춘다.
+        if( isShuttingDown() )
+            return {};
+
         OutlineDocumentEntry entry;
         entry.path = path;
         entry.label = root.relativeFilePath( path );

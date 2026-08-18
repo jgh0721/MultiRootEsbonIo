@@ -1,6 +1,8 @@
 ﻿#include "stdafx.h"
 #include "solSphinxScanner.hpp"
 
+#include "utils/solBackgroundWork.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -96,6 +98,12 @@ std::vector<SphinxProject> ProjectScanner::scan() const {
 
     std::vector<fs::path> stack{workspaceRoot_};
     while (!stack.empty()) {
+        // 워크스페이스 전체를 재귀 순회한다. 종료 중이면 그만둔다 — 결과는
+        // 어차피 버려지고, 끝까지 도는 동안 프로세스가 살아 있게 된다.
+        if (isShuttingDown()) {
+            return {};
+        }
+
         fs::path current = stack.back();
         stack.pop_back();
         std::error_code ec;

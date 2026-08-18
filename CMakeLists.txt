@@ -151,6 +151,8 @@ add_executable(${PROJECT_NAME}
         src/utils/ProcessReaper.hpp
         src/utils/solPhaseTrace.cpp
         src/utils/solPhaseTrace.hpp
+        src/utils/solBackgroundWork.cpp
+        src/utils/solBackgroundWork.hpp
         uniqueLibs/solDocument_Defs.hpp
         uniqueLibs/solEncodingDetector.cpp
         uniqueLibs/solEncodingDetector.hpp
@@ -276,6 +278,7 @@ if(MRST_BUILD_TESTS)
             src/core/solEsbonioLspClient.hpp
             src/utils/ProcessReaper.cpp
             src/utils/solPhaseTrace.cpp
+            src/utils/solBackgroundWork.cpp
             src/utils/AuthenticodeVerifier.cpp
             src/core/solSphinxDiagnostics.cpp
             src/core/solSphinxScanner.cpp

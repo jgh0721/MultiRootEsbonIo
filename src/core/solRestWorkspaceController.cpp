@@ -1120,6 +1120,17 @@ void WorkspaceController::beginShutdown()
 void WorkspaceController::endShutdown()
 {
     shuttingDown_ = false;
+
+    // 종료를 준비하면서 두 가지가 벌어졌다: 워커들이 협조적 취소로 일을 버렸고,
+    // MainWindow 가 전역 풀의 대기 큐를 clear() 했다. 그래서 개요와 용어집이
+    // 비어 있을 수 있다.
+    //
+    // 그냥 setActiveDocument() 로 돌아가면 안 된다 — refreshProjectOutline(false)
+    // 와 refreshGlossary(false) 는 "같은 프로젝트면 건너뛴다" 는 메모를 갖고 있어
+    // 다시 훑지 않는다. 그러면 취소한 뒤로 개요·용어집이 영영 빈 채로 남는다.
+    // 강제로 한 번 다시 돌린다.
+    refreshProjectOutline( true );
+    refreshGlossary( true );
 }
 
 void WorkspaceController::shutdown()

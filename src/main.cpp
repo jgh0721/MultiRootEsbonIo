@@ -4,10 +4,23 @@
 #include "core/solLanguageManager.hpp"
 #include "core/solQlementineTheme.hpp"
 #include "core/solThemeManager.hpp"
+#include "utils/solBackgroundWork.hpp"
 #include "utils/solPhaseTrace.hpp"
 #include "MainWindow.hpp"
 
+#include <QThreadPool>
+
 #include <cstdlib>
+
+namespace {
+
+/// 협조적 취소가 걸린 배경 작업이 스스로 멈추기를 기다리는 상한.
+/// 취소를 확인하는 지점이 루프 한 바퀴 단위라 그보다 오래 걸릴 이유가 없다.
+/// 넘겨도 ~QCoreApplication 이 결국 기다리므로, 이 값은 해결책이 아니라
+/// **경계선**이다 — 실제 해결은 각 루프의 isShuttingDown() 검사다.
+constexpr int kBackgroundDrainMs = 3000;
+
+}  // namespace
 
 // CMake 가 생성한다. app.rc 의 VERSIONINFO 와 같은 값을 쓴다.
 #include "mrst_version.h"
@@ -93,6 +106,24 @@ int main( int argc, char* argv[] )
 
         exitCode = QApplication::exec();
         mrst::traceP( "main.exec-returned" );
+
+        // ~QCoreApplication 이 전역 스레드풀을 **무제한**으로 기다린다
+        // (qtbase 의 qcoreapplication.cpp). 그것이 "창은 사라졌는데 프로세스가
+        // 남는" 구간의 정체다. 여기서 상한을 두어 그 구간을 끊는다.
+        //
+        // 이 상한이 안전한 것은 **저장이 별도 풀로 분리된 뒤부터**다.
+        // MainWindow::saveView() 는 저장이 "시작" 되었다는 뜻으로 true 를
+        // 돌려주고 그 직후 shutdownUi() 가 뷰를 지운다. 즉 지금까지 저장된
+        // 파일이 온전했던 것은 저 무제한 대기 덕이었다. persistencePool() 은
+        // 아래에서 끝까지 기다린다.
+        QThreadPool::globalInstance()->clear();
+        if( !QThreadPool::globalInstance()->waitForDone( kBackgroundDrainMs ) )
+            qWarning( "배경 작업이 제한 시간 안에 끝나지 않았습니다." );
+        mrst::traceP( "main.pool-drained" );
+
+        // 저장과 hot-exit 스냅샷은 끝까지 기다린다. 데이터다.
+        mrst::persistencePool().waitForDone();
+        mrst::traceP( "main.persistence-drained" );
     }
     mrst::traceP( "main.app-destroyed" );
 

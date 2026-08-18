@@ -2,6 +2,7 @@
 #include "core/solGlossaryIndex.hpp"
 
 #include "core/solRestOutlineService.hpp"
+#include "utils/solBackgroundWork.hpp"
 
 #include <QFile>
 #include <QMetaObject>
@@ -199,6 +200,12 @@ void GlossaryIndex::refresh( const QString& projectId, const QString& sourceRoot
         QVector< GlossaryEntry > entries;
         for( const QString& path : paths )
         {
+            // 문서마다 전부 읽는다(상한 2000). 종료 중이면 멈춘다 — 끝까지 도는
+            // 동안 프로세스가 살아 있는 것이 실제 문제였다. 결과는 어차피
+            // generation 검사에서 버려진다.
+            if( isShuttingDown() )
+                return;
+
             QFile file( path );
             if( !file.open( QIODevice::ReadOnly | QIODevice::Text ) )
                 continue;

@@ -2,6 +2,7 @@
 #include "core/solUpdateInstaller.hpp"
 
 #include "utils/ProcessReaper.hpp"
+#include "utils/solBackgroundWork.hpp"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -381,6 +382,11 @@ void UpdateInstaller::removePathsAsync( const QStringList& paths )
         QStringList failed;
         for( const QString& path : paths )
         {
+            // staging/backup 은 150~400MB 다. 종료 중이면 그만둔다 — 중간에
+            // 끊겨도 다음 기동의 restoreStagedIfUsable() 이 마저 지운다.
+            if( isShuttingDown() )
+                return;
+
             if( path.isEmpty() || !QFileInfo::exists( path ) )
                 continue;
 
