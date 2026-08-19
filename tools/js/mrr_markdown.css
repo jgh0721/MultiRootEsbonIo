@@ -1,0 +1,184 @@
+/*
+ * Markdown 프리뷰 스타일.
+ *
+ * ⚠ **블록 요소에 float 이나 position:absolute 를 쓰지 않는다.**
+ *
+ * 스크롤 동기화가 그것에 의존한다. mrr_preview.js 의 anchorTable() 은 기준점의
+ * y 좌표와 원본 줄 번호가 **둘 다 증가**한다는 전제로 구간 선형 보간을 한다.
+ * 블록을 흐름에서 빼면 문서 순서와 화면 순서가 어긋나 그 전제가 깨지고, 증상은
+ * "문서 중간부터 스크롤이 엉뚱한 곳으로 간다" 로 나타난다.
+ *
+ * 색은 전부 CSS 변수로 둔다. C++ 이 테마 팔레트를 페이로드로 넘기고 JS 가
+ * setProperty() 로 꽂으므로, 테마를 바꿀 때 페이지를 다시 읽지 않아도 된다
+ * (다시 읽으면 받아 둔 mermaid/KaTeX 를 버린다).
+ */
+
+:root {
+    --mrr-md-bg: #ffffff;
+    --mrr-md-fg: #24292f;
+    --mrr-md-link: #0969da;
+    --mrr-md-heading: #24292f;
+    --mrr-md-border: #d0d7de;
+    --mrr-md-code-bg: #f6f8fa;
+    --mrr-md-inline-code: #24292f;
+    --mrr-md-quote: #57606a;
+    --mrr-md-table-head-bg: #f6f8fa;
+    --mrr-md-task-done: #1a7f37;
+    /* GitHub 경고 상자 다섯 색. C++ 이 테마 팔레트로 덮어쓴다. */
+    --mrr-md-alert-note: #0969da;
+    --mrr-md-alert-tip: #1a7f37;
+    --mrr-md-alert-important: #8250df;
+    --mrr-md-alert-warning: #9a6700;
+    --mrr-md-alert-caution: #cf222e;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--mrr-md-bg);
+    color: var(--mrr-md-fg);
+}
+
+body {
+    font-family: -apple-system, "Segoe UI", "Malgun Gothic", "Yu Gothic UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    padding: 24px 32px 64px;
+    /* 세로 스크롤만 쓴다. 가로로 밀리면 클릭 좌표와 줄 매핑이 어긋난다. */
+    overflow-x: hidden;
+    word-wrap: break-word;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--mrr-md-heading);
+    line-height: 1.3;
+    margin: 1.4em 0 0.6em;
+}
+h1 { font-size: 1.9em; border-bottom: 1px solid var(--mrr-md-border); padding-bottom: 0.3em; }
+h2 { font-size: 1.5em; border-bottom: 1px solid var(--mrr-md-border); padding-bottom: 0.3em; }
+h3 { font-size: 1.25em; }
+h4 { font-size: 1.05em; }
+h5 { font-size: 0.95em; }
+h6 { font-size: 0.9em; color: var(--mrr-md-quote); }
+/* 첫 제목의 위 여백은 없앤다. 문서 맨 위를 프리뷰 맨 위에 맞추는 스크롤 동기화의
+   특수 처리(line <= 1 이면 scrollTo(0,0))와 어긋나지 않게 한다. */
+:where(h1, h2, h3, h4, h5, h6):first-child { margin-top: 0; }
+
+p { margin: 0 0 1em; }
+
+a { color: var(--mrr-md-link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+ul, ol { margin: 0 0 1em; padding-left: 2em; }
+li { margin: 0.2em 0; }
+
+blockquote {
+    margin: 0 0 1em;
+    padding: 0 1em;
+    color: var(--mrr-md-quote);
+    border-left: 0.25em solid var(--mrr-md-border);
+}
+
+hr {
+    height: 1px;
+    border: 0;
+    background: var(--mrr-md-border);
+    margin: 1.6em 0;
+}
+
+code, kbd, samp {
+    font-family: "Cascadia Mono", Consolas, "D2Coding", monospace;
+    font-size: 0.9em;
+}
+:not(pre) > code {
+    background: var(--mrr-md-code-bg);
+    color: var(--mrr-md-inline-code);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+}
+pre {
+    margin: 0 0 1em;
+    padding: 12px 14px;
+    background: var(--mrr-md-code-bg);
+    border-radius: 6px;
+    /* 긴 줄은 이 블록 안에서만 흐른다. body 가 가로로 밀리면 안 된다. */
+    overflow-x: auto;
+}
+pre > code { background: none; padding: 0; }
+
+table {
+    margin: 0 0 1em;
+    border-collapse: collapse;
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+}
+th, td { padding: 6px 13px; border: 1px solid var(--mrr-md-border); }
+th { background: var(--mrr-md-table-head-bg); font-weight: 600; }
+
+img { max-width: 100%; }
+
+/* 마커만 있고 본문이 없는 인용문(경고박스)에서 빈 문단이 남는다. 높이가 0 이면
+   ranges() 가 알아서 걸러내므로 매핑에는 영향이 없다. */
+p:empty { display: none; }
+
+/* ── GFM 작업 목록 ─────────────────────────────────────── */
+/* 체크박스는 마커로 그린다. <input> 을 끼우면 누를 수 있는 것처럼 보이고, DOM 요소를
+   더하면 앵커 y 순서에 영향이 갈 수 있다. */
+li.mrr-task {
+    list-style: none;
+    margin-left: -1.4em;
+}
+li.mrr-task::before {
+    content: "\2610";           /* 빈 사각형 */
+    display: inline-block;
+    width: 1.4em;
+    color: var(--mrr-md-quote);
+}
+li.mrr-task.mrr-task-done::before {
+    content: "\2611";           /* 체크된 사각형 */
+    color: var(--mrr-md-task-done);
+}
+
+/* ── GitHub 경고 상자 ─────────────────────────────────── */
+/* 제목은 ::before 가 data-mrr-alert-title 을 읽어 그린다. 그 속성은 core 규칙이
+   blockquote_open 에 심는다 — 마커 문단을 지우지 않으므로 줄 매핑이 보존된다. */
+blockquote.mrr-alert {
+    border-left-color: var(--mrr-md-alert-note);
+    color: var(--mrr-md-fg);
+}
+blockquote.mrr-alert::before {
+    content: attr(data-mrr-alert-title);
+    display: block;
+    font-weight: 600;
+    color: var(--mrr-md-alert-note);
+    margin-bottom: 0.3em;
+}
+blockquote.mrr-alert-tip { border-left-color: var(--mrr-md-alert-tip); }
+blockquote.mrr-alert-tip::before { color: var(--mrr-md-alert-tip); }
+blockquote.mrr-alert-important { border-left-color: var(--mrr-md-alert-important); }
+blockquote.mrr-alert-important::before { color: var(--mrr-md-alert-important); }
+blockquote.mrr-alert-warning { border-left-color: var(--mrr-md-alert-warning); }
+blockquote.mrr-alert-warning::before { color: var(--mrr-md-alert-warning); }
+blockquote.mrr-alert-caution { border-left-color: var(--mrr-md-alert-caution); }
+blockquote.mrr-alert-caution::before { color: var(--mrr-md-alert-caution); }
+
+/* ── 각주 ─────────────────────────────────────────────── */
+.footnotes {
+    margin-top: 2em;
+    padding-top: 0.8em;
+    border-top: 1px solid var(--mrr-md-border);
+    font-size: 0.92em;
+    color: var(--mrr-md-quote);
+}
+.footnotes hr { display: none; }   /* 위 border-top 과 겹친다 */
+.footnote-backref { text-decoration: none; }
+
+/* ── mermaid ───────────────────────────────────────────── */
+/* 원격 리소스가 꺼져 있거나 CDN 을 못 받으면 이 블록이 원본 텍스트로 남는다.
+   .rst 프리뷰에서 sphinxcontrib-mermaid 가 실패할 때와 같은 모습이다. */
+pre.mermaid {
+    background: var(--mrr-md-code-bg);
+    text-align: center;
+}

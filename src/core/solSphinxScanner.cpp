@@ -131,6 +131,7 @@ SphinxProject ProjectScanner::projectFromConf(const fs::path& confPath) const {
     project.sourcePath = inferSourcePath(project.rootPath, project.rootDoc);
     project.buildPath = project.rootPath / fs::path(settings_.buildDirName);
     project.projectId = projectIdFor(workspaceRoot_, project.rootPath);
+    project.mystMarkdown = confDeclaresMystMarkdown(confPath);
     return project;
 }
 
@@ -176,6 +177,44 @@ bool confDeclaresEmptyHtmlStyle(const fs::path& confPath) {
         empty = (value == "''" || value == "\"\"" || value == "''''''" || value == "\"\"\"\"\"\"");
     }
     return empty;
+}
+
+bool confDeclaresMystMarkdown(const fs::path& confPath) {
+    std::ifstream file(confPath, std::ios::binary);
+    if (!file) {
+        return false;
+    }
+    std::ostringstream stream;
+    stream << file.rdbuf();
+    const std::string text = stream.str();
+
+    // 따옴표에 감싸인 확장 이름. extensions 리스트가 여러 줄에 걸쳐 있어도,
+    // myst_nb 처럼 myst 를 품은 확장이어도 잡힌다.
+    static const std::regex mystExtension(R"(['\"](myst_parser|myst_nb)['\"])");
+    // 따옴표로 **정확히** 감싼 .md / .markdown. source_suffix 가 dict 든 list 든
+    // 걸리고, exclude_patterns 의 글롭('**/*.md')은 걸리지 않는다.
+    static const std::regex markdownSuffix(R"(['\"]\.(md|markdown)['\"])");
+
+    // 줄 단위로 보면서 주석을 걷어낸다. `# import myst_parser` 처럼 껐다 켜는
+    // 흔적이 conf.py 에 자주 남아 있어서, 파일 전체를 한 번에 훑으면 그것까지
+    // 켜진 것으로 읽는다. (따옴표 안의 # 은 신경 쓰지 않는다 — 폴백이므로.)
+    std::size_t begin = 0;
+    while (begin <= text.size()) {
+        std::size_t end = text.find('\n', begin);
+        if (end == std::string::npos) {
+            end = text.size();
+        }
+        std::string line = text.substr(begin, end - begin);
+        const std::size_t hash = line.find('#');
+        if (hash != std::string::npos) {
+            line.erase(hash);
+        }
+        if (std::regex_search(line, mystExtension) || std::regex_search(line, markdownSuffix)) {
+            return true;
+        }
+        begin = end + 1;
+    }
+    return false;
 }
 
 fs::path inferSourcePath(const fs::path& rootPath, const std::string& rootDoc) {

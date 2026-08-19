@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Markdown</title>
+<!--
+  Markdown 프리뷰의 셸. **문서마다 새로 만들지 않는다** — 본문은 QWebChannel 로
+  넘어온 원문을 이 페이지의 JS 가 그린다.
+
+  그래서 .md 문서를 오갈 때 내비게이션이 한 번도 일어나지 않는다. 세션에서 한 번
+  받아 둔 mermaid(3.4MB)와 KaTeX 가 살아 있고, 문서 전환이 즉시다.
+
+  자산을 qrc 에 두는 이유:
+   * 파일을 하나도 만들지 않는다(타이핑마다도, 문서마다도)
+   * 번들 자산이 문서와 **같은 출처**라 CORS 검사 자체가 없다
+   * qrc 는 Qt 가 local scheme 으로 등록하므로 원격 접근이
+     QWebEngineSettings::LocalContentCanAccessRemoteUrls 하나로 갈린다.
+     즉 `preview/allowRemoteContent` 의 의미가 .rst 프리뷰와 완전히 같다.
+
+  경로는 반드시 **절대 qrc URL** 로 쓴다. 렌더 시점에 <base> 를 문서 폴더로 세우므로
+  (상대 이미지를 살리기 위해) 상대 경로로 두면 지연 로드되는 스크립트가 문서 폴더를
+  뒤진다.
+
+  벤더 자산은 여기서 정적으로 읽지 않는다. 코어의 출처(원격/번들)가 설정에 따라
+  갈리므로 mrr_markdown.js 가 URL 쿼리를 보고 동적으로 로드한다. 어느 경우에도 UMD 를
+  쓴다 — `type="module"` 은 file:// 뿐 아니라 qrc: 에서도 불투명 출처 CORS 로 막힌다.
+-->
+<link rel="stylesheet" href="qrc:/preview/md/mrr_markdown.css">
+<script src="qrc:/preview/md/mrr_markdown.js"></script>
+</head>
+<body>
+<div id="mrr-md-root"></div>
+</body>
+</html>

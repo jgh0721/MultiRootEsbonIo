@@ -15,7 +15,13 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr int kCacheSchemaVersion = 1;
+/// 캐시 스키마.
+///
+/// 2: mystMarkdown 추가. **버전을 올려야 한다** — v1 캐시에는 그 키가 없어
+/// toBool() 이 false 를 내는데, 그것은 "myst 가 아니다" 라는 거짓음성이고 빌더
+/// 리포트가 정정할 수 없는 방향이다(Sphinx 가 그 문서를 정상 렌더하므로 거부
+/// 신호가 나오지 않는다). 올리면 loadCache() 가 실패해 곧바로 재스캔한다.
+constexpr int kCacheSchemaVersion = 2;
 
 QJsonObject projectToJson( const SphinxProject& project )
 {
@@ -26,6 +32,7 @@ QJsonObject projectToJson( const SphinxProject& project )
         {QStringLiteral( "sourcePath" ), toQString( project.sourcePath )},
         {QStringLiteral( "rootDoc" ), QString::fromStdString( project.rootDoc )},
         {QStringLiteral( "buildPath" ), toQString( project.buildPath )},
+        {QStringLiteral( "mystMarkdown" ), project.mystMarkdown},
     };
 }
 
@@ -36,12 +43,13 @@ bool projectFromJson( const QJsonObject& object, SphinxProject& out )
     if( confPath.isEmpty() || !QFileInfo::exists( confPath ) )
         return false;
 
-    out.projectId  = object.value( QStringLiteral( "projectId" ) ).toString().toStdWString();
-    out.rootPath   = toPath( object.value( QStringLiteral( "rootPath" ) ).toString() );
-    out.confPath   = toPath( confPath );
-    out.sourcePath = toPath( object.value( QStringLiteral( "sourcePath" ) ).toString() );
-    out.rootDoc    = object.value( QStringLiteral( "rootDoc" ) ).toString( QStringLiteral( "index" ) ).toStdString();
-    out.buildPath  = toPath( object.value( QStringLiteral( "buildPath" ) ).toString() );
+    out.projectId    = object.value( QStringLiteral( "projectId" ) ).toString().toStdWString();
+    out.rootPath     = toPath( object.value( QStringLiteral( "rootPath" ) ).toString() );
+    out.confPath     = toPath( confPath );
+    out.sourcePath   = toPath( object.value( QStringLiteral( "sourcePath" ) ).toString() );
+    out.rootDoc      = object.value( QStringLiteral( "rootDoc" ) ).toString( QStringLiteral( "index" ) ).toStdString();
+    out.buildPath    = toPath( object.value( QStringLiteral( "buildPath" ) ).toString() );
+    out.mystMarkdown = object.value( QStringLiteral( "mystMarkdown" ) ).toBool( false );
     return !out.rootPath.empty();
 }
 

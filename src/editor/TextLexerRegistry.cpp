@@ -156,7 +156,7 @@ QVector<TextLexerProfile> TextLexerRegistry::fallbackProfiles()
         {QStringLiteral("yaml"), QStringLiteral("YAML"), QStringLiteral("yaml"), {QStringLiteral("yaml"), QStringLiteral("yml")}},
         {QStringLiteral("sql"), QStringLiteral("SQL"), QStringLiteral("sql"), {QStringLiteral("sql")}},
         {QStringLiteral("markdown"), QStringLiteral("Markdown"), QStringLiteral("markdown"),
-            {QStringLiteral("md"), QStringLiteral("markdown")}}
+            {QStringLiteral("md"), QStringLiteral("markdown"), QStringLiteral("mdown")}}
     };
 }
 

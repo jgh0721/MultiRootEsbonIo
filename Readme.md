@@ -129,6 +129,20 @@ Lexilla 에는 reStructuredText 렉서가 없어서 직접 만들었습니다.
   보류하고, 목록이 오면 아는 것과 모르는 것을 나눕니다. 켜자마자 온 화면이 빨개지는 일이 없습니다
 - 섹션 깊이와 들여쓰기 두 축으로 접기를 계산합니다
 
+### Markdown
+
+`.md` 도 reStructuredText 와 같은 등급으로 다룹니다 — 구문 강조, 제목 단위 접기,
+개요 탭, 양방향 스크롤 동기화 프리뷰.
+
+- **프리뷰는 프로그램에 내장된 변환기가 그립니다.** 파이썬 환경이 준비되기 전에도 바로 뜨고,
+  타이핑하면 곧바로 반영됩니다. 디스크에 아무것도 쓰지 않습니다
+- 표·작업 목록·취소선·자동 링크(GFM), 각주, YAML front matter,
+  GitHub 경고 상자(`> [!NOTE]`)를 지원합니다
+- 수식은 KaTeX, 다이어그램은 mermaid 로 그립니다. 둘 다 인터넷에서 받아오므로 위의 원격
+  리소스 설정이 켜져 있어야 합니다 — reStructuredText 프리뷰와 같은 규칙입니다
+- `myst-parser` 를 켠 Sphinx 프로젝트의 `.md` 는 그 프로젝트의 테마·확장·상호 참조를
+  그대로 쓰도록 **실제 Sphinx 빌드로** 그립니다
+
 ### 진단 · 개요 · 워크스페이스 검색
 
 <img src="docs/images/multiroot-dark-ko.png" width="100%" alt="진단·로그·검색 패널">
@@ -233,6 +247,7 @@ ctest --preset Debug-Tests
 이 프로그램은 다음을 씁니다 — [Qt](https://www.qt.io/) (LGPLv3),
 [Scintilla](https://www.scintilla.org/) · [Lexilla](https://www.scintilla.org/Lexilla.html),
 [Qlementine](https://github.com/oclero/qlementine) (MIT),
+[markdown-it](https://github.com/markdown-it/markdown-it) · [markdown-it-footnote](https://github.com/markdown-it/markdown-it-footnote) (MIT),
 [Sphinx](https://www.sphinx-doc.org/) · [docutils](https://docutils.sourceforge.io/),
 [Esbonio](https://github.com/swyddfa/esbonio), [uv](https://github.com/astral-sh/uv).
 

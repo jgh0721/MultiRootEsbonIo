@@ -61,12 +61,19 @@
 
 namespace
 {
+    /// 이 파일이 텍스트 편집기로 열리는가.
+    ///
+    /// 쓰는 곳은 shouldConfirmBinaryTextOpen() 하나다 — 이진 내용을 텍스트로 열려고
+    /// 할 때 되묻는 판정이라, "편집기가 아니라 전용 뷰어로 여는 확장자" 를 뺀다.
+    ///
+    /// `.md` 는 빼지 않는다. 폐기된 전용 마크다운 뷰어 시절의 논리가 남아 있었는데,
+    /// 지금 `.md` 는 다른 텍스트 파일과 똑같이 Scintilla 편집기로 열리므로 되묻기를
+    /// 건너뛸 이유가 없다.
     bool fileWouldOpenAsText( const QString& filePath )
     {
         const QString ext = QFileInfo( filePath ).suffix().toLower();
         return ext != QStringLiteral( "pdf" )
-            && !mrst::filekinds::imageExtensions().contains( ext )
-            && !mrst::filekinds::markdownExtensions().contains( ext );
+            && !mrst::filekinds::imageExtensions().contains( ext );
     }
 
     bool canCloseWithTextHotExit( QBaseView* view )
@@ -413,6 +420,20 @@ MainWindow::MainWindow( QWidget* parent )
     Ui.splitter_2->setChildrenCollapsible( false );
     Ui.splitter_2->setStretchFactor( 0, 1 );
     Ui.splitter_2->setStretchFactor( 1, 1 );
+    // 최소 폭을 양쪽에 준다.
+    //
+    // setChildrenCollapsible(false) 는 "핸들을 끌어 접을 수 없다" 는 뜻일 뿐이고
+    // 최소 폭이 0 이면 레이아웃 계산에서 0 이 될 수 있다.
+    //
+    // 편집기 쪽이 더 중요하다. Scintilla 위젯과 열 눈금자가 minimumSizeHint 로
+    // 큰 값을 요구해서(실측: 스플리터 폭 864 에서 편집기 743 / 프리뷰 120), 그것을
+    // 덮지 않으면 프리뷰가 항상 자기 최소 폭까지 눌린다. setMinimumWidth 는
+    // minimumSizeHint 를 덮으므로 이 한 줄이 그 요구를 풀어 준다.
+    //
+    // 값을 작게 잡는 이유: 두 하한의 합이 창의 최소 폭이 되므로, 크게 잡으면 탭이
+    // 열리는 동안 레이아웃이 창을 강제로 넓힌다.
+    Ui.frmEditor->setMinimumWidth( 240 );
+    Ui.frmWebPreview->setMinimumWidth( 120 );
     Ui.frmEditor->setAutoFillBackground( true );
     Ui.frmWebPreview->setAutoFillBackground( true );
 
@@ -528,6 +549,36 @@ void MainWindow::advanceStartupPhase()
         openStartupPaths( startupPaths_ );
     else
         restoreLastSession();
+
+    // 세션이 배치를 정하지 않는 경로가 둘 있다 — 명령줄 인자로 기동한 경우와,
+    // `.multiroot/workspace.json` 이 아직 없는 새 워크스페이스다. 그러면 스플리터가
+    // Qt 기본 배분에 맡겨지고 프리뷰가 0 폭으로 시작한다(핸들을 끌면 되살아나므로
+    // "프리뷰 기능이 없다" 로 오인하기 쉽다). 탭을 다 연 뒤에 손본다.
+    // 레이아웃이 안정된 뒤에 손본다. 탭이 열리는 동안에는 스플리터가 아직 최종
+    // 폭을 모른다.
+    QTimer::singleShot( 0, this, &MainWindow::ensureVisiblePreviewSplit );
+}
+
+void MainWindow::ensureVisiblePreviewSplit()
+{
+    // 세션이 배치를 정했으면 손대지 않는다. 사용자가 좁혀 둔 프리뷰를 되돌리면
+    // 그 조작이 매 실행마다 사라진다.
+    if( previewSplitFromSession_ )
+        return;
+
+    QSplitter* splitter = Ui.splitter_2;
+    if( splitter == nullptr )
+        return;
+
+    const QList< int > sizes = splitter->sizes();
+    if( sizes.size() != 2 )
+        return;
+
+    const int total = sizes.at( 0 ) + sizes.at( 1 );
+    if( total <= 0 )
+        return;   // 아직 레이아웃이 없다
+
+    splitter->setSizes( { total / 2, total - total / 2 } );
 }
 
 void MainWindow::initialisePreview()
@@ -1127,9 +1178,6 @@ void MainWindow::applyThemeToView( QBaseView* view ) const
         ? QBaseView::Theme::Dark
         : QBaseView::Theme::Light;
     view->setTheme( theme );
-
-    //if( auto* markdownView = qobject_cast< QMarkdownView* >( view ) )
-    //    markdownView->refreshPreview();
 }
 
 void MainWindow::applyCurrentTheme()
@@ -1179,9 +1227,6 @@ QBaseView* MainWindow::createViewForFile( const QString& filePath )
 
     //if( mrst::filekinds::imageExtensions().contains( ext ) )
     //    return new QImageView( this );
-
-    //if( mrst::filekinds::markdownExtensions().contains( ext ) )
-    //    return new QMarkdownView( this );
 
     return new QTextView( this );
 }
@@ -1496,8 +1541,6 @@ bool MainWindow::saveView( QBaseView* view, bool saveAs )
     bool started = false;
     if( auto* textView = qobject_cast< QTextView* >( view ) )
         started = saveAs ? textView->saveFileAs() : textView->saveFile( {} );
-    //else if( auto* markdownView = qobject_cast< QMarkdownView* >( view ) )
-    //    started = saveAs ? markdownView->saveFileAs() : markdownView->saveFile( {} );
     //else if( auto* imageView = qobject_cast< QImageView* >( view ) )
     //    started = saveAs ? imageView->saveFileAs() : imageView->saveFile( {} );
     //else if( auto* pdfView = qobject_cast< QPDFView* >( view ) )
@@ -1892,10 +1935,6 @@ void MainWindow::updateStatusBar()
             .arg( tv->currentEncodingDisplayName() )
             .arg( language );
     }
-    //else if( qobject_cast< QMarkdownView* >( v ) )
-    //{
-    //    info = tr( "Markdown" );
-    //}
     m_statusLabel->setText( info );
 }
 
@@ -2639,7 +2678,7 @@ void MainWindow::setupOutlineTrees()
                     return;
                 if( documents.isEmpty() )
                 {
-                    setOutlinePlaceholder( tree, tr( "활성 프로젝트에 reST 문서가 없습니다." ), "noRstDocs" );
+                    setOutlinePlaceholder( tree, tr( "활성 프로젝트에 문서가 없습니다." ), "noProjectDocs" );
                     return;
                 }
 
@@ -2685,8 +2724,8 @@ void MainWindow::retranslateOutlinePlaceholders()
             item->setText( 0, MainWindow::tr( "활성 Sphinx 프로젝트가 없습니다." ) );
         else if( id == QLatin1String( "noSymbols" ) )
             item->setText( 0, MainWindow::tr( "문서 심볼이 없습니다." ) );
-        else if( id == QLatin1String( "noRstDocs" ) )
-            item->setText( 0, MainWindow::tr( "활성 프로젝트에 reST 문서가 없습니다." ) );
+        else if( id == QLatin1String( "noProjectDocs" ) )
+            item->setText( 0, MainWindow::tr( "활성 프로젝트에 문서가 없습니다." ) );
     };
     retranslate( Ui.treOutlineDocument );
     retranslate( Ui.treOutlineProject );
@@ -2956,13 +2995,15 @@ void MainWindow::restoreLastSession()
     }
 
     // 스플리터는 탭을 다 만든 뒤에 적용해야 레이아웃이 다시 계산되며 덮이지 않는다.
-    auto restoreSizes = []( QSplitter* splitter, const QList< int >& sizes ) {
-        if( splitter != nullptr && sizes.size() == splitter->count() )
-            splitter->setSizes( sizes );
+    auto restoreSizes = [ this ]( QSplitter* splitter, const QList< int >& sizes ) {
+        if( splitter == nullptr || sizes.size() != splitter->count() )
+            return false;
+        splitter->setSizes( sizes );
+        return true;
     };
     restoreSizes( Ui.splSideWithContent, session.sideSplitterSizes );
     restoreSizes( Ui.splEditWithStatisticsOnContent, session.contentSplitterSizes );
-    restoreSizes( Ui.splitter_2, session.previewSplitterSizes );
+    previewSplitFromSession_ = restoreSizes( Ui.splitter_2, session.previewSplitterSizes );
 
     if( session.activeIndex >= 0 && session.activeIndex < m_tabWidget->count() )
         m_tabWidget->setCurrentIndex( session.activeIndex );

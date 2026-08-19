@@ -133,6 +133,20 @@ Lexilla has no reStructuredText lexer, so this one is ours.
   Nothing turns red the moment you open a file
 - Folding is computed from two axes: section depth and indentation
 
+### Markdown
+
+`.md` files are first-class too — syntax highlighting, heading-based folding, the outline
+tab, and a preview with the same two-way scroll sync.
+
+- **The preview is drawn by a converter built into the program.** It appears before the Python
+  environment is ready, follows your typing immediately, and writes nothing to disk
+- Tables, task lists, strikethrough and autolinks (GFM), footnotes, YAML front matter,
+  and GitHub alert boxes (`> [!NOTE]`)
+- Math is rendered with KaTeX and diagrams with mermaid. Both are fetched from the internet,
+  so the remote-resources setting above must be on — the same rule as the reStructuredText preview
+- A `.md` file in a Sphinx project with `myst-parser` enabled is built **by Sphinx itself**, so it
+  keeps that project's theme, extensions, and cross references
+
 ### Diagnostics, outline, workspace search
 
 <img src="docs/images/multiroot-dark-en.png" width="100%" alt="Diagnostics, log and search panels">
@@ -240,6 +254,7 @@ ctest --preset Debug-Tests
 This program uses [Qt](https://www.qt.io/) (LGPLv3),
 [Scintilla](https://www.scintilla.org/) and [Lexilla](https://www.scintilla.org/Lexilla.html),
 [Qlementine](https://github.com/oclero/qlementine) (MIT),
+[markdown-it](https://github.com/markdown-it/markdown-it) and [markdown-it-footnote](https://github.com/markdown-it/markdown-it-footnote) (MIT),
 [Sphinx](https://www.sphinx-doc.org/) and [docutils](https://docutils.sourceforge.io/),
 [Esbonio](https://github.com/swyddfa/esbonio), and [uv](https://github.com/astral-sh/uv).
 

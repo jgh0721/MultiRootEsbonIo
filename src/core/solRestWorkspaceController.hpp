@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QObject>
 #include <QPointer>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
@@ -23,6 +24,7 @@ class DiagnosticsStore;
 class GlossaryIndex;
 class LspClient;
 class LspServerPool;
+class MarkdownPreviewController;
 class PathIndex;
 class PreviewBridge;
 class ProjectRegistry;
@@ -48,6 +50,19 @@ struct DocumentContext
     /// 초기 빌드를 유발하는 synthetic didSave 를 이미 보냈는가.
     /// Esbonio 는 didOpen 만으로는 빌드하지 않아 진단이 나오지 않는다.
     bool                                nudgedInitialBuild = false;
+};
+
+/// 이 문서의 프리뷰를 무엇이 만드는가.
+///
+/// `.md` 는 두 갈래로 갈린다. myst-parser 를 켠 실제 Sphinx 프로젝트에 속하면
+/// 그 프로젝트의 conf.py·테마·확장·상호참조가 그대로 반영되는 Sphinx 빌드가 낫고,
+/// 그렇지 않은 `.md`(소속 없는 파일, myst 없는 프로젝트의 README 류)는 Sphinx 가
+/// 아예 원본으로 읽지 않으므로 내장 렌더러가 유일한 길이다.
+enum class PreviewRoute
+{
+    None,         ///< 프리뷰를 만들 수 없다 (문서 없음)
+    Sphinx,
+    MarkdownJs
 };
 
 /// MainWindow 와 Sphinx/Esbonio 서비스 계층 사이의 조율자.
@@ -150,9 +165,28 @@ private:
     void                                resolveProject( DocumentContext& context );
     /// 실제 프로젝트를 먼저 찾고, 없으면 가상 프로젝트에서 찾는다.
     [[nodiscard]] const SphinxProject*  lookupProject( const QString& projectId ) const;
+    /// 이 문서의 프리뷰를 Sphinx 가 만드는가, 내장 Markdown 렌더러가 만드는가.
+    [[nodiscard]] PreviewRoute          routeFor( const DocumentContext& context ) const;
     void                                logProjectList();
     void                                onPreviewFinished( const PreviewBuildResult& result );
     [[nodiscard]] QString               writeShadowCopy( QTextView* view, const QString& path ) const;
+    /// 내장 Markdown 렌더러용 셸 페이지를 (다시) 로드한다.
+    ///
+    /// 항해는 이 함수와 showPreviewHtml() 두 곳으로만 한다. 그러지 않으면
+    /// previewLoadInFlight_ / previewLoadedOk_ / 브리지 ready 상태가 어긋난다.
+    void                                showPreviewShell( const QString& documentPath );
+    /// 프리뷰가 **우리가 띄운** 페이지인가.
+    ///
+    /// 사용자가 프리뷰 안에서 외부 링크를 눌러 이동한 경우를 제외하려는 판정이다.
+    /// qrc: 를 반드시 포함해야 한다 — Markdown 셸이 qrc 에서 오고,
+    /// QUrl::isLocalFile() 은 scheme=="file" 만 참이다. 그것만 보면 md 프리뷰는
+    /// allowRemoteContent 를 껐다 켜도 다시 읽히지 않아, 한 번 차단된 CDN
+    /// 스크립트가 영영 안 살아난다.
+    [[nodiscard]] bool                  previewUrlIsOurs() const;
+    /// 내장 Markdown 렌더러로 이 문서를 그린다.
+    void                                renderMarkdownJs( DocumentContext& context, bool immediate, bool force );
+    /// 프리뷰에 넘길 원문. preview/applyUnsavedEdits 가 꺼져 있으면 디스크를 읽는다.
+    [[nodiscard]] QString               textForPreview( const DocumentContext& context ) const;
     void                                showPreviewHtml( const QString& htmlPath, const QString& documentKey,
                                                           int buildSerial );
     /// 같은 문구를 반복 발신하지 않는다. text 가 비면 표시를 지운다.
@@ -211,6 +245,8 @@ private:
     PythonEnvResolver*                  envResolver_ = nullptr;
     QWebEngineView*                     previewView_ = nullptr;
     SphinxPreviewController*            previewController_ = nullptr;
+    /// 내장 Markdown 렌더러. Sphinx 쪽과 나란한 형제다.
+    MarkdownPreviewController*          markdownPreview_ = nullptr;
     VirtualProjectManager*              virtualProjects_ = nullptr;
     PreviewBridge*                      previewBridge_ = nullptr;
     DiagnosticsStore*                   diagnosticsStore_ = nullptr;
@@ -223,11 +259,19 @@ private:
     /// 프리뷰의 원격 리소스 허용 상태. -1 은 아직 한 번도 적용하지 않은 것으로,
     /// 첫 적용에서 불필요한 리로드를 하지 않기 위해 구분한다.
     int                                 previewAllowRemote_ = -1;
+    /// 마지막으로 적용한 수식 렌더러. 바뀌면 셸을 다시 읽어야 한다.
+    QString                             previewMathRenderer_;
     /// 저장하지 않은 편집을 프리뷰에 반영할지 (설정 preview/applyUnsavedEdits).
     bool                                previewApplyUnsavedEdits_ = true;
     /// 직전 빌드의 재파싱 시간이 이 값을 넘는 문서는 반영에서 제외한다.
     /// 음수면 제한 없음. Breathe 문서처럼 재파싱이 수십 초인 경우를 막는다.
     int                                 previewUnsavedMaxReadMs_ = 2000;
+    /// conf.py 정규식이 myst 라고 봤지만 빌더가 그 파일을 원본으로 읽지 않은
+    /// 프로젝트. 세션 한정이고 rescanProjects() 에서 비운다.
+    ///
+    /// 프로젝트 단위로 기억하므로 그 2.5초는 프로젝트마다 한 번만 낸다 —
+    /// 같은 프로젝트의 두 번째 `.md` 는 곧바로 내장 렌더러로 간다.
+    QSet< QString >                     mystDeniedProjects_;
     QStringList                         previewSources_;      ///< data-mrr-src 인덱스 -> 원본 경로
     QStringList                         previewProcessedSources_;  ///< 이번 빌드가 다시 읽은 파일들
     /// 마지막으로 빌드를 **요청한** 문서. 탭을 옮겼는데 프리뷰가 따라오지

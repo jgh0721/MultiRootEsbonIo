@@ -6,3 +6,8 @@ translations/*.ts   text eol=lf working-tree-encoding=UTF-8
 # lrelease 산출물. .gitignore 로 막아 두었지만, 실수로 add 되더라도
 # 텍스트로 취급해 깨뜨리지 않도록 못 박는다.
 *.qm                binary
+
+# 벤더 원본은 업스트림과 바이트가 같아야 감사할 수 있다(SRI 해시를 CDN 것과
+# 대조하는 근거가 된다). core.autocrlf=true 라 그냥 두면 체크아웃에서 CRLF 로
+# 바뀌어 해시가 어긋난다.
+tools/js/vendor/*.js    -text

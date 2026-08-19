@@ -37,6 +37,23 @@ except ImportError:
 source_suffix = {".rst": "restructuredtext"}
 if "myst_parser" in extensions:
     source_suffix[".md"] = "markdown"
+    # 켜지 않으면 표 말고는 거의 아무것도 동작하지 않는다 — 취소선, 작업 목록,
+    # $수식$, 정의 목록, `:::{note}` 컨테이너가 전부 꺼진 채로 렌더된다.
+    # 단독 .md 는 내장 렌더러가 그리지만, 이 conf.py 는 워크스페이스 밖의 .rst 가
+    # .md 를 include 하는 경우에 여전히 쓰인다.
+    #
+    # linkify 는 넣지 않는다. linkify-it-py 를 따로 요구하므로 그 패키지가 없는
+    # 환경에서 빌드가 통째로 실패한다.
+    myst_enable_extensions = [
+        "strikethrough",
+        "tasklist",
+        "dollarmath",
+        "deflist",
+        "colon_fence",
+    ]
+    # strikethrough 는 HTML 출력에서만 동작한다는 경고를 낸다. 우리는 HTML 만
+    # 만들므로 그 경고는 진단 표에 잡음일 뿐이다.
+    suppress_warnings = ["myst.strikethrough"]
 
 # 이 파일 하나만 읽는다. 그러지 않으면 같은 폴더의 무관한 문서까지 빌드된다.
 include_patterns = ["%3"]
@@ -103,9 +120,16 @@ VirtualProjectManager::~VirtualProjectManager()
 
 bool VirtualProjectManager::isSupported( const QString& filePath )
 {
+    // `.md` 는 여기서 받지 않는다. 내장 Markdown 렌더러가 그 파일을 그린다.
+    //
+    // 받으면 파일 하나마다 임시 디렉터리 + 합성 conf.py + Sphinx 프로세스 기동
+    // (실측 1.7~2.6초) + Esbonio 서버 한 벌이 붙는데, 그것을 **편집 중 매번** 낸다 —
+    // 가상 프로젝트는 입력 지문을 남기지 않아(requestPreviewBuild 가 inputsFile 을
+    // 비워 넘긴다) 변경 감지 게이트가 절대 걸리지 않는다. 그리고 파이썬 환경이
+    // 준비되기 전에는 프리뷰가 통째로 비어 있다. esbonio 는 myst 없이는 .md 에
+    // 쓸 만한 진단을 내지 않으므로 잃는 것도 없다.
     const QString suffix = QFileInfo( filePath ).suffix().toLower();
-    return suffix == QStringLiteral( "rst" ) || suffix == QStringLiteral( "rest" )
-        || suffix == QStringLiteral( "md" );
+    return suffix == QStringLiteral( "rst" ) || suffix == QStringLiteral( "rest" );
 }
 
 QString VirtualProjectManager::projectIdFor( const QString& filePath )
@@ -166,6 +190,10 @@ const SphinxProject* VirtualProjectManager::projectFor( const QString& filePath 
     handle->project.rootDoc = docName.toStdString();
     // 빌드 산출물은 사용자 폴더가 아니라 임시 디렉터리에 둔다.
     handle->project.buildPath = toPath( QDir( confDir ).filePath( QStringLiteral( "build" ) ) );
+    // 합성 conf.py 는 myst_parser 가 설치되어 있으면 켠다. 이 프로젝트에서 열리는
+    // 문서는 .rst 뿐이지만(isSupported), 그 .rst 가 .md 를 include 할 수 있다.
+    // 방금 쓴 파일을 그대로 읽어 판정한다 — 템플릿과 판정이 갈라질 여지를 두지 않는다.
+    handle->project.mystMarkdown = confDeclaresMystMarkdown( handle->project.confPath );
     handle->directory = std::move( directory );
 
     handles_.insert( projectId, handle );

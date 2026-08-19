@@ -33,6 +33,25 @@ struct OutlineSymbol
 [[nodiscard]] QVector< OutlineSymbol > parseRstOutline( const QString& text,
                                                         const QString& path = {} );
 
+/// Markdown 제목 개요를 텍스트만 보고 뽑는다.
+///
+/// 계층 규칙이 reST 와 다르다 — 해시 개수가 곧 단계이므로 "처음 나온 순서" 를
+/// 셀 필요가 없다. setext 제목(`===`/`---`)도 1·2단계로 함께 잡는다.
+///
+/// 줄 번호는 setext 의 경우 밑줄이 아니라 **제목 글자가 있는 줄**을 가리킨다.
+/// parseRstOutline 은 밑줄 줄을 가리키는데, 프리뷰가 제목 글자 줄에 앵커를
+/// 붙이므로 여기서 갈라진다. 의도된 차이다.
+[[nodiscard]] QVector< OutlineSymbol > parseMarkdownOutline( const QString& text,
+                                                            const QString& path = {} );
+
+/// 확장자로 파서를 고른다.
+///
+/// 마크업 판정을 한 곳에만 두려는 것이 목적이다. 호출 지점마다 각자 if 를 두면
+/// 한쪽만 고쳐지는 순간 그 경로의 개요가 조용히 사라진다.
+/// path 가 비어 있으면 reST 로 본다 — 활성 문서 경로는 항상 채워져 있다.
+[[nodiscard]] QVector< OutlineSymbol > parseDocumentOutline( const QString& text,
+                                                            const QString& path );
+
 /// LSP documentSymbol 응답을 개요 항목으로 옮긴다.
 [[nodiscard]] QVector< OutlineSymbol > toOutlineSymbols( const QList< LspDocumentSymbol >& symbols,
                                                          const QString& path );

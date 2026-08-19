@@ -670,7 +670,11 @@ Open it as text anyway?
     </message>
     <message>
         <source>활성 프로젝트에 reST 문서가 없습니다.</source>
-        <translation type="unfinished">The active project has no reST documents.</translation>
+        <translation type="obsolete">The active project has no reST documents.</translation>
+    </message>
+    <message>
+        <source>활성 프로젝트에 문서가 없습니다.</source>
+        <translation type="unfinished">No documents in the active project.</translation>
     </message>
 </context>
 <context>
@@ -930,7 +934,7 @@ Open it as text anyway?
         <source>mermaid 다이어그램처럼 CDN 스크립트가 그려 주는 요소는 이 항목이 켜져 있어야 렌더링됩니다. 프리뷰 HTML 은 로컬 파일로 열리는데, 브라우저 엔진은 로컬 문서가 외부 주소를 여는 것을 기본적으로 막기 때문입니다.
 
 끄면 프리뷰는 로컬 파일만 읽습니다. 외부로 요청이 나가지 않는 대신 그런 요소는 원본 텍스트 블록으로 남습니다 — 폐쇄망에서는 어차피 받아올 수 없으므로 꺼 두는 편이 낫습니다.</source>
-        <translation type="unfinished">Elements drawn by CDN scripts, such as mermaid diagrams, are only rendered when this is on. The preview HTML is opened as a local file, and browser engines block local documents from reaching external addresses by default.
+        <translation type="obsolete">Elements drawn by CDN scripts, such as mermaid diagrams, are only rendered when this is on. The preview HTML is opened as a local file, and browser engines block local documents from reaching external addresses by default.
 
 When off, the preview reads local files only. Nothing leaves the machine, but those elements stay as plain text blocks — on an isolated network they could not be fetched anyway, so leaving this off is the better choice.</translation>
     </message>
@@ -1017,8 +1021,14 @@ When off, the preview reads local files only. Nothing leaves the machine, but th
     <message>
         <source>끄면 프리뷰가 외부로 요청을 보내지 않습니다.
 대신 CDN 스크립트로 그리는 다이어그램은 텍스트로 남습니다.</source>
-        <translation type="unfinished">When off, the preview sends no external requests.
+        <translation type="obsolete">When off, the preview sends no external requests.
 Diagrams drawn by CDN scripts stay as plain text instead.</translation>
+    </message>
+    <message>
+        <source>끄면 프리뷰가 외부로 요청을 보내지 않습니다.
+대신 CDN 스크립트로 그리는 수식과 다이어그램은 텍스트로 남습니다.</source>
+        <translation type="unfinished">Turn this off to stop the preview from making outside requests.
+Math and diagrams drawn by CDN scripts will stay as plain text.</translation>
     </message>
     <message>
         <source>내보내기...</source>
@@ -1104,7 +1114,11 @@ Beyond that, the least recently used project&apos;s server is shut down.</transl
     </message>
     <message>
         <source>미저장 편집</source>
-        <translation type="unfinished">Unsaved edits</translation>
+        <translation type="obsolete">Unsaved edits</translation>
+    </message>
+    <message>
+        <source>미저장 편집 (reStructuredText)</source>
+        <translation type="unfinished">Unsaved edits (reStructuredText)</translation>
     </message>
     <message>
         <source>바꾸기</source>
@@ -1141,6 +1155,14 @@ Beyond that, the least recently used project&apos;s server is shut down.</transl
     <message>
         <source>설정</source>
         <translation type="unfinished">Settings</translation>
+    </message>
+    <message>
+        <source>수식</source>
+        <translation type="unfinished">Math</translation>
+    </message>
+    <message>
+        <source>수식 렌더러:</source>
+        <translation type="unfinished">Math renderer:</translation>
     </message>
     <message>
         <source>수정 내역 표시:</source>
@@ -1303,6 +1325,10 @@ When turned off, existing hot exit backups are deleted immediately.</translation
         <translation type="unfinished">Check now</translation>
     </message>
     <message>
+        <source>지금은 KaTeX 만 지원합니다. Markdown 프리뷰에만 적용되며, 수식은 인터넷에서 받아 그리므로 위의 외부 리소스 항목이 켜져 있어야 합니다.</source>
+        <translation type="unfinished">Only KaTeX is available for now. It applies to the Markdown preview, and because math is fetched from the internet the external resources option above must be on.</translation>
+    </message>
+    <message>
         <source>창 폭에 맞춰 긴 줄을 접어서 보여 줍니다. 편집기에서 Alt+Z 로도 켜고 끌 수 있습니다.</source>
         <translation type="unfinished">Folds long lines to the window width. You can also toggle it with Alt+Z in the editor.</translation>
     </message>
@@ -1417,6 +1443,22 @@ Enable the last option to have edits reflected in those documents too. While you
     <message>
         <source>프리뷰</source>
         <translation type="unfinished">Preview</translation>
+    </message>
+    <message>
+        <source>프리뷰는 로컬 문서로 열리는데, 브라우저 엔진은 로컬 문서가 외부 주소를 여는 것을 기본적으로 막습니다. 그래서 다음 요소는 이 항목이 켜져 있어야 렌더링됩니다.
+· reStructuredText — mermaid 다이어그램, MathJax 수식
+· Markdown — KaTeX 수식($...$), mermaid 다이어그램
+
+끄면 프리뷰는 로컬 자원만 읽습니다. 두 마크업 모두 본문·표·코드 블록은 그대로 표시되고 수식과 다이어그램만 원본 텍스트로 남습니다 — 폐쇄망에서는 어차피 받아올 수 없으므로 꺼 두는 편이 낫습니다.
+
+Markdown 본문을 그리는 변환기는 프로그램에 내장되어 있어, 이 항목을 끄거나 네트워크가 없어도 항상 동작합니다.</source>
+        <translation type="unfinished">The preview opens as a local document, and browser engines block local documents from opening outside addresses by default. So these elements need this option on to render.
+· reStructuredText — mermaid diagrams, MathJax math
+· Markdown — KaTeX math ($...$), mermaid diagrams
+
+When off, the preview reads only local resources. In both markups the body, tables and code blocks still show; only math and diagrams stay as plain text — on an isolated network they cannot be fetched anyway, so leaving it off is better.
+
+The converter that draws Markdown body text is built into the program, so it always works even with this option off or without a network.</translation>
     </message>
     <message>
         <source>한 단계 더</source>
@@ -2085,8 +2127,20 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">Markdown</translation>
     </message>
     <message>
+        <source>Markdown 굵게(**)</source>
+        <translation type="unfinished">Markdown bold (**)</translation>
+    </message>
+    <message>
+        <source>Markdown 기울임(*)</source>
+        <translation type="unfinished">Markdown italic (*)</translation>
+    </message>
+    <message>
         <source>Markdown 링크</source>
         <translation type="unfinished">Markdown link</translation>
+    </message>
+    <message>
+        <source>Markdown 목록 마커</source>
+        <translation type="unfinished">Markdown list marker</translation>
     </message>
     <message>
         <source>Markdown 문서 배경</source>
@@ -2097,6 +2151,10 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">Markdown body text</translation>
     </message>
     <message>
+        <source>Markdown 수평선</source>
+        <translation type="unfinished">Markdown horizontal rule</translation>
+    </message>
+    <message>
         <source>Markdown 인라인 코드</source>
         <translation type="unfinished">Markdown inline code</translation>
     </message>
@@ -2105,16 +2163,52 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">Markdown block quote</translation>
     </message>
     <message>
+        <source>Markdown 인용문(&gt;)</source>
+        <translation type="unfinished">Markdown blockquote (&gt;)</translation>
+    </message>
+    <message>
         <source>Markdown 제목</source>
         <translation type="unfinished">Markdown heading</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 1</source>
+        <translation type="unfinished">Markdown heading 1</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 2</source>
+        <translation type="unfinished">Markdown heading 2</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 3</source>
+        <translation type="unfinished">Markdown heading 3</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 4</source>
+        <translation type="unfinished">Markdown heading 4</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 5</source>
+        <translation type="unfinished">Markdown heading 5</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 6</source>
+        <translation type="unfinished">Markdown heading 6</translation>
     </message>
     <message>
         <source>Markdown 체크 항목</source>
         <translation type="unfinished">Markdown checked item</translation>
     </message>
     <message>
+        <source>Markdown 취소선(~~)</source>
+        <translation type="unfinished">Markdown strikethrough (~~)</translation>
+    </message>
+    <message>
         <source>Markdown 코드 배경</source>
         <translation type="unfinished">Markdown code background</translation>
+    </message>
+    <message>
+        <source>Markdown 코드 블록</source>
+        <translation type="unfinished">Markdown code block</translation>
     </message>
     <message>
         <source>Markdown 테두리</source>
@@ -2179,6 +2273,10 @@ For example: 42 or 42:5</translation>
     <message>
         <source>TEXT Lexer</source>
         <translation type="unfinished">TEXT Lexer</translation>
+    </message>
+    <message>
+        <source>TEXT Lexer Markdown</source>
+        <translation type="unfinished">TEXT Lexer Markdown</translation>
     </message>
     <message>
         <source>TEXT Lexer reST</source>
@@ -2517,6 +2615,25 @@ For example: 42 or 42:5</translation>
     <message>
         <source>최대 프로세스 수를 넘었지만 축출할 대상이 없습니다.</source>
         <translation type="unfinished">The process limit was exceeded but there is nothing to evict.</translation>
+    </message>
+</context>
+<context>
+    <name>mrst::MarkdownPreviewController</name>
+    <message>
+        <source>프리뷰 렌더에 실패했습니다: %1</source>
+        <translation type="unfinished">Preview render failed: %1</translation>
+    </message>
+    <message>
+        <source>프리뷰: %1 을 가져오지 못했습니다(%2). 그 부분은 원본 텍스트로 남습니다.</source>
+        <translation type="unfinished">Preview: could not fetch %1 (%2). That part stays as plain text.</translation>
+    </message>
+    <message>
+        <source>프리뷰: %1 을 인터넷에서 받았습니다.</source>
+        <translation type="unfinished">Preview: fetched %1 from the internet.</translation>
+    </message>
+    <message>
+        <source>프리뷰: %1 을 인터넷에서 받지 못해 내장본을 사용합니다.</source>
+        <translation type="unfinished">Preview: could not fetch %1 from the internet, using the built-in copy.</translation>
     </message>
 </context>
 <context>

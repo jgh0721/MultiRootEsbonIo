@@ -20,7 +20,7 @@
     }
     window.__mrrPreviewInstalled = true;
 
-    var PROTOCOL_VERSION = 1;
+    var PROTOCOL_VERSION = 2;   // 2: markdownSourceChanged 위임 추가
     // 스크롤 위치를 대표하는 기준점. 0.5 = 창의 정중앙.
     var ANCHOR_RATIO = 0.5;
     // C++ 이 우리를 스크롤시킨 직후 우리가 다시 C++ 에 보고하면 무한 왕복이 된다.
@@ -317,6 +317,40 @@
         bridge.hotSwapRequested.connect(function (documentHtml, baseUrl, token) {
             hotSwap(documentHtml, baseUrl, token);
         });
+        bridge.markdownSourceChanged.connect(function (text, baseUrl, optionsJson, token) {
+            // 이 파일은 markdown 을 모른다. 셸 페이지가 심어 둔 훅에 넘기기만 한다 —
+            // rerenderDiagrams() 가 sphinxcontrib-mermaid 의 window.runMermaid 를
+            // 부르는 것과 같은 관계다. 그래야 이 파일이 Sphinx 페이지에도 주입된다는
+            // 사실과 양립한다(셸이 아니면 훅이 없어 무해히 실패를 보고한다).
+            if (typeof window.__mrrMarkdownRender !== "function") {
+                bridge.markdownRendered(token, false, "no renderer");
+                return;
+            }
+            var done = window.__mrrMarkdownRender(text, baseUrl, optionsJson, token);
+            if (done === null) {
+                // 렌더러가 아직 준비되지 않아 큐에 들어갔다. 준비되면 그쪽이 그리고
+                // 그쪽이 회신한다 — 여기서 실패로 보고하면 로그에 잡음만 남는다.
+                return;
+            }
+            Promise.resolve(done).then(function () {
+                // 렌더가 끝나면 문서 높이가 달라진다. 좌표 캐시는 그 뒤에 버려야
+                // 의미가 있다 (핫스왑 경로와 같은 이유).
+                invalidateCache();
+                bridge.markdownRendered(token, true, "");
+            }, function (error) {
+                invalidateCache();
+                bridge.markdownRendered(token, false, String(error));
+            });
+        });
+        // 셸 페이지의 렌더러가 C++ 에 사실을 올릴 통로. 이 파일은 markdown 을
+        // 모르므로 브리지 객체만 넘겨 준다.
+        window.__mrrBridge = bridge;
+        // 렌더러는 이 시점보다 **먼저** 준비될 수 있다(코어가 번들이면 거의 항상
+        // 그렇다). 그때 올린 보고는 브리지가 없어 사라지므로, 여기서 한 번 깨워
+        // 다시 올리게 한다.
+        if (typeof window.__mrrMarkdownBridgeReady === "function") {
+            window.__mrrMarkdownBridgeReady();
+        }
         bridge.ready(PROTOCOL_VERSION);
     }
 
@@ -392,6 +426,10 @@
             bridge.hotSwapResult(token, false, String(error));
         }
     }
+
+    // 셸 페이지의 렌더러가 나중에(폰트 도착, 다이어그램 완성) 좌표를 흔들 때
+    // 캐시를 버릴 통로. 이 파일은 무엇이 흔들었는지 알 필요가 없다.
+    window.__mrrInvalidatePreviewCache = invalidateCache;
 
     // 매핑 함수 검증용 훅. 스크롤 동기화 정확도는 눈으로 보기 어려워서
     // 왕복 변환(line -> Y -> line)이 일치하는지 자동으로 확인할 수 있게 한다.

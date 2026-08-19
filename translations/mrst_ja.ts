@@ -664,7 +664,11 @@
     </message>
     <message>
         <source>활성 프로젝트에 reST 문서가 없습니다.</source>
-        <translation type="unfinished">アクティブプロジェクトに reST ドキュメントがありません。</translation>
+        <translation type="obsolete">アクティブプロジェクトに reST ドキュメントがありません。</translation>
+    </message>
+    <message>
+        <source>활성 프로젝트에 문서가 없습니다.</source>
+        <translation type="unfinished">アクティブなプロジェクトにドキュメントがありません。</translation>
     </message>
 </context>
 <context>
@@ -924,7 +928,7 @@
         <source>mermaid 다이어그램처럼 CDN 스크립트가 그려 주는 요소는 이 항목이 켜져 있어야 렌더링됩니다. 프리뷰 HTML 은 로컬 파일로 열리는데, 브라우저 엔진은 로컬 문서가 외부 주소를 여는 것을 기본적으로 막기 때문입니다.
 
 끄면 프리뷰는 로컬 파일만 읽습니다. 외부로 요청이 나가지 않는 대신 그런 요소는 원본 텍스트 블록으로 남습니다 — 폐쇄망에서는 어차피 받아올 수 없으므로 꺼 두는 편이 낫습니다.</source>
-        <translation type="unfinished">mermaid 図のように CDN スクリプトが描画する要素は、この項目がオンのときだけレンダリングされます。プレビュー HTML はローカルファイルとして開かれ、ブラウザーエンジンはローカル文書が外部アドレスを開くことを既定で禁止しているためです。
+        <translation type="obsolete">mermaid 図のように CDN スクリプトが描画する要素は、この項目がオンのときだけレンダリングされます。プレビュー HTML はローカルファイルとして開かれ、ブラウザーエンジンはローカル文書が外部アドレスを開くことを既定で禁止しているためです。
 
 オフにするとプレビューはローカルファイルだけを読みます。外部へリクエストは出ませんが、そうした要素は元のテキストブロックのまま残ります — 閉域網ではどのみち取得できないので、オフのままにしておくほうが適切です。</translation>
     </message>
@@ -1011,8 +1015,14 @@
     <message>
         <source>끄면 프리뷰가 외부로 요청을 보내지 않습니다.
 대신 CDN 스크립트로 그리는 다이어그램은 텍스트로 남습니다.</source>
-        <translation type="unfinished">オフにするとプレビューは外部へリクエストを送りません。
+        <translation type="obsolete">オフにするとプレビューは外部へリクエストを送りません。
 代わりに CDN スクリプトで描画される図はテキストのまま残ります。</translation>
+    </message>
+    <message>
+        <source>끄면 프리뷰가 외부로 요청을 보내지 않습니다.
+대신 CDN 스크립트로 그리는 수식과 다이어그램은 텍스트로 남습니다.</source>
+        <translation type="unfinished">オフにするとプレビューは外部へリクエストを送りません。
+かわりに CDN スクリプトが描く数式と図はテキストのまま残ります。</translation>
     </message>
     <message>
         <source>내보내기...</source>
@@ -1098,7 +1108,11 @@
     </message>
     <message>
         <source>미저장 편집</source>
-        <translation type="unfinished">未保存の編集</translation>
+        <translation type="obsolete">未保存の編集</translation>
+    </message>
+    <message>
+        <source>미저장 편집 (reStructuredText)</source>
+        <translation type="unfinished">未保存の編集 (reStructuredText)</translation>
     </message>
     <message>
         <source>바꾸기</source>
@@ -1135,6 +1149,14 @@
     <message>
         <source>설정</source>
         <translation type="unfinished">設定</translation>
+    </message>
+    <message>
+        <source>수식</source>
+        <translation type="unfinished">数式</translation>
+    </message>
+    <message>
+        <source>수식 렌더러:</source>
+        <translation type="unfinished">数式レンダラー:</translation>
     </message>
     <message>
         <source>수정 내역 표시:</source>
@@ -1297,6 +1319,10 @@
         <translation type="unfinished">今すぐ確認</translation>
     </message>
     <message>
+        <source>지금은 KaTeX 만 지원합니다. Markdown 프리뷰에만 적용되며, 수식은 인터넷에서 받아 그리므로 위의 외부 리소스 항목이 켜져 있어야 합니다.</source>
+        <translation type="unfinished">現在は KaTeX のみ対応しています。Markdown プレビューにのみ適用され、数式はインターネットから取得して描くため、上の外部リソース項目がオンである必要があります。</translation>
+    </message>
+    <message>
         <source>창 폭에 맞춰 긴 줄을 접어서 보여 줍니다. 편집기에서 Alt+Z 로도 켜고 끌 수 있습니다.</source>
         <translation type="unfinished">ウィンドウ幅に合わせて長い行を折り返して表示します。エディター上では Alt+Z でも切り替えられます。</translation>
     </message>
@@ -1411,6 +1437,22 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
     <message>
         <source>프리뷰</source>
         <translation type="unfinished">プレビュー</translation>
+    </message>
+    <message>
+        <source>프리뷰는 로컬 문서로 열리는데, 브라우저 엔진은 로컬 문서가 외부 주소를 여는 것을 기본적으로 막습니다. 그래서 다음 요소는 이 항목이 켜져 있어야 렌더링됩니다.
+· reStructuredText — mermaid 다이어그램, MathJax 수식
+· Markdown — KaTeX 수식($...$), mermaid 다이어그램
+
+끄면 프리뷰는 로컬 자원만 읽습니다. 두 마크업 모두 본문·표·코드 블록은 그대로 표시되고 수식과 다이어그램만 원본 텍스트로 남습니다 — 폐쇄망에서는 어차피 받아올 수 없으므로 꺼 두는 편이 낫습니다.
+
+Markdown 본문을 그리는 변환기는 프로그램에 내장되어 있어, 이 항목을 끄거나 네트워크가 없어도 항상 동작합니다.</source>
+        <translation type="unfinished">プレビューはローカル文書として開かれますが、ブラウザーエンジンはローカル文書が外部アドレスを開くことを既定で禁じます。そのため次の要素はこの項目がオンでないとレンダリングされません。
+· reStructuredText — mermaid の図、MathJax の数式
+· Markdown — KaTeX の数式($...$)、mermaid の図
+
+オフにするとプレビューはローカル資源だけを読みます。どちらのマークアップでも本文・表・コードブロックはそのまま表示され、数式と図だけが元のテキストのまま残ります — 閉鎖網ではどうせ取得できないので、オフにしておくほうがよいでしょう。
+
+Markdown の本文を描く変換器はプログラムに内蔵されているため、この項目をオフにしてもネットワークがなくても常に動作します。</translation>
     </message>
     <message>
         <source>한 단계 더</source>
@@ -2079,8 +2121,20 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
         <translation type="unfinished">Markdown</translation>
     </message>
     <message>
+        <source>Markdown 굵게(**)</source>
+        <translation type="unfinished">Markdown 太字 (**)</translation>
+    </message>
+    <message>
+        <source>Markdown 기울임(*)</source>
+        <translation type="unfinished">Markdown 斜体 (*)</translation>
+    </message>
+    <message>
         <source>Markdown 링크</source>
         <translation type="unfinished">Markdown リンク</translation>
+    </message>
+    <message>
+        <source>Markdown 목록 마커</source>
+        <translation type="unfinished">Markdown リストマーカー</translation>
     </message>
     <message>
         <source>Markdown 문서 배경</source>
@@ -2091,6 +2145,10 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
         <translation type="unfinished">Markdown 本文</translation>
     </message>
     <message>
+        <source>Markdown 수평선</source>
+        <translation type="unfinished">Markdown 水平線</translation>
+    </message>
+    <message>
         <source>Markdown 인라인 코드</source>
         <translation type="unfinished">Markdown インラインコード</translation>
     </message>
@@ -2099,16 +2157,52 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
         <translation type="unfinished">Markdown 引用</translation>
     </message>
     <message>
+        <source>Markdown 인용문(&gt;)</source>
+        <translation type="unfinished">Markdown 引用 (&gt;)</translation>
+    </message>
+    <message>
         <source>Markdown 제목</source>
         <translation type="unfinished">Markdown 見出し</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 1</source>
+        <translation type="unfinished">Markdown 見出し 1</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 2</source>
+        <translation type="unfinished">Markdown 見出し 2</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 3</source>
+        <translation type="unfinished">Markdown 見出し 3</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 4</source>
+        <translation type="unfinished">Markdown 見出し 4</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 5</source>
+        <translation type="unfinished">Markdown 見出し 5</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 6</source>
+        <translation type="unfinished">Markdown 見出し 6</translation>
     </message>
     <message>
         <source>Markdown 체크 항목</source>
         <translation type="unfinished">Markdown チェック済み項目</translation>
     </message>
     <message>
+        <source>Markdown 취소선(~~)</source>
+        <translation type="unfinished">Markdown 取り消し線 (~~)</translation>
+    </message>
+    <message>
         <source>Markdown 코드 배경</source>
         <translation type="unfinished">Markdown コードの背景</translation>
+    </message>
+    <message>
+        <source>Markdown 코드 블록</source>
+        <translation type="unfinished">Markdown コードブロック</translation>
     </message>
     <message>
         <source>Markdown 테두리</source>
@@ -2173,6 +2267,10 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
     <message>
         <source>TEXT Lexer</source>
         <translation type="unfinished">TEXT Lexer</translation>
+    </message>
+    <message>
+        <source>TEXT Lexer Markdown</source>
+        <translation type="unfinished">TEXT Lexer Markdown</translation>
     </message>
     <message>
         <source>TEXT Lexer reST</source>
@@ -2511,6 +2609,25 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
     <message>
         <source>최대 프로세스 수를 넘었지만 축출할 대상이 없습니다.</source>
         <translation type="unfinished">最大プロセス数を超えましたが、退避できる対象がありません。</translation>
+    </message>
+</context>
+<context>
+    <name>mrst::MarkdownPreviewController</name>
+    <message>
+        <source>프리뷰 렌더에 실패했습니다: %1</source>
+        <translation type="unfinished">プレビューの描画に失敗しました: %1</translation>
+    </message>
+    <message>
+        <source>프리뷰: %1 을 가져오지 못했습니다(%2). 그 부분은 원본 텍스트로 남습니다.</source>
+        <translation type="unfinished">プレビュー: %1 を取得できませんでした(%2)。その部分は元のテキストのまま残ります。</translation>
+    </message>
+    <message>
+        <source>프리뷰: %1 을 인터넷에서 받았습니다.</source>
+        <translation type="unfinished">プレビュー: %1 をインターネットから取得しました。</translation>
+    </message>
+    <message>
+        <source>프리뷰: %1 을 인터넷에서 받지 못해 내장본을 사용합니다.</source>
+        <translation type="unfinished">プレビュー: %1 をインターネットから取得できなかったため内蔵版を使用します。</translation>
     </message>
 </context>
 <context>
