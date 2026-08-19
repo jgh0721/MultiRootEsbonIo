@@ -70,6 +70,20 @@ target_compile_definitions(ScintillaEditBaseQt
     INTERFACE
         # 링크하는 쪽이 직접 백엔드 사용 여부를 컴파일 타임에 알 수 있게 전파한다.
         MV_HAVE_SCINTILLA_DIRECT_BACKEND=1
+        # ScintillaEditBase.h 는 WIN32 가 정의돼 있고 MAKING_LIBRARY 가 없으면
+        # 클래스를 __declspec(dllimport) 로 선언한다. 우리는 정적으로 링크하므로
+        # 그러면 링커가 __imp_ 심볼을 찾다가 LNK2019 로 죽는다 (정적 라이브러리에는
+        # 그런 심볼이 없다).
+        #
+        # 이게 지금까지 안 터진 이유는 제너레이터 차이다. CMake 의 Visual Studio
+        # 제너레이터는 PreprocessorDefinitions 에 WIN32 를 자동으로 넣고 Ninja 는
+        # 넣지 않는다. 그래서 같은 소스가 CLion(Ninja) 에서는 링크되고
+        # `-G "Visual Studio 17 2022"` 로 구성한 트리에서는 앱까지 링크되지 않는다.
+        #
+        # 헤더가 #ifndef EXPORT_IMPORT_API 로 가드하므로 여기서 빈 값으로 못박는다.
+        # MAKING_LIBRARY 를 대신 전파하면 dllexport 가 되어 exe 가 심볼을 export 하게
+        # 되므로 그쪽은 쓰지 않는다.
+        EXPORT_IMPORT_API=
 )
 
 add_library(LexillaStatic STATIC
