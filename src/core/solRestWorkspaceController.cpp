@@ -1326,7 +1326,7 @@ void WorkspaceController::setActiveDocument( QTextView* view )
     if( view == nullptr )
     {
         activeProjectId_.clear();
-        completions_->setActiveProjectId( QString{} );
+        completions_->setActiveProject( QString{}, QString{}, QString{} );
         outlineDebounce_->stop();
         emit outlineCleared( tr( "열린 문서가 없습니다." ) );
         return;
@@ -1371,7 +1371,14 @@ void WorkspaceController::setActiveDocument( QTextView* view )
     if( projectChanged )
     {
         activeProjectId_ = context->projectId;
-        completions_->setActiveProjectId( activeProjectId_ );
+        // 소스 루트는 **값으로** 넘긴다. registry_ 가 돌려주는 포인터는 다음
+        // 스캔에 무효화되므로 조율자가 들고 있으면 안 된다.
+        const SphinxProject* activeProject = lookupProject( activeProjectId_ );
+        completions_->setActiveProject( activeProjectId_,
+                                       activeProject != nullptr
+                                           ? toQString( activeProject->sourcePath )
+                                           : QString{},
+                                       registry_->workspaceRoot() );
         emit activeProjectChanged( activeProjectId_, context->isVirtual );
         emit logMessage( tr( "활성 프로젝트: %1" )
                             .arg( activeProjectId_.isEmpty() ? unresolvedProjectLabel() : activeProjectId_ ) );

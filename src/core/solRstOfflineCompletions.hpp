@@ -57,6 +57,13 @@ struct Context
     bool                                argumentNeedsSpace = false;
 };
 
+/// LSP CompletionItemKind 밖의 우리 전용 종류. 표준은 1~26 을 쓴다.
+///
+/// 이미지 파일만 따로 나누는 이유는 상세 패널에 프리뷰가 뜨는 행을 목록에서
+/// 바로 알아볼 수 있게 하기 위해서다. 팝업 위젯과 후보 생성기 양쪽이 쓰므로
+/// 둘 다 이미 아는 이 헤더에 둔다 (core 가 editor 를 include 하면 안 된다).
+inline constexpr int kKindImageFile = 1001;
+
 struct Item
 {
     QString                             label;

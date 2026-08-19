@@ -4,6 +4,9 @@
 
 #include <QString>
 #include <QStringList>
+#include <QVector>
+
+#include <functional>
 
 namespace mrst::rstpath {
 
@@ -90,5 +93,61 @@ struct TypedPath
 /// Sphinx 는 등록된 접미사만 `removesuffix` 하므로 `api.v2.rst` 는 `api.v2` 여야
 /// 하고 `api` 가 되면 안 된다. 여기서는 그 규칙을 명시적으로 흉내 낸다.
 [[nodiscard]] QString  stripDocumentSuffix( const QString& fileName );
+
+/// `child` 가 `root` 아래(또는 같은 곳)인가. 둘 다 절대 경로여야 한다.
+[[nodiscard]] bool     isWithin( const QString& root, const QString& child );
+
+// ── 후보 만들기 ───────────────────────────────────────────
+
+/// 후보를 만들 때 필요한 바깥 사정. 전부 값이다 —
+/// `ProjectRegistry` 가 돌려주는 포인터는 다음 스캔에 무효화되므로
+/// 이 모듈은 `SphinxProject` 를 아예 모르는 편이 안전하다.
+struct Query
+{
+    rstcomplete::Context        context;
+    QString                     documentDirectory;   ///< 현재 문서가 있는 디렉터리 (절대)
+    QString                     sourceRoot;          ///< Sphinx srcdir. '/' 로 시작하는 경로의 기준
+    QString                     workspaceRoot;       ///< 전역 인덱스의 뿌리. 비어 있을 수 있다
+};
+
+struct DirEntry
+{
+    QString                     name;
+    bool                        isDirectory = false;
+};
+
+/// 디렉터리 하나를 나열하는 방법. 판정·순위·인코딩 로직을 디스크 없이
+/// 검증하려고 주입 가능하게 두었다. 경로 계산 자체는 순수 문자열 연산이라
+/// 이 seam 하나면 전부 테스트로 덮인다.
+using DirectoryLister = std::function< QVector< DirEntry >( const QString& absoluteDirectory ) >;
+
+/// 실제 디스크. 제외 디렉터리와 숨김 항목은 건너뛰고, 상한을 넘으면 자른다.
+[[nodiscard]] DirectoryLister diskLister( int maxEntries = 2000 );
+
+/// 팝업에 올릴 후보 하나.
+struct Candidate
+{
+    QString                     label;         ///< 파일/디렉터리 이름만
+    QString                     insertText;    ///< 문서에 넣을 문자열 (친 것 전체를 대신한다)
+    QString                     detail;        ///< 목록 오른쪽 흐린 글씨
+    int                         kind = 0;      ///< LSP CompletionItemKind (+ 우리 이미지 kind)
+    int                         scoreBias = 0; ///< 퍼지 점수에 더할 가중치
+    QString                     absolutePath;  ///< 상세 패널이 쓸 실제 경로
+    bool                        isDirectory = false;
+};
+
+/// 입력된 경로가 가리키는 디렉터리의 절대 경로. 해석할 수 없으면 빈 문자열.
+///
+/// `/` 로 시작하면 Sphinx srcdir 기준이고 아니면 문서 디렉터리 기준이다.
+/// Sphinx 의 `relfn2path` 와 같은 규칙이다 (백슬래시로 시작해도 srcdir 기준).
+[[nodiscard]] QString  resolveTypedDirectory( const Query& query );
+
+/// 지금 보고 있는 디렉터리 한 단계.
+///
+/// 디렉터리가 먼저, 그다음 슬롯이 받아들이는 파일. 순위 가중치도 여기서 매긴다
+/// (팝업은 "경로" 라는 개념을 몰라야 한다).
+[[nodiscard]] QVector< Candidate > oneLevelCandidates( const Query& query,
+                                                       const DirectoryLister& lister,
+                                                       int limit = 300 );
 
 }   // namespace mrst::rstpath

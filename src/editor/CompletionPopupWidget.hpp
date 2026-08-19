@@ -11,12 +11,6 @@ class QListWidget;
 
 namespace mrst {
 
-/// LSP CompletionItemKind 밖의 우리 전용 종류. 표준은 1~26 을 쓴다.
-///
-/// 이미지 파일만 따로 나누는 이유는 상세 패널에 프리뷰가 뜨는 행을
-/// 목록에서 바로 알아볼 수 있게 하기 위해서다.
-inline constexpr int kCompletionKindImageFile = 1001;
-
 struct CompletionDisplayItem
 {
     QString                             label;
@@ -24,6 +18,11 @@ struct CompletionDisplayItem
     QString                             detail;
     int                                 kind = 0;        ///< LSP CompletionItemKind
     QString                             filterText;      ///< 비어 있으면 label 로 거른다
+    /// 퍼지 점수에 더할 가중치. 공급자가 "이게 더 그럴듯하다" 고 말하는 자리다.
+    ///
+    /// 팝업은 경로도 프로젝트도 모른다. 경로 후보에서 "지금 보고 있는
+    /// 디렉터리" 가 "프로젝트 어딘가" 를 이기게 하려면 판단을 공급자가 해야 한다.
+    int                                 scoreBias = 0;
 };
 
 /// 부분 일치(subsequence) 검사와 점수 매기기.

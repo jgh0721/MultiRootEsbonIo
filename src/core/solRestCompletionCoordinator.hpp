@@ -4,9 +4,11 @@
 #include "editor/CompletionPopupWidget.hpp"
 #include "solEsbonioLspClient.hpp"
 #include "solRstOfflineCompletions.hpp"
+#include "solRstPathCompletion.hpp"
 
 #include <QObject>
 #include <QPointer>
+#include <QHash>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -37,7 +39,14 @@ public:
     void                                attachEditor( QTextView* view );
     void                                detachEditor( QTextView* view );
     void                                setActiveEditor( QTextView* view );
-    void                                setActiveProjectId( const QString& projectId );
+    /// 활성 프로젝트가 바뀌었다.
+    ///
+    /// sourceRoot / workspaceRoot 는 **값으로** 받는다. ProjectRegistry 가
+    /// 돌려주는 SphinxProject 포인터는 다음 스캔에 무효화되므로 조율자가
+    /// 그것을 들고 있으면 안 된다.
+    void                                setActiveProject( const QString& projectId,
+                                                         const QString& sourceRoot,
+                                                         const QString& workspaceRoot );
     /// 용어집 인덱스를 주입한다. 소유권 없음.
     /// `:term:` 후보와 상세 패널의 정의 본문이 여기서 온다.
     void                                setGlossaryIndex( GlossaryIndex* glossary );
@@ -108,7 +117,13 @@ private:
                                                             QString* source ) const;
     /// 오프라인 표가 채우지 못하는 컨텍스트를 워크스페이스 인덱스로 메운다.
     [[nodiscard]] QList< CompletionDisplayItem >
-                                        localCandidatesFor( const rstcomplete::Context& context ) const;
+                                        localCandidatesFor( const rstcomplete::Context& context );
+    /// 파일 시스템에서 경로 후보를 만든다. 만든 것은 상세 패널이 쓸 수 있게
+    /// insertText 를 키로 남겨 둔다.
+    [[nodiscard]] QList< CompletionDisplayItem >
+                                        pathCandidatesFor( const rstcomplete::Context& context );
+    /// 경로 컨텍스트에서 글자가 하나 더 들어왔을 때 후보를 다시 만든다.
+    void                                recollectPathItems();
 
     [[nodiscard]] rstcomplete::Context  contextAtCaret() const;
     [[nodiscard]] QStringList           previousLinesAtCaret( int count ) const;
@@ -122,6 +137,13 @@ private:
     QTimer*                             debounce_ = nullptr;
     QPointer< QTextView >               activeView_;
     QString                             activeProjectId_;
+    /// Sphinx srcdir. "/" 로 시작하는 경로의 기준이다.
+    QString                             sourceRoot_;
+    /// 워크스페이스 루트. 전역 경로 인덱스의 뿌리다.
+    QString                             workspaceRoot_;
+    /// 지금 팝업에 올라간 경로 후보. insertText -> 후보.
+    /// 상세 패널이 절대 경로와 종류를 여기서 가져간다.
+    QHash< QString, rstpath::Candidate > pathCandidates_;
 
     QString                             pendingTrigger_;
     bool                                pendingExplicit_ = false;

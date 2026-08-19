@@ -197,8 +197,15 @@ bool CompletionCoordinator::buildDetailContent( const CompletionDisplayItem& ite
 }
 
 QList< CompletionDisplayItem >
-CompletionCoordinator::localCandidatesFor( const rstcomplete::Context& context ) const
+CompletionCoordinator::localCandidatesFor( const rstcomplete::Context& context )
 {
+    // 경로 후보는 우리가 직접 만든다. Esbonio 는 4종 directive 만, 확장자
+    // 필터 없이, 그것도 내부 Sphinx 빌드가 끝난 뒤에야 답한다.
+    if( rstpath::slotFor( context ) != nullptr )
+        return pathCandidatesFor( context );
+
+    pathCandidates_.clear();
+
     QList< CompletionDisplayItem > items;
     if( glossary_ == nullptr || context.kind != rstcomplete::ContextKind::RoleTarget )
         return items;
@@ -220,6 +227,60 @@ CompletionCoordinator::localCandidatesFor( const rstcomplete::Context& context )
         items.push_back( item );
     }
     return items;
+}
+
+QList< CompletionDisplayItem >
+CompletionCoordinator::pathCandidatesFor( const rstcomplete::Context& context )
+{
+    QList< CompletionDisplayItem > items;
+    pathCandidates_.clear();
+
+    const QString documentPath = editorPath();
+    if( documentPath.isEmpty() )
+        return items;
+
+    rstpath::Query query;
+    query.context = context;
+    query.documentDirectory = QFileInfo( documentPath ).absolutePath();
+    query.sourceRoot = sourceRoot_;
+    query.workspaceRoot = workspaceRoot_;
+
+    const QVector< rstpath::Candidate > found =
+        rstpath::oneLevelCandidates( query, rstpath::diskLister() );
+
+    items.reserve( static_cast< qsizetype >( found.size() ) );
+    for( const rstpath::Candidate& candidate : found )
+    {
+        // 라벨은 파일 이름뿐이어야 한다. 팝업의 퍼지 필터가 마지막 조각만 받기
+        // 때문이고, 그래야 강조 위치도 라벨 기준으로 맞는다.
+        CompletionDisplayItem item;
+        item.label = candidate.label;
+        item.insertText = candidate.insertText;
+        item.detail = candidate.detail;
+        item.kind = candidate.kind;
+        item.filterText = candidate.label;
+        item.scoreBias = candidate.scoreBias;
+        items.push_back( item );
+
+        pathCandidates_.insert( candidate.insertText, candidate );
+    }
+    return items;
+}
+
+void CompletionCoordinator::recollectPathItems()
+{
+    if( popup_.isNull() )
+        return;
+
+    offlineItems_ = pathCandidatesFor( shownContext_ );
+    popup_->setItems( offlineItems_ );
+    popup_->updateFilter( shownContext_.filterPrefix );
+    if( popup_->visibleCount() <= 0 )
+    {
+        hidePopup();
+        return;
+    }
+    showOrRefreshPopup();
 }
 
 void CompletionCoordinator::notifyGlossaryReady( const QString& projectId )
@@ -324,12 +385,19 @@ void CompletionCoordinator::setActiveEditor( QTextView* view )
     activeView_ = view;
 }
 
-void CompletionCoordinator::setActiveProjectId( const QString& projectId )
+void CompletionCoordinator::setActiveProject( const QString& projectId,
+                                           const QString& sourceRoot,
+                                           const QString& workspaceRoot )
 {
-    if( activeProjectId_ == projectId )
+    if( activeProjectId_ == projectId && sourceRoot_ == sourceRoot
+        && workspaceRoot_ == workspaceRoot )
+    {
         return;
+    }
 
     activeProjectId_ = projectId;
+    sourceRoot_ = sourceRoot;
+    workspaceRoot_ = workspaceRoot;
     hidePopup();
 }
 
@@ -383,6 +451,16 @@ void CompletionCoordinator::onCharAdded( const int character )
             return;
         }
         shownContext_ = context;
+
+        // 경로는 '/' 하나로 디렉터리가 바뀌어 후보 집합 자체가 달라진다.
+        // 필터만 좁히면 슬래시를 친 순간 목록이 통째로 죽는다.
+        // 디렉터리 나열은 값싸므로 글자마다 다시 만들어도 된다.
+        if( rstpath::slotFor( context ) != nullptr )
+        {
+            recollectPathItems();
+            return;
+        }
+
         popup_->updateFilter( context.filterPrefix );
         return;
     }
@@ -586,7 +664,14 @@ void CompletionCoordinator::insertCompletion( const QString& insertText )
                                                              : shownContext_.replaceLength;
 
     activeView_->replaceRangeAtCursor( qMax( 0, replaceLength ), insertText );
+
+    // 디렉터리를 골랐으면 그 안을 바로 보여 준다 (C++ include 자동완성의 감각).
+    // 프로그램이 넣은 글자는 sigCharAdded 를 내지 않으므로 저절로는 안 열린다.
+    const bool steppedIntoDirectory =
+        now.kind == rstcomplete::ContextKind::Path && insertText.endsWith( QLatin1Char( '/' ) );
     hidePopup();
+    if( steppedIntoDirectory )
+        QTimer::singleShot( 0, this, [ this ] { requestExplicit(); } );
 }
 
 // ── 컨텍스트 ──────────────────────────────────────────────

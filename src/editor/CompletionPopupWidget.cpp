@@ -1,6 +1,8 @@
 ﻿#include "stdafx.h"
 #include "CompletionPopupWidget.hpp"
 
+#include "core/solRstOfflineCompletions.hpp"
+
 #include "core/solThemeManager.hpp"
 
 #include <QApplication>
@@ -62,7 +64,7 @@ KindIcon iconForKind( const int kind )
         case 17: return { QLatin1Char( 'F' ), "#8b5cf6" };   // File
         case 18: return { QLatin1Char( 'R' ), "#3b82f6" };   // Reference -> :ref: 대상
         case 19: return { QLatin1Char( '/' ), "#8b5cf6" };   // Folder — 'D' 보다 '/' 가 즉시 읽힌다
-        case kCompletionKindImageFile:
+        case rstcomplete::kKindImageFile:
                  return { QChar( 0x25A3 ), "#10b981" };      // 상세에 프리뷰가 뜨는 이미지
         case 21: return { QLatin1Char( 'C' ), "#22c55e" };   // Constant
         case 22: return { QLatin1Char( 'S' ), "#e8a838" };   // Struct
@@ -491,7 +493,7 @@ void CompletionPopupWidget::rebuild()
         int score = 0;
         QVector< int > matches;
         if( fuzzyMatchCompletion( prefix_, candidate, &score, &matches ) )
-            visible.push_back( { &item, score, matches } );
+            visible.push_back( { &item, score + item.scoreBias, matches } );
     }
 
     // 접두가 없으면 공급자(LSP/오프라인 표)가 준 순서를 그대로 존중한다.
