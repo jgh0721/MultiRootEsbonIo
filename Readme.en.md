@@ -161,6 +161,11 @@ Encoding detection with BOM and line-ending control, a limited mode for very lar
 exit that keeps unsaved changes in the background, a column ruler, indentation guides, brace
 matching, change-history markers, and four word-wrap modes.
 
+When another program changes a file you have open — a build script, `git checkout`, another
+editor — the editor notices and reloads it. A tab with unsaved edits is asked about first.
+Settings → Text viewer picks between ignoring, reloading automatically, and asking; on network
+drives that never send notifications you can switch to polling.
+
 ### Themes and languages
 
 Light and dark, switched from **View → Toggle theme**, and the Windows title bar follows along.

@@ -217,6 +217,10 @@
         <translation type="unfinished">空白 %1</translation>
     </message>
     <message>
+        <source>그대로 두기</source>
+        <translation type="unfinished">このまま</translation>
+    </message>
+    <message>
         <source>나중에</source>
         <translation type="unfinished">後で</translation>
     </message>
@@ -227,6 +231,16 @@
     <message>
         <source>다른 이름으로 저장(&amp;A)...</source>
         <translation type="unfinished">名前を付けて保存(&amp;A)...</translation>
+    </message>
+    <message>
+        <source>다른 프로그램이 이 파일을 바꿨습니다.
+%1</source>
+        <translation type="unfinished">別のプログラムがこのファイルを変更しました。
+%1</translation>
+    </message>
+    <message>
+        <source>다시 불러오기</source>
+        <translation type="unfinished">再読み込み</translation>
     </message>
     <message>
         <source>단어 단위</source>
@@ -249,6 +263,10 @@
     <message>
         <source>디렉토리에 열 수 있는 직계 파일이 없습니다: %1</source>
         <translation type="unfinished">このディレクトリに直接開けるファイルがありません: %1</translation>
+    </message>
+    <message>
+        <source>디스크의 내용으로 다시 불러올까요?</source>
+        <translation type="unfinished">ディスクの内容で再読み込みしますか?</translation>
     </message>
     <message>
         <source>로그</source>
@@ -313,6 +331,14 @@
     <message>
         <source>바꿀 내용</source>
         <translation type="unfinished">置換後の文字列</translation>
+    </message>
+    <message>
+        <source>밖에서 바뀐 내용으로 다시 불러왔습니다: %1</source>
+        <translation type="unfinished">外部で変更された内容で再読み込みしました: %1</translation>
+    </message>
+    <message>
+        <source>밖에서 바뀐 파일</source>
+        <translation type="unfinished">外部で変更されたファイル</translation>
     </message>
     <message>
         <source>변경사항이 있습니다. 저장하시겠습니까?</source>
@@ -439,6 +465,10 @@
     <message>
         <source>이 버전 건너뛰기</source>
         <translation type="unfinished">このバージョンをスキップ</translation>
+    </message>
+    <message>
+        <source>이 탭에는 저장하지 않은 편집이 있습니다. 다시 불러오면 그 편집은 사라집니다.</source>
+        <translation type="unfinished">このタブには未保存の編集があります。再読み込みするとその編集は失われます。</translation>
     </message>
     <message>
         <source>이 파일은 이진 데이터로 보입니다.</source>
@@ -613,6 +643,10 @@
 %1</source>
         <translation type="unfinished">ファイルを開けません:
 %1</translation>
+    </message>
+    <message>
+        <source>파일이 밖에서 사라졌습니다. 편집 중인 내용은 그대로 두었습니다: %1</source>
+        <translation type="unfinished">ファイルが外部で削除されました。編集中の内容はそのまま残しました: %1</translation>
     </message>
     <message>
         <source>패키지 설치 실패: %1</source>
@@ -817,6 +851,10 @@
         <translation type="unfinished"> 日ごと</translation>
     </message>
     <message>
+        <source> 초</source>
+        <translation type="unfinished"> 秒</translation>
+    </message>
+    <message>
         <source>%1 문자열</source>
         <translation type="unfinished">%1 文字列</translation>
     </message>
@@ -855,6 +893,14 @@
     <message>
         <source>%1 함수/클래스</source>
         <translation type="unfinished">%1 関数・クラス</translation>
+    </message>
+    <message>
+        <source>&apos;파일 시스템 알림&apos; 은 운영체제가 변경을 통보해 주므로 기다리는 동안 비용이 없습니다.
+&apos;폴링&apos; 은 정해진 간격마다 파일을 확인합니다. 알림이 오지 않는 네트워크 드라이브나
+가상 파일 시스템에서 쓰십시오. 알림을 걸지 못한 파일은 자동으로 폴링으로 넘어갑니다.</source>
+        <translation type="unfinished">「ファイルシステム通知」はオペレーティングシステムが変更を通知するため、待機中のコストがありません。
+「ポーリング」は決まった間隔でファイルを確認します。通知が届かないネットワークドライブや
+仮想ファイルシステムで使ってください。通知を登録できなかったファイルは自動的にポーリングへ切り替わります。</translation>
     </message>
     <message>
         <source>(없음)</source>
@@ -939,6 +985,10 @@
     <message>
         <source>가져오기...</source>
         <translation type="unfinished">インポート...</translation>
+    </message>
+    <message>
+        <source>감지 방식:</source>
+        <translation type="unfinished">検知方式:</translation>
     </message>
     <message>
         <source>값</source>
@@ -1099,6 +1149,10 @@
         <translation type="unfinished">すべてのファイル</translation>
     </message>
     <message>
+        <source>무시</source>
+        <translation type="unfinished">無視</translation>
+    </message>
+    <message>
         <source>문자 단위</source>
         <translation type="unfinished">文字単位</translation>
     </message>
@@ -1129,6 +1183,10 @@
     <message>
         <source>사용</source>
         <translation type="unfinished">使用する</translation>
+    </message>
+    <message>
+        <source>사용자에게 묻기</source>
+        <translation type="unfinished">確認する</translation>
     </message>
     <message>
         <source>새 파일</source>
@@ -1197,12 +1255,22 @@
         <translation type="unfinished">開く</translation>
     </message>
     <message>
+        <source>열어 둔 파일을 다른 프로그램이 바꿨을 때 무엇을 할지 정합니다.
+저장하지 않은 편집이 있는 탭은 &apos;자동 불러오기&apos; 라도 먼저 묻습니다.</source>
+        <translation type="unfinished">開いているファイルを別のプログラムが変更したときの動作を決めます。
+未保存の編集があるタブは「自動で読み込む」でも先に確認します。</translation>
+    </message>
+    <message>
         <source>외부 UV를 사용하여 환경 구성</source>
         <translation type="unfinished">外部 UV を使用して環境を構成する</translation>
     </message>
     <message>
         <source>외부 리소스</source>
         <translation type="unfinished">外部リソース</translation>
+    </message>
+    <message>
+        <source>외부 편집 인식:</source>
+        <translation type="unfinished">外部編集の検知:</translation>
     </message>
     <message>
         <source>원래 들여쓰기 유지</source>
@@ -1231,6 +1299,10 @@
     <message>
         <source>자동</source>
         <translation type="unfinished">自動</translation>
+    </message>
+    <message>
+        <source>자동 불러오기</source>
+        <translation type="unfinished">自動で読み込む</translation>
     </message>
     <message>
         <source>자동 업데이트</source>
@@ -1423,8 +1495,20 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
         <translation type="unfinished">テキストビューア</translation>
     </message>
     <message>
+        <source>파일 시스템 알림 (권장)</source>
+        <translation type="unfinished">ファイルシステム通知 (推奨)</translation>
+    </message>
+    <message>
         <source>편집 범위:</source>
         <translation type="unfinished">編集範囲:</translation>
+    </message>
+    <message>
+        <source>폴링</source>
+        <translation type="unfinished">ポーリング</translation>
+    </message>
+    <message>
+        <source>폴링 간격:</source>
+        <translation type="unfinished">ポーリング間隔:</translation>
     </message>
     <message>
         <source>표시</source>
@@ -1524,6 +1608,10 @@ Markdown の本文を描く変換器はプログラムに内蔵されている�
     <message>
         <source>문자 단위</source>
         <translation type="unfinished">文字単位</translation>
+    </message>
+    <message>
+        <source>밖에서 바뀐 파일 다시 읽는 중...</source>
+        <translation type="unfinished">外部で変更されたファイルを読み込み中...</translation>
     </message>
     <message>
         <source>새 텍스트 파일.txt</source>

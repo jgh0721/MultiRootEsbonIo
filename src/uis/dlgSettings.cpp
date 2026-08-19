@@ -2,6 +2,7 @@
 #include "dlgSettings.hpp"
 
 #include "core/solAppSettings.hpp"
+#include "core/solExternalChangeWatcher.hpp"
 #include "core/solPythonEnvMgr.hpp"
 #include "core/solUpdateManifest.hpp"
 #include "core/solLanguageManager.hpp"
@@ -854,6 +855,53 @@ QWidget* QSettingsDialog::createEditorPage()
     m_textLargeFileMBSpin->setSuffix( QStringLiteral( " MB" ) );
     layout->addRow( tr( "대용량 파일 기준:" ), m_textLargeFileMBSpin );
 
+    // 외부 편집 인식
+    m_textExternalChangeActionCombo = new QComboBox( page );
+    m_textExternalChangeActionCombo->addItem( tr( "무시" ),
+        static_cast< int >( mrst::ExternalChangeWatcher::Action::Ignore ) );
+    m_textExternalChangeActionCombo->addItem( tr( "자동 불러오기" ),
+        static_cast< int >( mrst::ExternalChangeWatcher::Action::Reload ) );
+    m_textExternalChangeActionCombo->addItem( tr( "사용자에게 묻기" ),
+        static_cast< int >( mrst::ExternalChangeWatcher::Action::Ask ) );
+    m_textExternalChangeActionCombo->setToolTip(
+        tr( "열어 둔 파일을 다른 프로그램이 바꿨을 때 무엇을 할지 정합니다.\n"
+            "저장하지 않은 편집이 있는 탭은 '자동 불러오기' 라도 먼저 묻습니다." ) );
+    layout->addRow( tr( "외부 편집 인식:" ), m_textExternalChangeActionCombo );
+
+    m_textExternalChangeDetectionCombo = new QComboBox( page );
+    m_textExternalChangeDetectionCombo->addItem( tr( "파일 시스템 알림 (권장)" ),
+        static_cast< int >( mrst::ExternalChangeWatcher::Detection::Notify ) );
+    m_textExternalChangeDetectionCombo->addItem( tr( "폴링" ),
+        static_cast< int >( mrst::ExternalChangeWatcher::Detection::Poll ) );
+    m_textExternalChangeDetectionCombo->setToolTip(
+        tr( "'파일 시스템 알림' 은 운영체제가 변경을 통보해 주므로 기다리는 동안 비용이 없습니다.\n"
+            "'폴링' 은 정해진 간격마다 파일을 확인합니다. 알림이 오지 않는 네트워크 드라이브나\n"
+            "가상 파일 시스템에서 쓰십시오. 알림을 걸지 못한 파일은 자동으로 폴링으로 넘어갑니다." ) );
+    layout->addRow( tr( "감지 방식:" ), m_textExternalChangeDetectionCombo );
+
+    m_textExternalChangePollSpin = new QSpinBox( page );
+    m_textExternalChangePollSpin->setRange( mrst::ExternalChangeWatcher::minPollSeconds(),
+                                           mrst::ExternalChangeWatcher::maxPollSeconds() );
+    m_textExternalChangePollSpin->setSuffix( tr( " 초" ) );
+    layout->addRow( tr( "폴링 간격:" ), m_textExternalChangePollSpin );
+
+    // "무시" 면 아래 두 행은 의미가 없고, 알림 방식이면 간격도 의미가 없다.
+    // (알림을 걸지 못해 폴링으로 넘어간 파일에는 이 값이 그대로 쓰이므로 값
+    //  자체는 지운다기보다 비활성으로 남긴다.)
+    const auto updateExternalChangeRows = [this] {
+        const bool watching = m_textExternalChangeActionCombo->currentData().toInt()
+            != static_cast< int >( mrst::ExternalChangeWatcher::Action::Ignore );
+        const bool polling = m_textExternalChangeDetectionCombo->currentData().toInt()
+            == static_cast< int >( mrst::ExternalChangeWatcher::Detection::Poll );
+        m_textExternalChangeDetectionCombo->setEnabled( watching );
+        m_textExternalChangePollSpin->setEnabled( watching && polling );
+    };
+    connect( m_textExternalChangeActionCombo, QOverload< int >::of( &QComboBox::currentIndexChanged ), this,
+            [updateExternalChangeRows]( int ) { updateExternalChangeRows(); } );
+    connect( m_textExternalChangeDetectionCombo, QOverload< int >::of( &QComboBox::currentIndexChanged ), this,
+            [updateExternalChangeRows]( int ) { updateExternalChangeRows(); } );
+    updateExternalChangeRows();
+
     return page;
 }
 
@@ -1296,6 +1344,16 @@ void QSettingsDialog::loadTextViewerSettings()
         m_textSaveBomCombo->findData( s.value( "textView/saveBomMode", 1 ).toInt() ) );
     m_textHotExitCheck->setChecked( s.value( "textView/hotExitEnabled", true ).toBool() );
     m_textLargeFileMBSpin->setValue( s.value( "textView/largeFileMB", 1 ).toInt() );
+
+    // 외부 편집 인식. 기본값과 범위 판정은 감시자가 들고 있다 — 여기서 한 벌
+    // 더 쓰면 둘이 어긋나는 날이 온다.
+    m_textExternalChangeActionCombo->setCurrentIndex(
+        m_textExternalChangeActionCombo->findData(
+            static_cast< int >( mrst::ExternalChangeWatcher::configuredAction() ) ) );
+    m_textExternalChangeDetectionCombo->setCurrentIndex(
+        m_textExternalChangeDetectionCombo->findData(
+            static_cast< int >( mrst::ExternalChangeWatcher::configuredDetection() ) ) );
+    m_textExternalChangePollSpin->setValue( mrst::ExternalChangeWatcher::configuredPollSeconds() );
 }
 
 void QSettingsDialog::saveTextViewerSettings()
@@ -1336,6 +1394,9 @@ void QSettingsDialog::saveTextViewerSettings()
     s.setValue( "textView/saveBomMode", m_textSaveBomCombo->currentData().toInt() );
     s.setValue( "textView/hotExitEnabled", hotExitEnabled );
     s.setValue( "textView/largeFileMB", m_textLargeFileMBSpin->value() );
+    s.setValue( "textView/externalChangeAction", m_textExternalChangeActionCombo->currentData().toInt() );
+    s.setValue( "textView/externalChangeDetection", m_textExternalChangeDetectionCombo->currentData().toInt() );
+    s.setValue( "textView/externalChangePollSeconds", m_textExternalChangePollSpin->value() );
 
     if( wasHotExitEnabled && !hotExitEnabled )
         TextShadowBackupStore::deleteAllBackups();

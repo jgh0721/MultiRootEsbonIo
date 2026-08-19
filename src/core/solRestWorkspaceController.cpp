@@ -1419,6 +1419,21 @@ void WorkspaceController::attachDocument( QTextView* view )
         outlineDebounce_->start();
     } );
 
+    // 밖에서 바뀐 파일을 다시 불러왔다. 편집과 달리 **배경 탭에서도 일어난다** —
+    // 그래서 활성 여부를 먼저 따지지 않는다. 서버가 든 사본이 낡은 채로 남으면
+    // 그 탭으로 돌아가는 순간 엉뚱한 줄에 진단이 붙는다.
+    connect( view, &QTextView::sigFileReloadedFromDisk, this, [this, view]( const QString& ) {
+        DocumentContext* context = contextFor( view );
+        if( context == nullptr )
+            return;
+
+        syncDocumentToServer( *context, false );
+        if( activeView_ != view )
+            return;
+        requestPreviewBuild( false );
+        outlineDebounce_->start();
+    } );
+
     // 에디터 -> 프리뷰 스크롤 동기화.
     connect( view, &QTextView::sigViewportScrolled, this, [this, view] {
         if( activeView_ == view )

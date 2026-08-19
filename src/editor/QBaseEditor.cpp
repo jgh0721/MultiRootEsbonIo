@@ -482,6 +482,10 @@ bool QTextView::saveWithEncoding( const QString& filePath, const QString& encodi
     beginLoading( tr( "텍스트 저장 중..." ), 1000 );
     updateLoadingProgress( tr( "텍스트 저장 준비 중..." ), 0, 1000 );
 
+    // 외부 변경 감시가 우리 쓰기를 남의 편집으로 오해하지 않게 알려 준다.
+    // 이 신호와 sigFileSaved 는 반드시 짝이 맞아야 한다 — 실패 경로에서도 낸다.
+    emit sigFileWriteStarted( effectivePath );
+
     QPointer<QTextView> self( this );
     mrst::persistencePool().start( [ self,
                                           requestId,
@@ -541,12 +545,21 @@ bool QTextView::saveWithEncoding( const QString& filePath, const QString& encodi
                                                                            errorMessage,
                                                                            wasUntitledForHotExit,
                                                                            previousHotExitUntitledId ]( ) mutable {
-                                                                                                                      if( !self || self->m_openRequestId.load() != requestId )
+                                                                                                                      if( !self )
                                                                                                                           return;
+
+                                                                                                                      // 실패든 뒤늦은 완료든 sigFileWriteStarted 와 짝을 맞춘다.
+                                                                                                                      // 여기서 빠뜨리면 외부 변경 감시가 그 파일을 영원히 무시한다.
+                                                                                                                      if( self->m_openRequestId.load() != requestId )
+                                                                                                                      {
+                                                                                                                          emit self->sigFileSaved( effectivePath );
+                                                                                                                          return;
+                                                                                                                      }
 
                                                                                                                       if( !saved )
                                                                                                                       {
                                                                                                                           self->endLoading();
+                                                                                                                          emit self->sigFileSaved( effectivePath );
                                                                                                                           QMessageBox::warning( self,
                                                                                                                                                QTextView::tr( "저장 실패" ),
                                                                                                                                                errorMessage );
@@ -567,6 +580,7 @@ bool QTextView::saveWithEncoding( const QString& filePath, const QString& encodi
                                                                                                                       emit self->sigTitleChanged( self->title() );
                                                                                                                       emit self->statusChanged();
                                                                                                                       self->endLoading();
+                                                                                                                      emit self->sigFileSaved( effectivePath );
                                                                          },
                                                                          Qt::QueuedConnection );
     } );
@@ -674,6 +688,150 @@ void QTextView::reloadWithEncoding( const QString& encoding )
 }
 
 QStringList QTextView::availableEncodings() { return EncodingDetector::availableEncodings(); }
+
+// ═══════════════════════════════════════════════════════════
+// 외부 변경
+// ═══════════════════════════════════════════════════════════
+bool QTextView::reloadFromDisk()
+{
+    if( !m_editor || isLoading() )
+        return false;
+
+    const QString path = m_filePath;
+    if( path.trimmed().isEmpty() || !QFileInfo::exists( path ) )
+        return false;
+
+    // 사용자가 인코딩을 손으로 바꿔 두었으면 그 선택을 지킨다. 밖에서 파일이
+    // 바뀌었다는 사실이 "이건 CP949 다" 라는 사람의 판단을 뒤집을 이유는 없다.
+    const bool encodingOverridden = !m_encoding.isEmpty() && m_encoding != m_detectedEncoding;
+    const QString overriddenEncoding = m_encoding;
+    const TextFileSession::OpenMode openMode = m_fileSession.openMode();
+    // 캐럿과 스크롤은 위치(바이트 오프셋)로 되돌린다. 앞쪽에 줄이 끼어든 변경에서는
+    // 어긋나지만, 정확히 따라가려면 내용 대조가 필요하고 그 값은 이 기능에서 얻는
+    // 것에 비해 크다. 문서 맨 앞이면 0 이므로 흔한 경우(파일 끝에 덧붙임)는 맞다.
+    const int caretPosition = m_editor->currentPos();
+    const int topLine = m_editor->topDocumentLine();
+
+    const int requestId = m_openRequestId.fetch_add( 1 ) + 1;
+    const QString readMessage = tr( "밖에서 바뀐 파일 다시 읽는 중..." );
+    beginLoading( readMessage, 1000 );
+
+    QPointer< QTextView > self( this );
+    QThreadPool::globalInstance()->start(
+        [self, requestId, path, openMode, encodingOverridden, overriddenEncoding,
+         readMessage, caretPosition, topLine] {
+            TextFileSession session;
+            bool wasCanceled = false;
+            const bool opened = session.open( path,
+                                             openMode,
+                                             [self, requestId, readMessage]( qint64 bytesRead, qint64 totalBytes ) {
+                                                 if( !self )
+                                                     return;
+
+                                                 const int scaledValue = FileLoadHelper::scaledProgressValue( bytesRead, totalBytes );
+                                                 QMetaObject::invokeMethod( self, [self, requestId, readMessage, scaledValue] {
+                                                     if( !self || self->m_openRequestId.load() != requestId )
+                                                         return;
+                                                     self->updateLoadingProgress( readMessage, scaledValue, 1000 );
+                                                 }, Qt::QueuedConnection );
+                                             },
+                                             [self, requestId] {
+                                                 // openFile() 과 같은 이유로 종료 중에는 읽기를 끊는다.
+                                                 return mrst::isShuttingDown() || !self
+                                                     || self->m_openRequestId.load() != requestId;
+                                             },
+                                             &wasCanceled );
+
+            if( wasCanceled || !self )
+                return;
+
+            QString text;
+            if( opened )
+            {
+                text = session.decodeWithEncoding( encodingOverridden ? overriddenEncoding
+                                                                      : session.detectedEncoding() );
+            }
+
+            QMetaObject::invokeMethod( self,
+                                      [self, requestId, opened, session = std::move( session ),
+                                       text = std::move( text ), encodingOverridden,
+                                       overriddenEncoding, caretPosition, topLine]() mutable {
+                                          if( !self || self->m_openRequestId.load() != requestId )
+                                              return;
+
+                                          if( !opened )
+                                          {
+                                              // 읽지 못했으면 지금 버퍼가 여전히 최선이다.
+                                              self->endLoading();
+                                              return;
+                                          }
+
+                                          self->applyReloadedContent( std::move( session ),
+                                                                     text,
+                                                                     encodingOverridden,
+                                                                     overriddenEncoding,
+                                                                     caretPosition,
+                                                                     topLine );
+                                      },
+                                      Qt::QueuedConnection );
+        } );
+
+    return true;
+}
+
+void QTextView::applyReloadedContent( TextFileSession session,
+                                     const QString& text,
+                                     bool encodingOverridden,
+                                     const QString& overriddenEncoding,
+                                     int caretPosition,
+                                     int topLine )
+{
+    if( !m_editor )
+    {
+        endLoading();
+        return;
+    }
+
+    m_fileSession = std::move( session );
+    m_document.setPreviewOnly( m_fileSession.openMode() == TextFileSession::OpenMode::LimitedPreview );
+    m_document.setTruncated( m_fileSession.isTruncated() );
+    m_detectedEncoding = m_fileSession.detectedEncoding();
+    m_encoding = encodingOverridden ? overriddenEncoding : m_detectedEncoding;
+    m_document.setLineEnding( toDocumentLineEnding( detectLineEnding( text ) ) );
+
+    m_applyingFileContent = true;
+    m_editor->setText( text );
+    m_applyingFileContent = false;
+    m_editor->setModified( false );
+    m_editor->restoreViewState( caretPosition, topLine );
+
+    // 버퍼가 디스크와 같아졌다. 남아 있는 핫 엑시트 백업은 지난 내용이다.
+    discardHotExitBackup();
+    updateMetrics();
+    endLoading();
+
+    emit encodingChanged( m_encoding );
+    emit statusChanged();
+    emit sigTitleChanged( title() );
+    emit sigModifiedChanged( false );
+    emit sigFileReloadedFromDisk( m_filePath );
+    updateCopyAvailability();
+}
+
+void QTextView::markFileVanished()
+{
+    if( !m_editor || m_filePath.trimmed().isEmpty() )
+        return;
+
+    m_editor->setModified( true );
+    // 파일이 없으면 핫 엑시트 백업의 "원본과 크기·시각이 같은가" 검사가 실패해
+    // 복원 대상에서 빠진다. 그래도 남겨 둔다 — 파일이 되돌아오는 경우(다른 도구가
+    // 옮기는 중이었다)에는 그 검사가 다시 통하고, 아니면 다음 저장이 치운다.
+    scheduleHotExitBackup();
+    emit sigModifiedChanged( true );
+    emit statusChanged();
+    emit sigTitleChanged( title() );
+}
 
 bool QTextView::saveWithEncodingDialog( const QString& initialFilePath )
 {
