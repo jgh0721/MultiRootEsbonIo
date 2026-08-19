@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QObject>
 #include <QPointer>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
@@ -48,6 +49,19 @@ struct DocumentContext
     /// 초기 빌드를 유발하는 synthetic didSave 를 이미 보냈는가.
     /// Esbonio 는 didOpen 만으로는 빌드하지 않아 진단이 나오지 않는다.
     bool                                nudgedInitialBuild = false;
+};
+
+/// 이 문서의 프리뷰를 무엇이 만드는가.
+///
+/// `.md` 는 두 갈래로 갈린다. myst-parser 를 켠 실제 Sphinx 프로젝트에 속하면
+/// 그 프로젝트의 conf.py·테마·확장·상호참조가 그대로 반영되는 Sphinx 빌드가 낫고,
+/// 그렇지 않은 `.md`(소속 없는 파일, myst 없는 프로젝트의 README 류)는 Sphinx 가
+/// 아예 원본으로 읽지 않으므로 내장 렌더러가 유일한 길이다.
+enum class PreviewRoute
+{
+    None,         ///< 프리뷰를 만들 수 없다 (문서 없음)
+    Sphinx,
+    MarkdownJs
 };
 
 /// MainWindow 와 Sphinx/Esbonio 서비스 계층 사이의 조율자.
@@ -150,6 +164,8 @@ private:
     void                                resolveProject( DocumentContext& context );
     /// 실제 프로젝트를 먼저 찾고, 없으면 가상 프로젝트에서 찾는다.
     [[nodiscard]] const SphinxProject*  lookupProject( const QString& projectId ) const;
+    /// 이 문서의 프리뷰를 Sphinx 가 만드는가, 내장 Markdown 렌더러가 만드는가.
+    [[nodiscard]] PreviewRoute          routeFor( const DocumentContext& context ) const;
     void                                logProjectList();
     void                                onPreviewFinished( const PreviewBuildResult& result );
     [[nodiscard]] QString               writeShadowCopy( QTextView* view, const QString& path ) const;
@@ -228,6 +244,12 @@ private:
     /// 직전 빌드의 재파싱 시간이 이 값을 넘는 문서는 반영에서 제외한다.
     /// 음수면 제한 없음. Breathe 문서처럼 재파싱이 수십 초인 경우를 막는다.
     int                                 previewUnsavedMaxReadMs_ = 2000;
+    /// conf.py 정규식이 myst 라고 봤지만 빌더가 그 파일을 원본으로 읽지 않은
+    /// 프로젝트. 세션 한정이고 rescanProjects() 에서 비운다.
+    ///
+    /// 프로젝트 단위로 기억하므로 그 2.5초는 프로젝트마다 한 번만 낸다 —
+    /// 같은 프로젝트의 두 번째 `.md` 는 곧바로 내장 렌더러로 간다.
+    QSet< QString >                     mystDeniedProjects_;
     QStringList                         previewSources_;      ///< data-mrr-src 인덱스 -> 원본 경로
     QStringList                         previewProcessedSources_;  ///< 이번 빌드가 다시 읽은 파일들
     /// 마지막으로 빌드를 **요청한** 문서. 탭을 옮겼는데 프리뷰가 따라오지

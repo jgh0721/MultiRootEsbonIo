@@ -22,6 +22,11 @@ struct SphinxProject {
     std::filesystem::path sourcePath;
     std::string rootDoc = "index";
     std::filesystem::path buildPath;
+    /// conf.py 가 `.md` 를 Sphinx 원본으로 읽는가.
+    ///
+    /// `.md` 를 기존 Sphinx 빌드로 보낼지 내장 Markdown 렌더러로 보낼지 가르는
+    /// 유일한 기준이다. 스캐너가 채운다.
+    bool mystMarkdown = false;
 
     [[nodiscard]] bool contains(const std::filesystem::path& filePath) const;
 };
@@ -56,6 +61,20 @@ private:
 /// 빌더의 --auto-fix-legacy-conf(ast 파싱)가 하고, 이 함수는 런타임이 아직
 /// 준비되지 않은 시점의 폴백이다.
 [[nodiscard]] bool confDeclaresEmptyHtmlStyle(const std::filesystem::path& confPath);
+
+/// conf.py 가 `.md` 를 Sphinx 원본으로 다루는지 정규식으로 본다.
+///
+/// confDeclaresEmptyHtmlStyle 과 같은 한계를 갖는다 — 변수 대입, 조건부 append,
+/// 삼중따옴표 안의 텍스트는 잡지 못한다. 정확한 판정은 빌더 리포트가 하고
+/// (요청한 문서를 못 찾으면 primaryDocname 이 빈다) 이 함수는 **첫 프리뷰를
+/// 2.5초 기다리지 않기 위한 1차 판정**이다.
+///
+/// 술어를 일부러 Sphinx 쪽으로 기울인다. 거짓양성(myst 가 아닌데 그렇다고 본
+/// 경우)은 빌더 리포트가 자동으로 정정하지만, 거짓음성은 정정할 수단이 없다 —
+/// Sphinx 가 그 문서를 정상 렌더하므로 거부 신호가 나오지 않고, 조용히 품질만
+/// 떨어진다. 그래서 extensions 뿐 아니라 source_suffix 에 실린 `.md` 도 본다
+/// (recommonmark 나 커스텀 파서를 쓰는 프로젝트는 extensions 에 myst 가 없다).
+[[nodiscard]] bool confDeclaresMystMarkdown( const std::filesystem::path& confPath );
 [[nodiscard]] std::filesystem::path inferSourcePath(const std::filesystem::path& rootPath, const std::string& rootDoc);
 [[nodiscard]] std::wstring projectIdFor(const std::filesystem::path& workspaceRoot, const std::filesystem::path& rootPath);
 [[nodiscard]] const SphinxProject* resolveProjectForFile(const std::filesystem::path& filePath, const std::vector<SphinxProject>& projects);

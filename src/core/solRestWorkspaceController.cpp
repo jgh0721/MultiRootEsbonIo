@@ -2,6 +2,7 @@
 #include "solRestWorkspaceController.hpp"
 
 #include "solAppSettings.hpp"
+#include "solFileKinds.hpp"
 #include "solEsbonioLspClient.hpp"
 #include "solEsbonioLspPool.hpp"
 #include "solPreviewBridge.hpp"
@@ -690,6 +691,17 @@ void WorkspaceController::onPreviewFinished( const PreviewBuildResult& result )
     // 프리뷰는 마지막으로 제대로 렌더된 문서를 그대로 유지한다.
     if( !result.sourceFile.isEmpty() && result.primaryDocname.isEmpty() )
     {
+        // conf.py 정규식이 myst 라고 봤는데 빌더가 이 파일을 원본으로 읽지 않았다.
+        // ast 로 읽는 쪽이 진실이므로 그 판정을 정정해 기억한다. 프로젝트 단위라
+        // 이 2.5초는 그 프로젝트에서 한 번만 낸다.
+        if( filekinds::hasExtension( result.sourceFile, filekinds::markdownExtensions() )
+            && !result.projectId.isEmpty() )
+        {
+            mystDeniedProjects_.insert( result.projectId );
+            emit logMessage( QStringLiteral( "[md] %1 -> MarkdownJs (빌더가 원본으로 읽지 않음)" )
+                                .arg( QFileInfo( result.sourceFile ).fileName() ) );
+        }
+
         emit logMessage( tr( "프리뷰를 만들 수 없는 파일입니다(이 프로젝트의 원본이 아님): %1" )
                             .arg( QFileInfo( result.sourceFile ).fileName() ) );
         setPreviewStatus( {} );
@@ -1134,6 +1146,9 @@ void WorkspaceController::setWorkspaceRoot( const QString& root )
 
 void WorkspaceController::rescanProjects()
 {
+    // conf.py 를 고쳐 myst 를 켰을 수 있다. 정정 기록을 들고 있으면 그 프로젝트는
+    // 재스캔 뒤에도 내장 렌더러로 남는다.
+    mystDeniedProjects_.clear();
     registry_->rescanAsync();
 }
 
@@ -1374,6 +1389,17 @@ void WorkspaceController::setActiveDocument( QTextView* view )
         resolveProject( *context );
     }
 
+    // `.md` 는 소속과 conf.py 에 따라 프리뷰를 만드는 쪽이 갈린다. 화면만 보고는
+    // 어느 쪽이 돌았는지 알 수 없으므로 판정을 남긴다.
+    if( filekinds::hasExtension( context->path, filekinds::markdownExtensions() ) )
+    {
+        emit logMessage( QStringLiteral( "[md] %1 -> %2" )
+                            .arg( QFileInfo( context->path ).fileName(),
+                                  routeFor( *context ) == PreviewRoute::Sphinx
+                                      ? QStringLiteral( "Sphinx" )
+                                      : QStringLiteral( "MarkdownJs" ) ) );
+    }
+
     // 프로젝트가 바뀌었는지와 문서가 바뀌었는지는 별개다.
     //
     // 예전에는 projectId 가 같으면 곧바로 반환했는데, 한 프로젝트 안에 문서가
@@ -1505,6 +1531,31 @@ const SphinxProject* WorkspaceController::lookupProject( const QString& projectI
     if( const SphinxProject* project = registry_->findById( projectId ) )
         return project;
     return virtualProjects_->findById( projectId );
+}
+
+PreviewRoute WorkspaceController::routeFor( const DocumentContext& context ) const
+{
+    if( context.path.isEmpty() )
+        return PreviewRoute::None;
+
+    // .md 가 아니면 지금까지와 같다.
+    if( !filekinds::hasExtension( context.path, filekinds::markdownExtensions() ) )
+        return PreviewRoute::Sphinx;
+
+    // 어느 프로젝트에도 속하지 않는 파일. Sphinx 로 보낼 conf.py 가 없다.
+    if( context.projectId.isEmpty() )
+        return PreviewRoute::MarkdownJs;
+
+    // 빌더가 이 프로젝트에서 .md 를 원본으로 읽지 않는다고 이미 알려 주었다.
+    // (1차 판정인 conf.py 정규식이 틀렸던 경우다.)
+    if( mystDeniedProjects_.contains( context.projectId ) )
+        return PreviewRoute::MarkdownJs;
+
+    const SphinxProject* project = lookupProject( context.projectId );
+    if( project != nullptr && project->mystMarkdown )
+        return PreviewRoute::Sphinx;
+
+    return PreviewRoute::MarkdownJs;
 }
 
 void WorkspaceController::logProjectList()

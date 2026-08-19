@@ -44,6 +44,9 @@ private slots:
     void prefersNearestProject();
     void returnsNullForUnrelatedFile();
     void detectsEmptyHtmlStyle();
+    /// `.md` 를 Sphinx 로 보낼지 내장 렌더러로 보낼지 가르는 1차 판정이다.
+    /// 거짓양성은 빌더 리포트가 정정하지만 거짓음성은 정정할 수단이 없다.
+    void detectsMystMarkdown();
 };
 
 void TestProjectResolution::resolvesFileInSameDirectory()
@@ -141,6 +144,45 @@ void TestProjectResolution::detectsEmptyHtmlStyle()
     // 마지막 대입이 이긴다.
     writeFile( path, "html_style = ''\nhtml_style = 'later.css'\n" );
     QVERIFY( !confDeclaresEmptyHtmlStyle( toPath( path ) ) );
+}
+
+void TestProjectResolution::detectsMystMarkdown()
+{
+    QTemporaryDir temp;
+    QVERIFY( temp.isValid() );
+
+    const QString path = QDir( temp.path() ).filePath( QStringLiteral( "conf.py" ) );
+    const auto declares = [ &path ]( const char* body ) {
+        writeFile( path, body );
+        return confDeclaresMystMarkdown( toPath( path ) );
+    };
+
+    // extensions 에 실린 myst 계열.
+    QVERIFY( declares( "extensions = ['myst_parser']\n" ) );
+    QVERIFY( declares( "extensions = [\n    'sphinx.ext.autodoc',\n    'myst_parser',\n]\n" ) );
+    QVERIFY( declares( "extensions = ['myst_nb']\n" ) );
+
+    // source_suffix 로만 등록한 경우(recommonmark 나 커스텀 파서). extensions 에
+    // myst 가 없어도 .md 는 원본이다.
+    QVERIFY( declares( "source_suffix = {'.rst': 'restructuredtext', '.md': 'markdown'}\n" ) );
+    QVERIFY( declares( "source_suffix = ['.rst', '.markdown']\n" ) );
+
+    // 켜져 있지 않은 경우.
+    QVERIFY( !declares( "extensions = ['sphinx.ext.autodoc']\n" ) );
+    QVERIFY( !declares( "source_suffix = '.rst'\n" ) );
+    QVERIFY( !declares( "project = 'x'\n" ) );
+
+    // 주석은 세지 않는다. conf.py 에는 껐다 켠 흔적이 자주 남는다.
+    QVERIFY( !declares( "# extensions = ['myst_parser']\n" ) );
+    QVERIFY( !declares( "extensions = []  # 'myst_parser' 는 나중에\n" ) );
+
+    // exclude_patterns 의 글롭은 걸리지 않아야 한다 — 따옴표로 정확히 감싼
+    // '.md' 만 본다.
+    QVERIFY( !declares( "exclude_patterns = ['**/*.md', '_build']\n" ) );
+
+    // 파일이 없으면 거짓이다(스캔 중 지워진 경우).
+    QVERIFY( !confDeclaresMystMarkdown( toPath( QDir( temp.path() ).filePath(
+        QStringLiteral( "없는파일.py" ) ) ) ) );
 }
 
 MRST_REGISTER_TEST( TestProjectResolution );
