@@ -422,6 +422,7 @@ if(MRST_BUILD_TESTS)
             tests/TestRunner.hpp
             tests/ui/tst_CompletionPopupUi.cpp
             tests/ui/tst_ThemeColorKeys.cpp
+            tests/ui/tst_ScintillaTextMetrics.cpp
 
             src/editor/CompletionPopupWidget.cpp
             src/editor/CompletionPopupWidget.hpp
@@ -443,10 +444,15 @@ if(MRST_BUILD_TESTS)
     )
     # mrst_tests 와 같은 이유로 WebEngine 을 링크한다. stdafx.h 가 Qt 전 모듈을
     # 끌어오므로 실제로 쓰지 않아도 헤더 경로가 필요하다.
+    # tst_ScintillaTextMetrics 가 진짜 편집기 위젯을 만들어 폭 측정 비용을 잰다.
+    # 우리 래퍼(ScintillaQtDirectBackend) 가 아니라 맨 ScintillaEditBase 를 쓰는데,
+    # 재려는 성질이 Scintilla + PlatQt 의 것이지 래퍼의 것이 아니기 때문이다.
+    # 래퍼를 끌어오면 렉서 등록부와 테마 관리자까지 딸려온다.
     target_link_libraries(mrst_ui_tests PRIVATE
             Qt6::Core Qt6::Core5Compat Qt6::Gui Qt6::Widgets Qt6::Svg Qt6::Test
             Qt6::WebEngineCore Qt6::WebEngineWidgets
             qlementine
+            ScintillaEditBaseQt
     )
     if(MSVC)
         target_compile_options(mrst_ui_tests PRIVATE /utf-8 /permissive- /Zc:__cplusplus)
