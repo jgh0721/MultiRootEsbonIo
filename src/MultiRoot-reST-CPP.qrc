@@ -7,6 +7,14 @@
     </qresource>
     <qresource prefix="/preview">
         <file alias="mrr_preview.js">../tools/js/mrr_preview.js</file>
+        <!-- Markdown 프리뷰 셸. 별칭에서 버전을 벗겨 셸의 src 를 안정시키고,
+             디스크 파일 이름에는 버전을 남겨 감사할 수 있게 한다. 버전의 단일
+             출처는 src/core/solMarkdownAssets.hpp 이고 CMake 가 대조한다. -->
+        <file alias="md/shell.html">../tools/js/mrr_md_shell.html</file>
+        <file alias="md/mrr_markdown.js">../tools/js/mrr_markdown.js</file>
+        <file alias="md/mrr_markdown.css">../tools/js/mrr_markdown.css</file>
+        <file alias="md/vendor/markdown-it.min.js">../tools/js/vendor/markdown-it-15.0.0.umd.min.js</file>
+        <file alias="md/vendor/markdown-it-footnote.min.js">../tools/js/vendor/markdown-it-footnote-4.0.0.min.js</file>
     </qresource>
     <qresource prefix="/icons">
         <file alias="app.png">../resources/MultiRoot-reST.png</file>

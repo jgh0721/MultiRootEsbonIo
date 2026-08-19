@@ -20,7 +20,7 @@
     }
     window.__mrrPreviewInstalled = true;
 
-    var PROTOCOL_VERSION = 1;
+    var PROTOCOL_VERSION = 2;   // 2: markdownSourceChanged 위임 추가
     // 스크롤 위치를 대표하는 기준점. 0.5 = 창의 정중앙.
     var ANCHOR_RATIO = 0.5;
     // C++ 이 우리를 스크롤시킨 직후 우리가 다시 C++ 에 보고하면 무한 왕복이 된다.
@@ -317,6 +317,29 @@
         bridge.hotSwapRequested.connect(function (documentHtml, baseUrl, token) {
             hotSwap(documentHtml, baseUrl, token);
         });
+        bridge.markdownSourceChanged.connect(function (text, baseUrl, optionsJson, token) {
+            // 이 파일은 markdown 을 모른다. 셸 페이지가 심어 둔 훅에 넘기기만 한다 —
+            // rerenderDiagrams() 가 sphinxcontrib-mermaid 의 window.runMermaid 를
+            // 부르는 것과 같은 관계다. 그래야 이 파일이 Sphinx 페이지에도 주입된다는
+            // 사실과 양립한다(셸이 아니면 훅이 없어 무해히 실패를 보고한다).
+            if (typeof window.__mrrMarkdownRender !== "function") {
+                bridge.markdownRendered(token, false, "no renderer");
+                return;
+            }
+            var done = window.__mrrMarkdownRender(text, baseUrl, optionsJson);
+            Promise.resolve(done).then(function () {
+                // 렌더가 끝나면 문서 높이가 달라진다. 좌표 캐시는 그 뒤에 버려야
+                // 의미가 있다 (핫스왑 경로와 같은 이유).
+                invalidateCache();
+                bridge.markdownRendered(token, true, "");
+            }, function (error) {
+                invalidateCache();
+                bridge.markdownRendered(token, false, String(error));
+            });
+        });
+        // 셸 페이지의 렌더러가 C++ 에 사실을 올릴 통로. 이 파일은 markdown 을
+        // 모르므로 브리지 객체만 넘겨 준다.
+        window.__mrrBridge = bridge;
         bridge.ready(PROTOCOL_VERSION);
     }
 

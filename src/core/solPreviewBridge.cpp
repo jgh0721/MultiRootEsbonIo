@@ -139,4 +139,28 @@ void PreviewBridge::hotSwapResult( const int token, const bool ok, const QString
     emit hotSwapCompleted( token, ok, message );
 }
 
+void PreviewBridge::requestMarkdownRender( const QString& text, const QString& baseUrl,
+                                           const QString& optionsJson, const int token )
+{
+    if( !ready_ )
+        return;
+
+    emit markdownSourceChanged( text, baseUrl, optionsJson, token );
+}
+
+void PreviewBridge::markdownRendered( const int token, const bool ok, const QString& message )
+{
+    emit markdownRenderCompleted( token, ok, message );
+}
+
+void PreviewBridge::markdownRendererReady( const QString& origin, const QString& version )
+{
+    emit markdownRendererOrigin( origin, version );
+}
+
+void PreviewBridge::markdownAssetFailed( const QString& assetId, const QString& reason )
+{
+    emit markdownAssetLoadFailed( assetId, reason );
+}
+
 }  // namespace mrst

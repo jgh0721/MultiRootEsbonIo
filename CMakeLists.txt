@@ -49,6 +49,31 @@ unset(_mrstDefs)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         "${CMAKE_SOURCE_DIR}/uniqueLibs/solDocument_Defs.hpp")
 
+# ── Markdown 프리뷰 자산 버전 대조 ────────────────────────
+# 번들 파일의 버전과 CDN URL 의 버전이 어긋나면 같은 문서가 네트워크 상태에 따라
+# 다르게 렌더된다. 개발자에게는 늘 네트워크가 있으므로 그 버그는 개발 중에 절대
+# 보이지 않는다. 위 설정 파일 이름 대조와 같은 관용구로 못 박는다.
+file(READ "${CMAKE_SOURCE_DIR}/src/core/solMarkdownAssets.hpp" _mrstMdAssets)
+foreach(_pair "kMarkdownItVersion;markdown-it-@VER@.umd.min.js"
+              "kMarkdownItFootnoteVersion;markdown-it-footnote-@VER@.min.js")
+    list(GET _pair 0 _constant)
+    list(GET _pair 1 _pattern)
+    if(NOT _mrstMdAssets MATCHES "${_constant}[^\"]*\"([0-9.]+)\"")
+        message(FATAL_ERROR
+                "src/core/solMarkdownAssets.hpp 에서 ${_constant} 를 읽을 수 없다.")
+    endif()
+    string(REPLACE "@VER@" "${CMAKE_MATCH_1}" _vendorFile "${_pattern}")
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/tools/js/vendor/${_vendorFile}")
+        message(FATAL_ERROR
+                "번들 자산이 ${_constant}(${CMAKE_MATCH_1}) 과 어긋났다.\n"
+                "  기대한 파일 : tools/js/vendor/${_vendorFile}\n"
+                "  버전을 올릴 때는 파일과 이 상수, 그리고 qrc 의 경로를 함께 고친다.")
+    endif()
+endforeach()
+unset(_mrstMdAssets)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/src/core/solMarkdownAssets.hpp")
+
 # ── 버전 헤더 ─────────────────────────────────────────────
 # C++ 과 리소스 컴파일러(app.rc 의 VERSIONINFO)가 같은 값을 쓰도록
 # project(VERSION ...) 과 위 이름들을 헤더 하나로 흘려보낸다.
@@ -125,6 +150,7 @@ add_executable(${PROJECT_NAME}
         src/core/solSphinxPreviewController.hpp
         src/core/solPreviewBridge.cpp
         src/core/solPreviewBridge.hpp
+        src/core/solMarkdownAssets.hpp
         src/core/solRestCompletionCoordinator.cpp
         src/core/solRestCompletionCoordinator.hpp
         src/core/solRestOutlineService.cpp
