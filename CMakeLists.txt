@@ -388,6 +388,7 @@ if(MRST_BUILD_TESTS)
             tests/ui/uiMain.cpp
             tests/TestRunner.hpp
             tests/ui/tst_CompletionPopupUi.cpp
+            tests/ui/tst_ThemeColorKeys.cpp
 
             src/editor/CompletionPopupWidget.cpp
             src/editor/CompletionPopupWidget.hpp
