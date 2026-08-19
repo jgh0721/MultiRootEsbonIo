@@ -168,6 +168,8 @@ add_executable(${PROJECT_NAME}
         src/editor/CompletionPopupWidget.hpp
         src/editor/CompletionDetailPopup.cpp
         src/editor/CompletionDetailPopup.hpp
+        src/editor/FilePreviewLoader.cpp
+        src/editor/FilePreviewLoader.hpp
         src/editor/FindReplaceWidget.cpp
         src/editor/FindReplaceWidget.hpp
         src/editor/ColumnRulerWidget.hpp

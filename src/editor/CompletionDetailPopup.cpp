@@ -169,6 +169,9 @@ CompletionDetailPopup::CompletionDetailPopup( QWidget* parent )
     pathLabel_->setPalette( dimmed );
     metaLabel_->setPalette( dimmed );
     layout->addWidget( sourceLabel_ );
+    // 파일 모드는 높이가 고정이라 남는 공간이 생긴다. 스트레치가 없으면 라벨들이
+    // 그 공간을 나눠 가져 경로 블록과 프리뷰 상자 사이가 벌어진다.
+    layout->addStretch( 0 );
 
     applyMode( Mode::Text );
 }

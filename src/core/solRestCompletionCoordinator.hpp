@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "editor/CompletionDetailPopup.hpp"
+#include "editor/FilePreviewLoader.hpp"
 #include "editor/CompletionPopupWidget.hpp"
 #include "solEsbonioLspClient.hpp"
 #include "solRstOfflineCompletions.hpp"
@@ -165,6 +166,8 @@ private:
     int                                 dismissedPathLine_ = 0;
     /// 상세 패널이 지금 무엇을 보여 주는가. 뒤늦게 오는 프리뷰를 거른다.
     quint64                             detailToken_ = 0;
+    /// 상세 패널의 이미지 프리뷰. 디스크는 전부 이쪽 워커가 만진다.
+    FilePreviewLoader*                  previewLoader_ = nullptr;
 
     QString                             pendingTrigger_;
     bool                                pendingExplicit_ = false;

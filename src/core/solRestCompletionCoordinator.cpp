@@ -77,7 +77,14 @@ CompletionCoordinator::CompletionCoordinator( QObject* parent )
     , popup_( new CompletionPopupWidget( nullptr ) )
     , detail_( new CompletionDetailPopup( nullptr ) )
     , debounce_( new QTimer( this ) )
+    , previewLoader_( new FilePreviewLoader( this ) )
 {
+    connect( previewLoader_, &FilePreviewLoader::previewReady, this,
+            [ this ]( const FilePreviewLoader::Result& result ) {
+                if( !detail_.isNull() )
+                    detail_->applyPreview( result.token, result.pixmap, result.hasAlpha,
+                                          result.metaLine, result.note );
+            } );
     debounce_->setSingleShot( true );
     debounce_->setInterval( kDebounceMs );
     connect( debounce_, &QTimer::timeout, this, &CompletionCoordinator::flushTrigger );
@@ -206,6 +213,14 @@ bool CompletionCoordinator::showPathDetail( const CompletionDisplayItem& item )
     detail.showPreviewBox = !candidate.isDirectory;
 
     detailToken_ = detail_->setFileContent( detail );
+
+    if( previewLoader_ != nullptr && !candidate.absolutePath.isEmpty() )
+    {
+        // 고DPI 에서 흐려지지 않게 dpr 만큼 크게 디코딩한다.
+        previewLoader_->request( detailToken_, candidate.absolutePath,
+                                detail_->previewBoxSize(), detail_->devicePixelRatioF(),
+                                candidate.isDirectory );
+    }
     return true;
 }
 
@@ -482,6 +497,8 @@ void CompletionCoordinator::hidePopup()
     pendingExplicit_ = false;
     inFlight_ = {};
 
+    if( previewLoader_ != nullptr )
+        previewLoader_->cancel();
     if( !detail_.isNull() && detail_->isVisible() )
         detail_->hide();
 
