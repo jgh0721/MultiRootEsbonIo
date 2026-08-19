@@ -118,6 +118,8 @@ add_executable(${PROJECT_NAME}
         src/MultiRoot-reST-CPP.qrc
         src/core/solBaseView.cpp
         src/core/solBaseView.hpp
+        src/core/solExternalChangeWatcher.cpp
+        src/core/solExternalChangeWatcher.hpp
         src/core/solEsbonioLspClient.cpp
         src/core/solEsbonioLspClient.hpp
         src/core/solEsbonioLspPool.cpp
@@ -353,6 +355,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_GlossaryParsing.cpp
             tests/tst_UpdateVersioning.cpp
             tests/tst_AuthenticodeVerifier.cpp
+            tests/tst_ExternalChangeWatch.cpp
             tests/tst_Translations.cpp
             # 테스트 대상 프로덕션 소스는 OBJECT 라이브러리로 빼지 않고 명시 나열한다
             # (globbing 금지 + 단일 타깃이라는 이 프로젝트의 규칙을 따른다).
@@ -367,6 +370,7 @@ if(MRST_BUILD_TESTS)
             src/core/solRestOutlineService.cpp
             src/core/solWorkspaceSearch.cpp
             src/core/solWorkspaceSession.cpp
+            src/core/solExternalChangeWatcher.cpp
             src/core/solEsbonioLspClient.cpp
             src/core/solEsbonioLspClient.hpp
             src/utils/ProcessReaper.cpp

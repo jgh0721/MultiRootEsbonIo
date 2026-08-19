@@ -29,6 +29,7 @@ class QTimer;
 class QVBoxLayout;
 
 namespace mrst {
+class ExternalChangeWatcher;
 class PythonEnvManager;
 class UpdateService;
 class WorkspaceController;
@@ -170,6 +171,28 @@ private:
     void                                applyPersistedViewSettings( QBaseView* view );
     void                                applySettingsToAllViews();
 
+    // ── 외부 파일 편집 인식 ──
+    /// 감시 대상을 지금 열려 있는 탭 목록으로 맞춘다.
+    ///
+    /// 탭이 열리고 닫히고 "다른 이름으로 저장" 으로 경로가 바뀌는 것을 각각
+    /// 추적하는 대신 매번 목록을 다시 만든다 — 탭은 열 손가락으로 셀 수 있고,
+    /// 경로 하나를 놓치면 그 파일은 조용히 감시에서 빠진다.
+    void                                refreshExternalWatchSet();
+    void                                onExternalFileChanged( const QString& filePath );
+    void                                onExternalFileVanished( const QString& filePath );
+    /// 디스크 내용으로 다시 읽는다. 그 뷰가 이미 읽기/쓰기 중이면 끝난 뒤에
+    /// 다시 시도한다 — 감시자는 이미 기준을 갱신했으므로 여기서 포기하면 그
+    /// 변경은 다시 알려지지 않는다.
+    void                                reloadViewFromDisk( QTextView* view, const QString& filePath );
+    /// 물어보기로 결정된 파일을 줄 세운다. 자리를 비운 사이에 다섯 개가 바뀌면
+    /// 모달 대화상자 다섯 개가 겹쳐 뜨는 것을 막는다.
+    void                                queueExternalChangePrompt( const QString& filePath );
+    void                                flushExternalChangePrompts();
+    /// 그 경로를 열고 있는 텍스트 뷰. 없으면 nullptr.
+    QTextView*                          textViewForPath( const QString& filePath ) const;
+    /// 외부 변경 감시가 자기 저장을 남의 편집으로 오해하지 않게 뷰의 신호를 잇는다.
+    void                                connectViewWatchSignals( QBaseView* view );
+
     Ui::MainWindow                      Ui;
     QFileSystemModel*                   treLeftFolderTreeModel_ = nullptr;
 
@@ -196,6 +219,12 @@ private:
     QStringList                         m_recentFiles;
     static constexpr int                MaxRecentFiles = 10;
     bool                                m_shuttingDown = false;
+
+    mrst::ExternalChangeWatcher*        externalWatcher_ = nullptr;
+    /// "사용자에게 묻기" 대기열. 창이 활성일 때만 비운다 — 다른 앱에서 일하는
+    /// 사람 앞에 우리 모달을 들이밀지 않는다.
+    QStringList                         externalPromptQueue_;
+    bool                                externalPromptActive_ = false;
 
     // ── 단계적 기동 ──
     // 생성자는 껍데기만 만들고(P0), 무거운 것은 첫 페인트 뒤로 미룬다(P1).

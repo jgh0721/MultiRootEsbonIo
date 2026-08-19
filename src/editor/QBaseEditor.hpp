@@ -43,6 +43,20 @@ public:
     void          reloadWithEncoding( const QString& encoding );
     bool          saveWithEncoding( const QString& filePath, const QString& encoding, bool includeBom );
     bool          saveFileAs();
+
+    // ── 외부 변경 ──
+    /// 디스크의 내용으로 본문을 다시 채운다. 캐럿과 스크롤 위치는 지킨다.
+    ///
+    /// **저장하지 않은 편집이 있는지 여기서 따지지 않는다.** 그 판단(무시/자동
+    /// 불러오기/묻기)은 설정을 읽고 대화상자를 띄울 수 있는 MainWindow 의 몫이고,
+    /// 여기까지 왔다면 이미 덮어써도 된다는 결정이 난 것이다.
+    bool          reloadFromDisk();
+    /// 파일이 밖에서 사라졌다. 본문은 그대로 두고 "수정됨" 으로 표시한다.
+    ///
+    /// 탭을 닫지도, 본문을 비우지도 않는다. 사용자에게 남은 유일한 사본이 이
+    /// 버퍼이기 때문이다. 수정됨 표시가 붙어 있으면 탭을 닫을 때 저장을 묻는
+    /// 평소 경로가 그 사본을 지켜 준다.
+    void          markFileVanished();
     static QStringList availableEncodings();
 
     // ── 글꼴 ──
@@ -198,6 +212,16 @@ signals:
     void languageChanged( const QString& language );
     void statusChanged();
 
+    /// 이 파일에 우리가 쓰기를 시작했다 / 다 썼다.
+    ///
+    /// 외부 변경 감시가 자기 저장을 남의 편집으로 오해하지 않게 하는 데 쓴다.
+    /// 저장 경로가 넷(액션, 도구모음, 인코딩 대화상자, 다른 이름으로 저장)이지만
+    /// 전부 saveWithEncoding() 을 지나므로 신호는 거기 한 곳에서만 낸다.
+    void sigFileWriteStarted( const QString& filePath );
+    void sigFileSaved( const QString& filePath );
+    /// 디스크 내용으로 본문을 다시 채웠다. 프리뷰·LSP·개요를 다시 맞춰야 한다.
+    void sigFileReloadedFromDisk( const QString& filePath );
+
     /// 사용자가 문서를 편집했다 (파일 로드로 인한 변경은 제외).
     void sigTextEdited();
     /// 캐럿이 이동했다. 1-based 줄/열.
@@ -229,6 +253,13 @@ private:
     void handleDwellStart( int position, const QPoint& viewportPos );
 
     bool promptOpenModeForFile( const QString& filePath, TextFileSession::OpenMode& openMode ) const;
+    /// reloadFromDisk() 의 GUI 스레드 뒷부분. 읽기가 성공했을 때만 불린다.
+    void applyReloadedContent( TextFileSession session,
+                              const QString& text,
+                              bool encodingOverridden,
+                              const QString& overriddenEncoding,
+                              int caretPosition,
+                              int topLine );
     bool ensureEditorBackend();
     void loadPersistedEditorPreferences();
     void applyPersistedEditorPreferences( ScintillaEditorSettings& settings ) const;

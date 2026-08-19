@@ -3,6 +3,7 @@
 
 #include "core/solAppSettings.hpp"
 #include "core/solBaseView.hpp"
+#include "core/solExternalChangeWatcher.hpp"
 #include "core/solFileKinds.hpp"
 #include "core/solPythonEnvMgr.hpp"
 #include "core/solRestWorkspaceController.hpp"
@@ -306,6 +307,12 @@ namespace
     /// 최소화 상태로 시작하면 Paint 이벤트가 오지 않는다.
     constexpr int kStartupPaintFallbackMs = 400;
 
+    /// 외부 변경을 알리는 상태 표시줄 메시지가 머무는 시간. 자동 불러오기는
+    /// 조용히 일어나므로, 방금 화면이 바뀐 이유를 읽을 시간은 있어야 한다.
+    constexpr int kExternalChangeStatusMs = 5000;
+    /// 뷰가 읽기/쓰기 중이라 지금 다시 불러올 수 없을 때 다시 시도하는 간격.
+    constexpr int kExternalReloadRetryMs = 500;
+
     constexpr int kUpdateFirstCheckDelayMs = 5000;
     /// 며칠씩 켜 두는 앱이라 기동 시 한 번만 보면 주기 설정이 무의미해진다.
     constexpr int kUpdateHeartbeatMs = 6 * 60 * 60 * 1000;
@@ -506,6 +513,14 @@ MainWindow::MainWindow( QWidget* parent )
     setupPythonEnvironment();
     setupUpdateBar();
     setupUpdateService();
+
+    // 외부 파일 편집 인식. 지금은 감시할 파일이 없어 타이머도 스레드도 뜨지
+    // 않는다 — 탭이 열리면서 refreshExternalWatchSet() 이 채운다.
+    externalWatcher_ = new mrst::ExternalChangeWatcher( this );
+    connect( externalWatcher_, &mrst::ExternalChangeWatcher::sigFileChanged,
+            this, &MainWindow::onExternalFileChanged );
+    connect( externalWatcher_, &mrst::ExternalChangeWatcher::sigFileVanished,
+            this, &MainWindow::onExternalFileVanished );
 
     connect( controller_, &mrst::WorkspaceController::missingDependenciesDetected, this,
             [this]( const QString&, const QStringList& distributions, const QStringList& themes ) {
@@ -801,6 +816,16 @@ void MainWindow::changeEvent( QEvent* event )
     // 받고 있는 툴바를 delete(=deleteLater 가 아니다) 해 버린다.
     if( event != nullptr && event->type() == QEvent::LanguageChange )
         retranslateUi();
+
+    // 창으로 돌아왔다. 밖에서 편집기를 쓰고 온 직후가 여기다 — OS 알림이 오지
+    // 않는 경로(네트워크 드라이브, 컨테이너 안 볼륨)에서는 이것이 유일한 그물이고,
+    // 알림이 오는 경로에서도 자리를 비운 동안 모아 둔 질문을 지금 꺼낸다.
+    if( event != nullptr && event->type() == QEvent::ActivationChange && isActiveWindow() )
+    {
+        if( externalWatcher_ != nullptr )
+            externalWatcher_->recheckAll();
+        flushExternalChangePrompts();
+    }
 
     // 부모 구현을 삼키지 않는다. StyleChange / FontChange / WindowStateChange 도
     // 같은 함수로 들어온다.
@@ -1309,6 +1334,208 @@ void MainWindow::applySettingsToAllViews()
     }
 }
 
+// ═══════════════════════════════════════════════════════════
+// 외부 파일 편집 인식
+// ═══════════════════════════════════════════════════════════
+void MainWindow::refreshExternalWatchSet()
+{
+    if( externalWatcher_ == nullptr || m_tabWidget == nullptr )
+        return;
+
+    QStringList paths;
+    for( int i = 0; i < m_tabWidget->count(); ++i )
+    {
+        auto* view = qobject_cast< QBaseView* >( m_tabWidget->widget( i ) );
+        if( view == nullptr )
+            continue;
+
+        const QString path = view->currentFilePath();
+        if( !path.trimmed().isEmpty() )
+            paths.append( path );
+    }
+
+    externalWatcher_->setWatchedFiles( paths );
+}
+
+QTextView* MainWindow::textViewForPath( const QString& filePath ) const
+{
+    if( m_tabWidget == nullptr )
+        return nullptr;
+
+    const QString wanted = normalizeFilePath( filePath );
+    if( wanted.isEmpty() )
+        return nullptr;
+
+    for( int i = 0; i < m_tabWidget->count(); ++i )
+    {
+        auto* view = qobject_cast< QBaseView* >( m_tabWidget->widget( i ) );
+        if( view == nullptr )
+            continue;
+        if( normalizeFilePath( view->currentFilePath() ) == wanted )
+            return textViewOf( view );
+    }
+
+    return nullptr;
+}
+
+void MainWindow::connectViewWatchSignals( QBaseView* view )
+{
+    auto* textView = qobject_cast< QTextView* >( view );
+    if( textView == nullptr || externalWatcher_ == nullptr )
+        return;
+
+    connect( textView, &QTextView::sigFileWriteStarted, this, [this]( const QString& path ) {
+        externalWatcher_->beginSelfWrite( path );
+    } );
+    connect( textView, &QTextView::sigFileSaved, this, [this]( const QString& path ) {
+        // "다른 이름으로 저장" 이면 감시 대상 경로가 바뀐다. 목록을 먼저 맞춰야
+        // endSelfWrite() 가 새 경로의 항목을 찾아 기준을 다시 잡을 수 있다.
+        refreshExternalWatchSet();
+        externalWatcher_->endSelfWrite( path );
+    } );
+    connect( textView, &QBaseView::sigFileOpened, this, [this]( const QString& ) {
+        refreshExternalWatchSet();
+    } );
+    // 다시 읽기는 비동기다. 시작할 때 알리면 아직 옛 본문을 보고 있는 사람에게
+    // 끝났다고 말하는 셈이 된다.
+    //
+    // 감시자에게 markSynchronized() 를 부르지 않는다. 그것은 "지금 디스크" 를
+    // 기준으로 삼는데, 우리가 읽은 시점 뒤에 또 바뀌었다면 그 변경을 영원히
+    // 놓친다. 발견 시점의 기준을 그대로 두면 그 경우 한 번 더 알려 준다.
+    connect( textView, &QTextView::sigFileReloadedFromDisk, this, [this]( const QString& path ) {
+        statusBar()->showMessage( tr( "밖에서 바뀐 내용으로 다시 불러왔습니다: %1" )
+                                     .arg( QFileInfo( path ).fileName() ),
+                                 kExternalChangeStatusMs );
+    } );
+}
+
+void MainWindow::onExternalFileChanged( const QString& filePath )
+{
+    if( externalWatcher_ == nullptr || m_shuttingDown )
+        return;
+
+    QTextView* view = textViewForPath( filePath );
+    if( view == nullptr )
+    {
+        mrst::traceP( "watch.noView", filePath );
+        refreshExternalWatchSet();          // 이미 닫힌 탭이다
+        return;
+    }
+
+    if( externalWatcher_->action() == mrst::ExternalChangeWatcher::Action::Ignore )
+        return;
+
+    // 저장하지 않은 편집이 있으면 "자동 불러오기" 라도 반드시 묻는다. 여기서
+    // 조용히 덮으면 사용자가 방금 친 것이 되돌릴 수 없이 사라진다 — 그 설정을
+    // 고른 사람이 승낙한 것은 그 위험이 아니다.
+    const bool mayReloadSilently =
+        externalWatcher_->action() == mrst::ExternalChangeWatcher::Action::Reload
+        && !view->isModified();
+
+    if( !mayReloadSilently )
+    {
+        mrst::traceP( "watch.ask", filePath );
+        queueExternalChangePrompt( filePath );
+        return;
+    }
+
+    // 알림은 읽기가 끝난 뒤 sigFileReloadedFromDisk 를 받아서 낸다.
+    mrst::traceP( "watch.reload", filePath );
+    reloadViewFromDisk( view, filePath );
+}
+
+void MainWindow::reloadViewFromDisk( QTextView* view, const QString& filePath )
+{
+    if( view == nullptr || view->reloadFromDisk() )
+        return;
+
+    // 그 뷰가 이미 읽거나 쓰는 중이면 지금은 바꿀 수 없다. 감시자는 이 변경을
+    // 알리면서 기준을 갱신했으므로, 여기서 놓치면 **영원히** 반영되지 않는다.
+    // 로드는 반드시 끝나므로 이 되풀이는 스스로 멎는다.
+    if( !view->isLoading() )
+        return;
+
+    QTimer::singleShot( kExternalReloadRetryMs, this, [this, filePath] {
+        reloadViewFromDisk( textViewForPath( filePath ), filePath );
+    } );
+}
+
+void MainWindow::onExternalFileVanished( const QString& filePath )
+{
+    if( externalWatcher_ == nullptr || m_shuttingDown )
+        return;
+
+    QTextView* view = textViewForPath( filePath );
+    if( view == nullptr )
+    {
+        refreshExternalWatchSet();
+        return;
+    }
+
+    if( externalWatcher_->action() == mrst::ExternalChangeWatcher::Action::Ignore )
+        return;
+
+    // 탭을 닫지 않는다. 이 버퍼가 그 내용의 마지막 사본일 수 있다.
+    view->markFileVanished();
+    statusBar()->showMessage( tr( "파일이 밖에서 사라졌습니다. 편집 중인 내용은 그대로 두었습니다: %1" )
+                                 .arg( QFileInfo( filePath ).fileName() ),
+                             kExternalChangeStatusMs );
+}
+
+void MainWindow::queueExternalChangePrompt( const QString& filePath )
+{
+    const QString normalized = normalizeFilePath( filePath );
+    if( normalized.isEmpty() )
+        return;
+
+    if( !externalPromptQueue_.contains( normalized ) )
+        externalPromptQueue_.append( normalized );
+    flushExternalChangePrompts();
+}
+
+void MainWindow::flushExternalChangePrompts()
+{
+    // 창이 활성이 아니면 묻지 않는다. 다른 앱에서 일하는 사람 앞에 모달을
+    // 들이밀면 그 사람이 치던 글자가 어디로 갔는지 알 수 없게 된다. 창으로
+    // 돌아올 때 changeEvent() 가 이 함수를 다시 부른다.
+    if( externalPromptActive_ || m_shuttingDown || !isActiveWindow() )
+        return;
+
+    externalPromptActive_ = true;
+    while( !externalPromptQueue_.isEmpty() && !m_shuttingDown )
+    {
+        const QString path = externalPromptQueue_.takeFirst();
+        QTextView* view = textViewForPath( path );
+        if( view == nullptr )
+            continue;
+
+        const bool hadUnsavedEdits = view->isModified();
+
+        QMessageBox box( this );
+        box.setIcon( hadUnsavedEdits ? QMessageBox::Warning : QMessageBox::Question );
+        box.setWindowTitle( tr( "밖에서 바뀐 파일" ) );
+        box.setText( tr( "다른 프로그램이 이 파일을 바꿨습니다.\n%1" )
+                        .arg( QDir::toNativeSeparators( path ) ) );
+        box.setInformativeText( hadUnsavedEdits
+            ? tr( "이 탭에는 저장하지 않은 편집이 있습니다. 다시 불러오면 그 편집은 사라집니다." )
+            : tr( "디스크의 내용으로 다시 불러올까요?" ) );
+
+        QPushButton* reloadButton = box.addButton( tr( "다시 불러오기" ), QMessageBox::AcceptRole );
+        QPushButton* keepButton   = box.addButton( tr( "그대로 두기" ), QMessageBox::RejectRole );
+        // 잃을 것이 있는 쪽에서는 기본 단추를 안전한 쪽에 둔다. Enter 를 습관처럼
+        // 누르는 손이 저장하지 않은 편집을 지우게 만들지 않는다.
+        box.setDefaultButton( hadUnsavedEdits ? keepButton : reloadButton );
+        box.exec();
+
+        if( box.clickedButton() != reloadButton )
+            continue;
+
+        // 대화상자가 이벤트 루프를 돌린 동안 탭이 닫혔을 수 있다.
+        reloadViewFromDisk( textViewForPath( path ), path );
+    }
+    externalPromptActive_ = false;
+}
+
 QBaseView* MainWindow::currentView() const
 {
     return qobject_cast< QBaseView* >( m_tabWidget->currentWidget() );
@@ -1352,6 +1579,7 @@ int MainWindow::addViewTab( QBaseView* view )
 
     updateCopyActionState();
     updatePasteActionState();
+    refreshExternalWatchSet();
     return idx;
 }
 
@@ -1410,6 +1638,11 @@ void MainWindow::teardownView( QBaseView* view, const ViewTeardownOptions& optio
 
     if( options.deleteLater )
         view->deleteLater();
+
+    // 탭이 사라졌으므로 그 파일의 감시도 접는다. 종료 경로에서는 곧 창이
+    // 내려가니 굳이 목록을 다시 만들지 않는다.
+    if( !m_shuttingDown )
+        refreshExternalWatchSet();
 }
 
 void MainWindow::refreshCurrentViewUi()
@@ -1457,6 +1690,8 @@ void MainWindow::connectViewStatusSignals( QBaseView* view )
     //            updateStatusBar();
     //    } );
     //}
+
+    connectViewWatchSignals( view );
 
     if( auto* textView = qobject_cast< QTextView* >( view ) )
     {
@@ -1801,6 +2036,8 @@ void MainWindow::onSettings()
         // 스캐너 제외 목록 / 최대 Esbonio 프로세스 수 등도 즉시 반영한다.
         if( controller_ != nullptr )
             controller_->reloadSettings();
+        if( externalWatcher_ != nullptr )
+            externalWatcher_->reloadSettings();
         if( updateService_ != nullptr )
             updateService_->reloadSettings();
     } );

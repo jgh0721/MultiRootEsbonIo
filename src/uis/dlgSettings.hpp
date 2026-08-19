@@ -127,6 +127,9 @@ private:
     QComboBox*                          m_textSaveBomCombo = nullptr;
     QCheckBox*                          m_textHotExitCheck = nullptr;
     QSpinBox*                           m_textLargeFileMBSpin = nullptr;
+    QComboBox*                          m_textExternalChangeActionCombo = nullptr;
+    QComboBox*                          m_textExternalChangeDetectionCombo = nullptr;
+    QSpinBox*                           m_textExternalChangePollSpin = nullptr;
 
     /// 프리뷰 페이지
     QCheckBox*                          m_previewAllowRemoteCheck = nullptr;
