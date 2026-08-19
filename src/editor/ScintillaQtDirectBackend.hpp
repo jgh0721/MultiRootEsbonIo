@@ -185,6 +185,7 @@ private:
 	void clearLexer();
 	void applySyntaxStyles(bool dark);
 	void applyRstSyntaxStyles();
+	void applyMarkdownSyntaxStyles();
 	void setKeywordsForLexer(const QString& lexerKey);
 	void handleStyleNeeded(int endPosition);
 	/// reST 는 Lexilla 렉서가 없어 접기 깊이도 우리가 계산해 넣는다.

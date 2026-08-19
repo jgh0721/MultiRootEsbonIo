@@ -1142,6 +1142,21 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 		reinterpret_cast<sptr_t>("1"));
 	configureCodeFolding(m_codeFoldingEnabled);
 
+	// LexMarkdown 의 유일한 설정값이고, 켜지 않으면 제목에 색이 거의 붙지 않는다.
+	// eolfill=0 이면 SetStateAndZoom()(LexMarkdown.cxx:83) 이 '#' 글자에만 HEADERn
+	// 을 주고 제목 텍스트는 곧바로 SCE_MARKDOWN_DEFAULT 로 되돌린다. 색을 다 맞춰도
+	// "# 제목" 에서 '#' 하나만 물드는 것이 그 때문이다. 이름과 달리 배경을 줄 끝까지
+	// 채우는 것은 아니다(그것은 SCI_STYLESETEOLFILLED 다).
+	//
+	// SCI_COLOURISE 보다 **먼저** 보내야 한다. 속성은 렉서 인스턴스의 props 에
+	// 저장되고 ColorizeMarkdownDoc() 이 호출마다 다시 읽으므로, 뒤에 보내면 이번
+	// 칠하기에는 반영되지 않는다.
+	if (lexerKey == QStringLiteral("markdown")) {
+		m_editor->send(sciMessage(SCI_SETPROPERTY),
+			reinterpret_cast<uptr_t>("lexer.markdown.header.eolfill"),
+			reinterpret_cast<sptr_t>("1"));
+	}
+
 	m_currentLexerKey = lexerKey;
 	setKeywordsForLexer(lexerKey);
 	applySyntaxStyles(m_darkTheme);
@@ -1529,6 +1544,79 @@ void ScintillaQtDirectBackend::applyRstSyntaxStyles()
 	setStyleBold(STYLE_FIELD_NAME, true);
 }
 
+void ScintillaQtDirectBackend::applyMarkdownSyntaxStyles()
+{
+	if (!m_editor)
+		return;
+
+	auto& theme = ThemeManager::instance();
+	// ThemeManager::color() 는 없는 키에 자홍색을 돌려준다. 기본값을 한 곳이라도
+	// 빠뜨리면 편집기가 통째로 자홍색이 되므로 여기서 한 번 더 막는다.
+	// (tst_ThemeColorKeys 가 그 누락을 잡지만, 테스트를 끄고 빌드하는 경로도 있다.)
+	const auto mdColour = [&theme](const QString& token) {
+		const QString key = QStringLiteral("text.lexer.markdown.%1").arg(token);
+		return theme.hasColor(key) ? theme.color(key)
+		                           : theme.color(QStringLiteral("text.foreground"));
+	};
+
+	// SCE_MARKDOWN_DEFAULT / LINE_BEGIN / PRECHAR 는 일부러 건드리지 않는다.
+	// LINE_BEGIN 은 줄바꿈 문자에만, PRECHAR 는 선행 공백에만 남는 과도 상태라
+	// 색을 주면 보이지 않는 곳을 칠하는 셈이 된다.
+
+	// 제목은 색상(hue)을 유지하며 옅어지고 H4 부터 굵기를 뺀다 — 깊이를 두 축으로
+	// 표시하는 것이다. 글자 크기는 바꾸지 않는다: 줄 높이가 들쭉날쭉해지면
+	// 프리뷰의 픽셀 비례 스크롤 동기화가 비선형이 된다(reST 도 같은 이유로 안 한다).
+	const int headerStyles[] = {
+		SCE_MARKDOWN_HEADER1, SCE_MARKDOWN_HEADER2, SCE_MARKDOWN_HEADER3,
+		SCE_MARKDOWN_HEADER4, SCE_MARKDOWN_HEADER5, SCE_MARKDOWN_HEADER6
+	};
+	for (int level = 0; level < 6; ++level) {
+		setStyleForeground(headerStyles[level],
+			mdColour(QStringLiteral("heading%1").arg(level + 1)));
+		setStyleBold(headerStyles[level], level < 3);
+	}
+
+	// `**`(STRONG1)과 `__`(STRONG2), `*`(EM1)과 `_`(EM2)는 의미가 같으므로 키도
+	// 하나로 묶는다. 사용자가 둘을 다른 색으로 두고 싶어할 이유가 없다.
+	for (const int style : {SCE_MARKDOWN_STRONG1, SCE_MARKDOWN_STRONG2}) {
+		setStyleForeground(style, mdColour(QStringLiteral("strong")));
+		setStyleBold(style, true);
+	}
+	for (const int style : {SCE_MARKDOWN_EM1, SCE_MARKDOWN_EM2}) {
+		setStyleForeground(style, mdColour(QStringLiteral("emphasis")));
+		setStyleItalic(style, true);
+	}
+
+	for (const int style : {SCE_MARKDOWN_ULIST_ITEM, SCE_MARKDOWN_OLIST_ITEM}) {
+		setStyleForeground(style, mdColour(QStringLiteral("listMarker")));
+		setStyleBold(style, true);
+	}
+
+	setStyleForeground(SCE_MARKDOWN_BLOCKQUOTE, mdColour(QStringLiteral("blockquote")));
+	setStyleItalic(SCE_MARKDOWN_BLOCKQUOTE, true);
+
+	// Scintilla 의 스타일에는 취소선 속성이 없다(SCI_STYLESET* 에 STRIKE 가 없다).
+	// "지워진 글" 은 색으로만 표현한다.
+	setStyleForeground(SCE_MARKDOWN_STRIKEOUT, mdColour(QStringLiteral("strikeout")));
+
+	setStyleForeground(SCE_MARKDOWN_HRULE, mdColour(QStringLiteral("hrule")));
+
+	setStyleForeground(SCE_MARKDOWN_LINK, mdColour(QStringLiteral("link")));
+	setStyleUnderline(SCE_MARKDOWN_LINK, true);
+
+	// LexMarkdown 은 ``` 펜스를 모른다 — `~~~` 만 CODEBK 로 처리하고(:311),
+	// ``` 는 DEFAULT 에서 sc.Match("``") 에 걸려 CODE2 로 들어간 뒤 닫는 펜스까지
+	// 그 상태를 유지한다. 결과적으로 ``` 블록 전체가 CODE2 가 되므로(실측)
+	// 인라인 코드와 같은 색을 쓰는 것이 오히려 맞다.
+	const QColor codeBack = mdColour(QStringLiteral("codeBackground"));
+	for (const int style : {SCE_MARKDOWN_CODE, SCE_MARKDOWN_CODE2}) {
+		setStyleForeground(style, mdColour(QStringLiteral("code")));
+		setStyleBackground(style, codeBack);
+	}
+	setStyleForeground(SCE_MARKDOWN_CODEBK, mdColour(QStringLiteral("codeBlock")));
+	setStyleBackground(SCE_MARKDOWN_CODEBK, codeBack);
+}
+
 void ScintillaQtDirectBackend::applyThemeColors(bool dark)
 {
 	if (!m_editor)
@@ -1596,6 +1684,16 @@ void ScintillaQtDirectBackend::applySyntaxStyles(bool dark)
 	// reST 는 Lexilla 스타일 번호 체계를 쓰지 않으므로 별도 경로.
 	if (m_currentLexerKey == QStringLiteral("rst-container")) {
 		applyRstSyntaxStyles();
+		return;
+	}
+
+	// Markdown 도 별도 경로다. 아래 두 단계(하드코딩 RGB / 일반 토큰 override)는
+	// SCI_STYLESETFORE 만 보내므로 굵기·기울임·밑줄·배경을 표현할 수 없는데,
+	// Markdown 은 굵게(**)·기울임(*)·링크·코드 배경이 곧 문법이다. 그리고
+	// colourKeyForToken 의 text.lexer.<token> 승격은 md 에 대응 토큰이 없다
+	// (comment/number/keyword 가 마크다운에는 존재하지 않는다).
+	if (m_currentLexerKey == QStringLiteral("markdown")) {
+		applyMarkdownSyntaxStyles();
 		return;
 	}
 
