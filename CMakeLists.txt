@@ -375,6 +375,59 @@ if(MRST_BUILD_TESTS)
     endif()
 
     add_test(NAME mrst_tests COMMAND mrst_tests)
+
+    # ── 위젯 테스트 ────────────────────────────────────────
+    # mrst_tests 는 QCoreApplication 이라 위젯을 만들 수 없다. 그 규칙을 깨는 대신
+    # 타깃을 따로 둔다 — 순수 로직 스위트는 계속 빠르고 항상 켜져 있다.
+    #
+    # 여기서는 진짜 위젯을 만들어 QTest 로 두드린다. 화면 자동화(SendInput/
+    # PrintWindow)와 달리 실제 OS 포커스가 필요 없고, 시그널 횟수를 셀 수 있으며,
+    # QWidget::grab() 이 컴포지터를 거치지 않아 색을 결정적으로 검사할 수 있다.
+    # 헤드리스로 돌리려면 `-platform offscreen` 을 준다.
+    add_executable(mrst_ui_tests
+            tests/ui/uiMain.cpp
+            tests/TestRunner.hpp
+            tests/ui/tst_CompletionPopupUi.cpp
+
+            src/editor/CompletionPopupWidget.cpp
+            src/editor/CompletionPopupWidget.hpp
+            src/editor/CompletionDetailPopup.cpp
+            src/editor/CompletionDetailPopup.hpp
+            src/core/solRstOfflineCompletions.cpp
+            src/core/solRstPathCompletion.cpp
+            src/core/solFileKinds.cpp
+            src/core/solThemeManager.cpp
+            src/core/solThemeManager.hpp
+            src/core/solQlementineTheme.cpp
+            src/core/solQlementineTheme.hpp
+    )
+    target_include_directories(mrst_ui_tests PRIVATE
+            "${CMAKE_SOURCE_DIR}"
+            "${CMAKE_SOURCE_DIR}/src"
+            "${CMAKE_SOURCE_DIR}/tests"
+            "${CMAKE_SOURCE_DIR}/uniqueLibs"
+    )
+    # mrst_tests 와 같은 이유로 WebEngine 을 링크한다. stdafx.h 가 Qt 전 모듈을
+    # 끌어오므로 실제로 쓰지 않아도 헤더 경로가 필요하다.
+    target_link_libraries(mrst_ui_tests PRIVATE
+            Qt6::Core Qt6::Core5Compat Qt6::Gui Qt6::Widgets Qt6::Svg Qt6::Test
+            Qt6::WebEngineCore Qt6::WebEngineWidgets
+            qlementine
+    )
+    if(MSVC)
+        target_compile_options(mrst_ui_tests PRIVATE /utf-8 /permissive- /Zc:__cplusplus)
+    endif()
+
+    add_test(NAME mrst_ui_tests COMMAND mrst_ui_tests)
+    # 헤드리스(`-platform offscreen`)로 돌릴 때 쓸 플러그인은 배포 디렉터리에 없다.
+    # windeployqt 가 qwindows 만 놓고 가는데, 릴리스 패키징이 그 목록을 검증하므로
+    # 거기에 offscreen 을 더할 수도 없다. Qt 설치본을 가리켜 준다.
+    # 플러그인을 못 찾으면 Qt 는 **모달 대화상자**를 띄우고 멈춘다 — CI 에서는
+    # 실패가 아니라 타임아웃으로만 보이므로 원인을 찾기 고약하다.
+    get_filename_component(MRST_QT_PLATFORM_PLUGIN_DIR
+            "${Qt6_DIR}/../../../plugins/platforms" ABSOLUTE)
+    set_tests_properties(mrst_ui_tests PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM_PLUGIN_PATH=${MRST_QT_PLATFORM_PLUGIN_DIR}")
 endif()
 
 # ── 번역 ──────────────────────────────────────────────────
