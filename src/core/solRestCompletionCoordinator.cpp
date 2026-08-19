@@ -41,15 +41,6 @@ bool isTriggerCharacter( const int character )
     }
 }
 
-/// Esbonio v2 가 등록한 트리거 문자. 그 외에는 triggerKind=1(Invoked) 로 보낸다.
-bool isEsbonioTriggerCharacter( const QString& character )
-{
-    static const QStringList registered{ QStringLiteral( ":" ), QStringLiteral( "/" ),
-                                        QStringLiteral( "<" ), QStringLiteral( ">" ),
-                                        QStringLiteral( " " ), QStringLiteral( "`" ) };
-    return registered.contains( character );
-}
-
 CompletionDisplayItem toDisplay( const rstcomplete::Item& item )
 {
     return { item.label, item.insertText, item.detail, item.kind, item.label };
@@ -710,8 +701,14 @@ void CompletionCoordinator::askLsp( const QString& triggerCharacter )
     inFlight_.path = path;
     inFlight_.line = activeView_->caretLine();
     inFlight_.column = activeView_->caretColumn();
-    inFlight_.triggerCharacter = isEsbonioTriggerCharacter( triggerCharacter ) ? triggerCharacter
-                                                                              : QString{};
+    // **언제나 Invoked 로 보낸다.** Esbonio 의 _trigger_characters_match()
+    // (server/feature.py:207) 는 triggerKind 가 TriggerCharacter 면 그 문자를
+    // **자기 트리거에 등록한** 기능만 돌리고, Invoked 면 전부 돌린다.
+    // 그래서 ".. " 를 쳐서 저절로 뜬 목록과 같은 자리에서 Ctrl+Space 를 눌러
+    // 부른 목록이 서로 달랐다. 등록 문자 집합은 기능마다 다르므로 클라이언트가
+    // 맞힐 수 있는 값이 아니다.
+    Q_UNUSED( triggerCharacter );
+    inFlight_.triggerCharacter = QString{};
 
     // 받는 쪽이 registerRequestId() 로 id 를 돌려준다 (직접 연결이라 동기적이다).
     emit lspCompletionRequested( inFlight_.path, inFlight_.line, inFlight_.column,

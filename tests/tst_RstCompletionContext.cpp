@@ -30,6 +30,7 @@ private slots:
     void stripsLeadingSpaceInDirectiveContext();
     void keepsLeadingSpaceOutsideDirectiveContext();
     void keepsTrailingSpaceOfInsertText();
+    void addsTrailingSpaceSoDirectivesDoNotDuplicate();
     void dropsDuplicateAndEmptyInsertText();
     void stripsSnippetControlCharacter();
     void limitsItemCount();
@@ -212,8 +213,10 @@ void TestRstCompletionContext::stripsLeadingSpaceInDirectiveContext()
         normalizeLspItems( items( { QStringLiteral( " image::" ), QStringLiteral( " note::" ) } ),
                           QStringLiteral( ".. " ), 4 );
 
+    // 끝 공백은 여기서 **붙인다**. 우리 표가 "image:: " 를 쓰기 때문이다 —
+    // 맞춰 두지 않으면 같은 directive 가 목록에 두 번 뜬다.
     QCOMPARE( insertTexts( normalized ),
-             QStringList( { QStringLiteral( "image::" ), QStringLiteral( "note::" ) } ) );
+             QStringList( { QStringLiteral( "image:: " ), QStringLiteral( "note:: " ) } ) );
 }
 
 void TestRstCompletionContext::keepsLeadingSpaceOutsideDirectiveContext()
@@ -230,6 +233,21 @@ void TestRstCompletionContext::keepsTrailingSpaceOfInsertText()
         normalizeLspItems( items( { QStringLiteral( " code-block:: " ) } ),
                           QStringLiteral( ".. co" ), 6 );
     QCOMPARE( insertTexts( normalized ), QStringList( { QStringLiteral( "code-block:: " ) } ) );
+}
+
+void TestRstCompletionContext::addsTrailingSpaceSoDirectivesDoNotDuplicate()
+{
+    // 우리 표는 "image:: ", Esbonio 는 "image::" 를 준다. 끝 공백 하나
+    // 때문에 중복 제거(insertText 기준)를 빠져나가 목록에 image 가 두 번 떴다.
+    const QVector< Item > fromLsp =
+        normalizeLspItems( items( { QStringLiteral( " image::" ) } ),
+                          QStringLiteral( ".. im" ), 6 );
+    QCOMPARE( insertTexts( fromLsp ), QStringList( { QStringLiteral( "image:: " ) } ) );
+
+    // 이제 우리 표와 같은 문자열이라 병합에서 하나로 접힌다.
+    const QVector< Item > offline = items( { QStringLiteral( "image:: " ) } );
+    const QVector< Item > merged = finalizeItems( mergeItems( fromLsp, offline ) );
+    QCOMPARE( merged.size(), 1 );
 }
 
 void TestRstCompletionContext::dropsDuplicateAndEmptyInsertText()

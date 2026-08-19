@@ -363,6 +363,33 @@ int CompletionPopupWidget::visibleCount() const
     return list_ != nullptr ? list_->count() : 0;
 }
 
+int CompletionPopupWidget::pageStep() const
+{
+    if( list_ == nullptr || list_->count() <= 0 )
+        return 1;
+    const int rowHeight = qMax( list_->sizeHintForRow( 0 ), 1 );
+    const int visible = qMax( 1, list_->viewport()->height() / rowHeight );
+    return qMin( visible, list_->count() );
+}
+
+void CompletionPopupWidget::selectRow( const int row )
+{
+    if( list_->count() <= 0 )
+        return;
+    list_->setCurrentRow( qBound( 0, row, list_->count() - 1 ) );
+    list_->scrollToItem( list_->currentItem() );
+}
+
+void CompletionPopupWidget::selectNextPage()
+{
+    selectRow( list_->currentRow() + pageStep() );
+}
+
+void CompletionPopupWidget::selectPreviousPage()
+{
+    selectRow( list_->currentRow() - pageStep() );
+}
+
 void CompletionPopupWidget::selectNext()
 {
     if( list_->count() <= 0 )
@@ -418,6 +445,14 @@ bool CompletionPopupWidget::handleKeyPress( QKeyEvent* event )
             return true;
         case Qt::Key_Up:
             selectPrevious();
+            return true;
+        // 삼켜야 한다. 그냥 두면 목록은 그대로인 채 **편집기가** 스크롤되어
+        // 캐럿과 팝업이 따로 논다.
+        case Qt::Key_PageDown:
+            selectNextPage();
+            return true;
+        case Qt::Key_PageUp:
+            selectPreviousPage();
             return true;
         case Qt::Key_Return:
         case Qt::Key_Enter:

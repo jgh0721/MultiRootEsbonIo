@@ -40,6 +40,7 @@ private slots:
     void hidesWhenFilterMatchesNothing();
     void wideningTheFilterRestoresTheFullList();
     void navigatesWithArrowKeysAndAcceptsWithEnter();
+    void pageKeysMoveTheListAndAreSwallowed();
 
     void detailPanelDoesNotOverlapTheList();
     void filePanelKeepsFixedSizeAcrossItems();
@@ -177,6 +178,32 @@ void TestCompletionPopupUi::navigatesWithArrowKeysAndAcceptsWithEnter()
     QVERIFY( popup.handleKeyPress( &enter ) );
     QCOMPARE( accepted.count(), 1 );
     QCOMPARE( accepted.first().first().toString(), QStringLiteral( "beta.png" ) );
+}
+
+void TestCompletionPopupUi::pageKeysMoveTheListAndAreSwallowed()
+{
+    CompletionPopupWidget popup;
+    QList< CompletionDisplayItem > many;
+    for( int index = 0; index < 40; ++index )
+        many << item( QStringLiteral( "item%1" ).arg( index, 2, 10, QLatin1Char( '0' ) ) );
+    popup.setItems( many );
+    popup.showAt( QPoint( 80, 80 ) );
+    QVERIFY( QTest::qWaitForWindowExposed( &popup ) );
+
+    QCOMPARE( popup.currentItem().label, QStringLiteral( "item00" ) );
+
+    // 삼키지 않으면 목록은 그대로인 채 편집기가 스크롤되어 캐럿과 팝업이 따로 논다.
+    QKeyEvent pageDown( QEvent::KeyPress, Qt::Key_PageDown, Qt::NoModifier );
+    QVERIFY( popup.handleKeyPress( &pageDown ) );
+    QVERIFY( popup.currentItem().label != QStringLiteral( "item00" ) );
+
+    QKeyEvent pageUp( QEvent::KeyPress, Qt::Key_PageUp, Qt::NoModifier );
+    QVERIFY( popup.handleKeyPress( &pageUp ) );
+    // 한 칸 이동과 달리 순환하지 않는다. 처음으로 되돌아올 뿐이다.
+    QCOMPARE( popup.currentItem().label, QStringLiteral( "item00" ) );
+
+    QVERIFY( popup.handleKeyPress( &pageUp ) );
+    QCOMPARE( popup.currentItem().label, QStringLiteral( "item00" ) );
 }
 
 void TestCompletionPopupUi::detailPanelDoesNotOverlapTheList()

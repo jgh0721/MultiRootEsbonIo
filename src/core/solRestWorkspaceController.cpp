@@ -119,6 +119,16 @@ WorkspaceController::WorkspaceController( QObject* parent )
     connect( completions_, &CompletionCoordinator::logMessage, this, &WorkspaceController::logMessage );
     connect( completions_, &CompletionCoordinator::lspCompletionRequested, this,
             [this]( const QString& path, int line, int column, const QString& triggerCharacter ) {
+                // didChange 는 디바운스된다. 먼저 흘려보내지 않으면 서버가 옛
+                // 텍스트를 보고 "여기는 completion 컨텍스트가 아니다" 라고
+                // 정당하게 답한다. Ctrl+Space 경로에만 있던 것을 여기로 옮겨
+                // 두 경로가 같은 상태를 보게 한다.
+                if( DocumentContext* document = contextFor( activeView_ );
+                    document != nullptr )
+                {
+                    syncDocumentToServer( *document, false );
+                }
+
                 LspClient* client = lspPool_->clientFor( activeProjectId_ );
                 const int requestId = ( client != nullptr && client->isRunning() )
                                           ? client->completion( path, line, column, triggerCharacter )
@@ -1426,12 +1436,8 @@ void WorkspaceController::requestCompletion()
     if( shuttingDown_ || activeView_.isNull() )
         return;
 
-    // Ctrl+Space 는 사용자가 지금 이 순간을 기준으로 물어본 것이다.
-    // didChange 는 디바운스되므로 먼저 흘려보내지 않으면 서버가 옛 텍스트를
-    // 보고 "여기는 completion 컨텍스트가 아니다" 라고 정당하게 답한다.
-    if( DocumentContext* context = contextFor( activeView_ ); context != nullptr )
-        syncDocumentToServer( *context, false );
-
+    // didChange 흘려보내기는 lspCompletionRequested 를 받는 쪽이 한다.
+    // 자동 호출도 같은 길을 타야 두 목록이 같아진다.
     completions_->requestExplicit();
 }
 

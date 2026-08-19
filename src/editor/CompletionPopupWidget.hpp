@@ -55,6 +55,10 @@ public:
 
     void                                selectNext();
     void                                selectPrevious();
+    /// 한 화면씩. 목록 밖으로는 나가지 않는다 (한 칸 이동과 달리 순환하면
+    /// 어디로 갔는지 알 수 없다).
+    void                                selectNextPage();
+    void                                selectPreviousPage();
     /// 선택된 항목을 확정한다. 확정할 것이 있었으면 true.
     bool                                acceptCurrent();
     /// 편집기가 받은 키를 팝업이 대신 처리한다. 처리했으면 true.
@@ -84,6 +88,9 @@ private:
     [[nodiscard]] QString               currentInsertText() const;
     bool                                selectByInsertText( const QString& insertText );
     void                                selectFirst();
+    /// 한 화면에 보이는 행 수. 목록이 그보다 짧으면 목록 길이.
+    [[nodiscard]] int                   pageStep() const;
+    void                                selectRow( int row );
 
     QListWidget*                        list_ = nullptr;
     QList< CompletionDisplayItem >      allItems_;

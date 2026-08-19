@@ -511,6 +511,13 @@ QVector< Item > normalizeLspItems( QVector< Item > items, const QString& lineTex
         while( leading < item.insertText.length() && item.insertText.at( leading ).isSpace() )
             ++leading;
         item.insertText = item.insertText.mid( leading );
+
+        // 우리 표는 "image:: " 처럼 끝에 공백을 둔다 (커서를 인자 자리로
+        // 보낸다). Esbonio 는 "image::" 로 준다. 그대로 두면 **같은
+        // directive 가 목록에 두 번** 뜬다 — 중복 제거를 insertText 로
+        // 하는데 끝 공백 하나 때문에 다른 문자열이 되기 때문이다.
+        if( item.insertText.endsWith( QStringLiteral( "::" ) ) )
+            item.insertText += QLatin1Char( ' ' );
     }
     return items;
 }
