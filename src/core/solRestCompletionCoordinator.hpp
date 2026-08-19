@@ -120,6 +120,8 @@ private:
     [[nodiscard]] bool                  buildDetailContent( const CompletionDisplayItem& item,
                                                             QString* title, QString* body,
                                                             QString* source ) const;
+    /// 경로 후보라면 상세 패널을 **파일 모드**로 채운다. 채웠으면 true.
+    bool                                showPathDetail( const CompletionDisplayItem& item );
     /// 오프라인 표가 채우지 못하는 컨텍스트를 워크스페이스 인덱스로 메운다.
     [[nodiscard]] QList< CompletionDisplayItem >
                                         localCandidatesFor( const rstcomplete::Context& context );
@@ -161,6 +163,8 @@ private:
     /// Esc 로 닫은 경로 컨텍스트. null 이면 닫은 적이 없다.
     QString                             dismissedPathPrefix_;
     int                                 dismissedPathLine_ = 0;
+    /// 상세 패널이 지금 무엇을 보여 주는가. 뒤늦게 오는 프리뷰를 거른다.
+    quint64                             detailToken_ = 0;
 
     QString                             pendingTrigger_;
     bool                                pendingExplicit_ = false;

@@ -171,17 +171,42 @@ void CompletionCoordinator::refreshDetailPopup( const CompletionDisplayItem& ite
         return;
     }
 
-    QString title;
-    QString body;
-    QString source;
-    if( !buildDetailContent( item, &title, &body, &source )
-        || !detail_->setContent( title, body, source ) )
+    if( !showPathDetail( item ) )
     {
-        detail_->hide();
-        return;
+        QString title;
+        QString body;
+        QString source;
+        if( !buildDetailContent( item, &title, &body, &source )
+            || !detail_->setContent( title, body, source ) )
+        {
+            detail_->hide();
+            return;
+        }
     }
 
     detail_->showBesideAnchor( popup_->geometry() );
+}
+
+bool CompletionCoordinator::showPathDetail( const CompletionDisplayItem& item )
+{
+    const auto found = pathCandidates_.constFind( item.insertText );
+    if( found == pathCandidates_.constEnd() || detail_.isNull() )
+        return false;
+
+    const rstpath::Candidate& candidate = found.value();
+
+    CompletionFileDetail detail;
+    detail.fileName = candidate.label;
+    // 문서에 실제로 들어갈 경로를 보여 준다. 절대 경로보다 이것이
+    // 지금 고르는 후보를 판단하는 데 쓸모 있다.
+    const rstpath::TypedPath split = rstpath::splitTypedPath( candidate.insertText );
+    detail.directoryText = split.directory.isEmpty()
+                               ? QStringLiteral( "./" )
+                               : split.directory + QLatin1Char( '/' );
+    detail.showPreviewBox = !candidate.isDirectory;
+
+    detailToken_ = detail_->setFileContent( detail );
+    return true;
 }
 
 bool CompletionCoordinator::buildDetailContent( const CompletionDisplayItem& item, QString* title,
