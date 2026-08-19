@@ -7,6 +7,7 @@
 #include "solEsbonioLspPool.hpp"
 #include "solPreviewBridge.hpp"
 #include "solGlossaryIndex.hpp"
+#include "solMarkdownPreviewController.hpp"
 #include "solRstPathIndex.hpp"
 #include "solRestCompletionCoordinator.hpp"
 #include "solRestOutlineService.hpp"
@@ -89,6 +90,7 @@ WorkspaceController::WorkspaceController( QObject* parent )
     : QObject( parent )
     , registry_( new ProjectRegistry( this ) )
     , previewController_( new SphinxPreviewController( this ) )
+    , markdownPreview_( new MarkdownPreviewController( this ) )
     , virtualProjects_( new VirtualProjectManager( this ) )
     , diagnosticsStore_( new DiagnosticsStore( this ) )
     , lspPool_( new LspServerPool( this ) )
@@ -97,6 +99,30 @@ WorkspaceController::WorkspaceController( QObject* parent )
     , pathIndex_( new PathIndex( this ) )
 {
     connect( virtualProjects_, &VirtualProjectManager::logMessage, this, &WorkspaceController::logMessage );
+
+    // 내장 Markdown 렌더러. 페이지 상태는 이 클래스가 계속 단독으로 갖고,
+    // 컨트롤러는 "이 원문을 밀어 달라" 를 요청만 한다.
+    connect( markdownPreview_, &MarkdownPreviewController::logMessage, this,
+            &WorkspaceController::logMessage );
+    connect( markdownPreview_, &MarkdownPreviewController::pushRequested, this,
+            [this]( const QString& text, const QString& baseUrl, const QString& optionsJson,
+                    const int token ) {
+                if( previewBridge_ != nullptr )
+                    previewBridge_->requestMarkdownRender( text, baseUrl, optionsJson, token );
+            } );
+    connect( markdownPreview_, &MarkdownPreviewController::renderFinished, this,
+            [this]( const QString& path, const bool ok, const QString& ) {
+                if( !ok )
+                {
+                    setPreviewStatus( {} );
+                    return;
+                }
+                previewPrimaryPath_ = path;
+                setPreviewStatus( {} );
+                // 렌더가 끝난 뒤에야 좌표가 확정된다. 그 전에 맞추면 앵커 표가
+                // 비어 있어 아무 일도 일어나지 않는다.
+                syncPreviewFromEditor();
+            } );
 
     // 용어집은 Esbonio 가 아니라 우리가 직접 훑는다. objects.inv 에는 이름만 있고
     // 정의 본문이 없어서 팝업에 보여 줄 것이 나오지 않는다.
@@ -345,7 +371,7 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
         traceP( "preview.load.end", previewView_->url().fileName() );
         // 초기 placeholder 는 setHtml 로 넣은 것이라 파일 URL 이 아니다.
         // fileName() 이 의미 없는 조각을 내놓으므로 로그를 남기지 않는다.
-        if( previewUrl_.isLocalFile() )
+        if( previewUrlIsOurs() )
             emit logMessage( tr( "프리뷰 표시: %1" ).arg( previewUrl_.fileName() ) );
 
         // 표시 해제의 기준은 bridgeReady 다. 다만 스크립트가 붙지 않는 페이지도
@@ -387,6 +413,9 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
     connect( previewBridge_, &PreviewBridge::bridgeReady, this, [this] {
         emit logMessage( tr( "프리뷰 동기화 준비됨" ) );
         setPreviewStatus( {} );
+        // Markdown 셸이라면 큐에 걸린 원문이 여기서 나간다. 셸을 띄우는 것과
+        // 원문을 미는 것은 별개 단계이고, 핸드셰이크가 그 사이에 있다.
+        markdownPreview_->notifyBridgeReady();
         // 페이지가 다시 로드된 직후이므로, 여기서 맞춰주면 재빌드 후에도
         // 스크롤 위치가 에디터와 어긋나지 않는다.
         syncPreviewFromEditor();
@@ -406,6 +435,14 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
                 if( !path.isEmpty() )
                     emit navigateRequested( path, static_cast< int >( line ), 1 );
             } );
+
+    // 내장 렌더러가 올리는 사실들. 문장은 컨트롤러가 만든다.
+    connect( previewBridge_, &PreviewBridge::markdownRenderCompleted, markdownPreview_,
+            &MarkdownPreviewController::onRenderCompleted );
+    connect( previewBridge_, &PreviewBridge::markdownRendererOrigin, markdownPreview_,
+            &MarkdownPreviewController::onRendererOrigin );
+    connect( previewBridge_, &PreviewBridge::markdownAssetLoadFailed, markdownPreview_,
+            &MarkdownPreviewController::onAssetFailed );
 }
 
 int WorkspaceController::sourceIndexForPath( const QString& path ) const
@@ -547,11 +584,7 @@ QString WorkspaceController::writeShadowCopy( QTextView* view, const QString& pa
 
 void WorkspaceController::requestPreviewBuild( const bool immediate, const bool forceRebuild )
 {
-    if( shuttingDown_ || previewController_ == nullptr || pythonEnv_ == nullptr )
-        return;
-
-    // 런타임이 준비되기 전에는 조용히 넘어간다. 준비되면 다시 호출된다.
-    if( !pythonEnv_->isReady() )
+    if( shuttingDown_ )
         return;
 
     QTextView* view = activeView_;
@@ -559,9 +592,25 @@ void WorkspaceController::requestPreviewBuild( const bool immediate, const bool 
     if( view == nullptr || context == nullptr || context->path.isEmpty() )
         return;
 
+    // 라우팅은 아래 두 가드보다 **앞에서** 갈라야 한다. 내장 렌더러 경로는 파이썬도
+    // Sphinx 프로젝트도 필요 없는데, 아래는 그 둘이 없으면 조용히 반환한다. 뒤에 두면
+    // 런타임 준비 전이나 프로젝트 밖의 .md 는 영영 프리뷰가 뜨지 않는다.
+    if( routeFor( *context ) == PreviewRoute::MarkdownJs )
+    {
+        renderMarkdownJs( *context, immediate, forceRebuild );
+        return;
+    }
+
+    if( previewController_ == nullptr || pythonEnv_ == nullptr )
+        return;
+
+    // 런타임이 준비되기 전에는 조용히 넘어간다. 준비되면 다시 호출된다.
+    if( !pythonEnv_->isReady() )
+        return;
+
     const SphinxProject* project = lookupProject( context->projectId );
     if( project == nullptr )
-        return;   // 가상 프로젝트는 Phase 7 에서 처리한다.
+        return;   // 어느 프로젝트에도 속하지 않는 .rst 는 가상 프로젝트가 받는다.
 
     // 프리뷰도 프로젝트가 정한 인터프리터로 돌린다. 그래야 그 venv 의 테마와
     // 확장이 그대로 반영된다. 빌더 스크립트는 절대 경로로 넘기므로 프로젝트
@@ -845,6 +894,90 @@ void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QStrin
     previewBridge_->requestHotSwap( html, baseUrl, ++hotSwapToken_ );
 }
 
+bool WorkspaceController::previewUrlIsOurs() const
+{
+    // qrc: 를 반드시 포함한다. Markdown 셸이 거기서 오고 QUrl::isLocalFile() 은
+    // scheme=="file" 만 참이므로, 그것만 보면 md 프리뷰는 allowRemoteContent 를
+    // 껐다 켜도 다시 읽히지 않는다(한 번 차단된 CDN 스크립트가 영영 안 살아난다).
+    return previewUrl_.isLocalFile() || previewUrl_.scheme() == QLatin1String( "qrc" );
+}
+
+void WorkspaceController::showPreviewShell( const QString& documentPath )
+{
+    if( previewView_ == nullptr )
+        return;
+
+    // data-mrr-src 는 단일 파일이라 항상 0 이다. syncPreviewFromEditor() 의
+    // sourceIndexForPath() 가 0 을 찾으려면 이 목록이 반드시 이 문서여야 한다.
+    previewSources_ = { documentPath };
+    previewProcessedSources_.clear();
+    previewPrimaryPath_ = documentPath;
+
+    // Sphinx 핫스왑 판정의 입력을 여기서 끊는다.
+    //
+    // 남겨 두면 .rst A -> .md -> 같은 .rst A 로 돌아올 때 documentKey 가 그대로여서
+    // sameDocument 가 참, <head> 서명이 그대로여서 sameHead 가 참, previewUrl_ 과
+    // url() 이 둘 다 셸이어서 "사용자가 페이지에 머물렀다" 가 참이 된다. 그러면
+    // showPreviewHtml() 이 핫스왑 분기로 가서 **.rst 본문을 Markdown 셸 페이지 안에
+    // 갈아 끼운다.**
+    previewDocumentKey_ = QStringLiteral( "md\x1f" ) + documentPath;
+    previewHeadSignature_.clear();
+    previewShownSize_ = -1;
+    previewShownMTimeMs_ = -1;
+
+    const QUrl url = markdownPreview_->shellUrl();
+
+    // 셸은 문서와 무관하므로 .md <-> .md 전환에는 항해가 없다. 원문만 다시 밀면
+    // 되고, 그 덕에 세션에서 받아 둔 CDN 자산이 살아 있다.
+    if( previewLoadedOk_ && previewBridge_ != nullptr && previewBridge_->isReady()
+        && previewUrl_.path() == url.path() )
+    {
+        return;
+    }
+    if( previewLoadInFlight_ && previewUrl_.path() == url.path() )
+        return;
+
+    setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
+    previewUrl_ = url;
+    previewLoadedOk_ = false;
+    previewLoadInFlight_ = true;
+    if( previewBridge_ != nullptr )
+        previewBridge_->resetReady();
+    markdownPreview_->notifyShellReloaded();
+    traceP( "preview.load.begin", QStringLiteral( "md-shell" ) );
+    previewView_->load( url );
+}
+
+QString WorkspaceController::textForPreview( const DocumentContext& context ) const
+{
+    if( context.view.isNull() )
+        return {};
+    if( previewApplyUnsavedEdits_ || !context.view->isModified() )
+        return context.view->text();
+
+    // 설정을 끈 사용자는 "저장된 상태를 보고 싶다" 는 뜻이다. 재파싱 비용이라는
+    // 원래 근거(Sphinx)는 여기서 사라지지만 그 의도는 남는다.
+    QFile file( context.path );
+    if( !file.open( QIODevice::ReadOnly ) )
+        return context.view->text();
+    return QString::fromUtf8( file.readAll() );
+}
+
+void WorkspaceController::renderMarkdownJs( DocumentContext& context, const bool immediate,
+                                            const bool force )
+{
+    // 탭을 옮겼는데 프리뷰가 따라오지 않은 상태를 알아채는 기준이다. 채우지 않으면
+    // setActiveDocument() 의 previewStale 판정이 매번 참이 되어 다시 요청한다.
+    previewRequestedPath_ = context.path;
+
+    // 이 .md 를 예전에 Sphinx 로 빌드해 남은 진단은 근거가 없어졌다. 지우지 않으면
+    // 라우팅이 바뀐 문서의 옛 경고가 진단 표에 영영 남는다.
+    diagnosticsStore_->replaceSourceForPath( QStringLiteral( "sphinx-build" ), context.path, {} );
+
+    showPreviewShell( context.path );
+    markdownPreview_->requestRender( context.path, textForPreview( context ), immediate, force );
+}
+
 void WorkspaceController::applyPreviewWebSettings()
 {
     if( previewView_ == nullptr || previewView_->page() == nullptr )
@@ -875,13 +1008,17 @@ void WorkspaceController::applyPreviewWebSettings()
 
     // 이미 떠 있는 페이지의 스크립트는 바뀌기 전 설정으로 한 번 실패한 뒤다.
     // 속성만 갈아도 다시 실행되지 않으므로 같은 문서를 다시 읽는다.
-    if( !firstApply && previewUrl_.isLocalFile() )
+    if( !firstApply && previewUrlIsOurs() )
     {
         setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
         previewLoadedOk_ = false;
         previewLoadInFlight_ = true;
         if( previewBridge_ != nullptr )
             previewBridge_->resetReady();
+        // 셸을 다시 읽으면 아무것도 렌더되지 않은 상태로 돌아간다. 알려 주지 않으면
+        // 마지막 push 해시가 남아 같은 원문이 "이미 보냈다" 로 걸러지고 프리뷰가
+        // 빈 채로 남는다.
+        markdownPreview_->notifyShellReloaded();
         previewView_->load( previewUrl_ );
     }
 }

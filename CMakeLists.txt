@@ -151,6 +151,8 @@ add_executable(${PROJECT_NAME}
         src/core/solPreviewBridge.cpp
         src/core/solPreviewBridge.hpp
         src/core/solMarkdownAssets.hpp
+        src/core/solMarkdownPreviewController.cpp
+        src/core/solMarkdownPreviewController.hpp
         src/core/solRestCompletionCoordinator.cpp
         src/core/solRestCompletionCoordinator.hpp
         src/core/solRestOutlineService.cpp

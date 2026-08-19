@@ -24,6 +24,7 @@ class DiagnosticsStore;
 class GlossaryIndex;
 class LspClient;
 class LspServerPool;
+class MarkdownPreviewController;
 class PathIndex;
 class PreviewBridge;
 class ProjectRegistry;
@@ -169,6 +170,23 @@ private:
     void                                logProjectList();
     void                                onPreviewFinished( const PreviewBuildResult& result );
     [[nodiscard]] QString               writeShadowCopy( QTextView* view, const QString& path ) const;
+    /// 내장 Markdown 렌더러용 셸 페이지를 (다시) 로드한다.
+    ///
+    /// 항해는 이 함수와 showPreviewHtml() 두 곳으로만 한다. 그러지 않으면
+    /// previewLoadInFlight_ / previewLoadedOk_ / 브리지 ready 상태가 어긋난다.
+    void                                showPreviewShell( const QString& documentPath );
+    /// 프리뷰가 **우리가 띄운** 페이지인가.
+    ///
+    /// 사용자가 프리뷰 안에서 외부 링크를 눌러 이동한 경우를 제외하려는 판정이다.
+    /// qrc: 를 반드시 포함해야 한다 — Markdown 셸이 qrc 에서 오고,
+    /// QUrl::isLocalFile() 은 scheme=="file" 만 참이다. 그것만 보면 md 프리뷰는
+    /// allowRemoteContent 를 껐다 켜도 다시 읽히지 않아, 한 번 차단된 CDN
+    /// 스크립트가 영영 안 살아난다.
+    [[nodiscard]] bool                  previewUrlIsOurs() const;
+    /// 내장 Markdown 렌더러로 이 문서를 그린다.
+    void                                renderMarkdownJs( DocumentContext& context, bool immediate, bool force );
+    /// 프리뷰에 넘길 원문. preview/applyUnsavedEdits 가 꺼져 있으면 디스크를 읽는다.
+    [[nodiscard]] QString               textForPreview( const DocumentContext& context ) const;
     void                                showPreviewHtml( const QString& htmlPath, const QString& documentKey,
                                                           int buildSerial );
     /// 같은 문구를 반복 발신하지 않는다. text 가 비면 표시를 지운다.
@@ -227,6 +245,8 @@ private:
     PythonEnvResolver*                  envResolver_ = nullptr;
     QWebEngineView*                     previewView_ = nullptr;
     SphinxPreviewController*            previewController_ = nullptr;
+    /// 내장 Markdown 렌더러. Sphinx 쪽과 나란한 형제다.
+    MarkdownPreviewController*          markdownPreview_ = nullptr;
     VirtualProjectManager*              virtualProjects_ = nullptr;
     PreviewBridge*                      previewBridge_ = nullptr;
     DiagnosticsStore*                   diagnosticsStore_ = nullptr;
