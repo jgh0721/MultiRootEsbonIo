@@ -212,6 +212,8 @@ private:
     /// QWebEngineView::page() 는 **없으면 만들어 버리므로** 존재 여부를 물어보는
     /// 수단이 없다. 그래서 직접 들고 있어야 한다.
     bool                                previewInitialised_ = false;
+    /// 세션이 프리뷰 스플리터 배치를 복원했는가. 복원했으면 기본 배분으로 덮지 않는다.
+    bool                                previewSplitFromSession_ = false;
     /// setStartupPaths() 로 받아 둔 명령줄 경로. 비면 지난 세션을 복원한다.
     QStringList                         startupPaths_;
 

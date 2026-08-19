@@ -413,13 +413,19 @@ MainWindow::MainWindow( QWidget* parent )
     Ui.splitter_2->setChildrenCollapsible( false );
     Ui.splitter_2->setStretchFactor( 0, 1 );
     Ui.splitter_2->setStretchFactor( 1, 1 );
-    // setChildrenCollapsible(false) 는 "핸들을 끌어 접을 수 없다" 는 뜻일 뿐이고,
-    // 최소 폭이 0 이면 레이아웃 계산에서 0 이 될 수 있다. 실제로 그렇게 된다 —
-    // 창을 최대화하면 늘어난 폭이 전부 편집기로 가고 프리뷰가 0 폭으로 사라진다
-    // (프리뷰가 없는 것처럼 보이지만 핸들을 끌면 되살아난다). 하한을 준다.
+    // 최소 폭을 양쪽에 준다.
     //
-    // 값을 작게 잡는 이유: 이 하한은 편집기의 최소 폭과 더해져 창의 최소 폭이
-    // 되므로, 크게 잡으면 탭이 열리는 동안 레이아웃이 창을 강제로 넓힌다.
+    // setChildrenCollapsible(false) 는 "핸들을 끌어 접을 수 없다" 는 뜻일 뿐이고
+    // 최소 폭이 0 이면 레이아웃 계산에서 0 이 될 수 있다.
+    //
+    // 편집기 쪽이 더 중요하다. Scintilla 위젯과 열 눈금자가 minimumSizeHint 로
+    // 큰 값을 요구해서(실측: 스플리터 폭 864 에서 편집기 743 / 프리뷰 120), 그것을
+    // 덮지 않으면 프리뷰가 항상 자기 최소 폭까지 눌린다. setMinimumWidth 는
+    // minimumSizeHint 를 덮으므로 이 한 줄이 그 요구를 풀어 준다.
+    //
+    // 값을 작게 잡는 이유: 두 하한의 합이 창의 최소 폭이 되므로, 크게 잡으면 탭이
+    // 열리는 동안 레이아웃이 창을 강제로 넓힌다.
+    Ui.frmEditor->setMinimumWidth( 240 );
     Ui.frmWebPreview->setMinimumWidth( 120 );
     Ui.frmEditor->setAutoFillBackground( true );
     Ui.frmWebPreview->setAutoFillBackground( true );
@@ -541,11 +547,18 @@ void MainWindow::advanceStartupPhase()
     // `.multiroot/workspace.json` 이 아직 없는 새 워크스페이스다. 그러면 스플리터가
     // Qt 기본 배분에 맡겨지고 프리뷰가 0 폭으로 시작한다(핸들을 끌면 되살아나므로
     // "프리뷰 기능이 없다" 로 오인하기 쉽다). 탭을 다 연 뒤에 손본다.
-    ensureVisiblePreviewSplit();
+    // 레이아웃이 안정된 뒤에 손본다. 탭이 열리는 동안에는 스플리터가 아직 최종
+    // 폭을 모른다.
+    QTimer::singleShot( 0, this, &MainWindow::ensureVisiblePreviewSplit );
 }
 
 void MainWindow::ensureVisiblePreviewSplit()
 {
+    // 세션이 배치를 정했으면 손대지 않는다. 사용자가 좁혀 둔 프리뷰를 되돌리면
+    // 그 조작이 매 실행마다 사라진다.
+    if( previewSplitFromSession_ )
+        return;
+
     QSplitter* splitter = Ui.splitter_2;
     if( splitter == nullptr )
         return;
@@ -554,15 +567,9 @@ void MainWindow::ensureVisiblePreviewSplit()
     if( sizes.size() != 2 )
         return;
 
-    // 세션이 남긴 배치는 덮지 않는다. 사용자가 좁혀 둔 프리뷰를 되돌리면
-    // 그 조작이 매 실행마다 사라진다. 실질적으로 보이지 않는 경우만 손본다.
-    constexpr int kVisibleEnough = 120;
-    if( sizes.at( 1 ) >= kVisibleEnough )
-        return;
-
     const int total = sizes.at( 0 ) + sizes.at( 1 );
     if( total <= 0 )
-        return;   // 아직 레이아웃이 없다. 최소 폭 하한이 남은 몫을 한다.
+        return;   // 아직 레이아웃이 없다
 
     splitter->setSizes( { total / 2, total - total / 2 } );
 }
@@ -2993,13 +3000,15 @@ void MainWindow::restoreLastSession()
     }
 
     // 스플리터는 탭을 다 만든 뒤에 적용해야 레이아웃이 다시 계산되며 덮이지 않는다.
-    auto restoreSizes = []( QSplitter* splitter, const QList< int >& sizes ) {
-        if( splitter != nullptr && sizes.size() == splitter->count() )
-            splitter->setSizes( sizes );
+    auto restoreSizes = [ this ]( QSplitter* splitter, const QList< int >& sizes ) {
+        if( splitter == nullptr || sizes.size() != splitter->count() )
+            return false;
+        splitter->setSizes( sizes );
+        return true;
     };
     restoreSizes( Ui.splSideWithContent, session.sideSplitterSizes );
     restoreSizes( Ui.splEditWithStatisticsOnContent, session.contentSplitterSizes );
-    restoreSizes( Ui.splitter_2, session.previewSplitterSizes );
+    previewSplitFromSession_ = restoreSizes( Ui.splitter_2, session.previewSplitterSizes );
 
     if( session.activeIndex >= 0 && session.activeIndex < m_tabWidget->count() )
         m_tabWidget->setCurrentIndex( session.activeIndex );
