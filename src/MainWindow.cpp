@@ -61,12 +61,19 @@
 
 namespace
 {
+    /// 이 파일이 텍스트 편집기로 열리는가.
+    ///
+    /// 쓰는 곳은 shouldConfirmBinaryTextOpen() 하나다 — 이진 내용을 텍스트로 열려고
+    /// 할 때 되묻는 판정이라, "편집기가 아니라 전용 뷰어로 여는 확장자" 를 뺀다.
+    ///
+    /// `.md` 는 빼지 않는다. 폐기된 전용 마크다운 뷰어 시절의 논리가 남아 있었는데,
+    /// 지금 `.md` 는 다른 텍스트 파일과 똑같이 Scintilla 편집기로 열리므로 되묻기를
+    /// 건너뛸 이유가 없다.
     bool fileWouldOpenAsText( const QString& filePath )
     {
         const QString ext = QFileInfo( filePath ).suffix().toLower();
         return ext != QStringLiteral( "pdf" )
-            && !mrst::filekinds::imageExtensions().contains( ext )
-            && !mrst::filekinds::markdownExtensions().contains( ext );
+            && !mrst::filekinds::imageExtensions().contains( ext );
     }
 
     bool canCloseWithTextHotExit( QBaseView* view )
@@ -1171,9 +1178,6 @@ void MainWindow::applyThemeToView( QBaseView* view ) const
         ? QBaseView::Theme::Dark
         : QBaseView::Theme::Light;
     view->setTheme( theme );
-
-    //if( auto* markdownView = qobject_cast< QMarkdownView* >( view ) )
-    //    markdownView->refreshPreview();
 }
 
 void MainWindow::applyCurrentTheme()
@@ -1223,9 +1227,6 @@ QBaseView* MainWindow::createViewForFile( const QString& filePath )
 
     //if( mrst::filekinds::imageExtensions().contains( ext ) )
     //    return new QImageView( this );
-
-    //if( mrst::filekinds::markdownExtensions().contains( ext ) )
-    //    return new QMarkdownView( this );
 
     return new QTextView( this );
 }
@@ -1540,8 +1541,6 @@ bool MainWindow::saveView( QBaseView* view, bool saveAs )
     bool started = false;
     if( auto* textView = qobject_cast< QTextView* >( view ) )
         started = saveAs ? textView->saveFileAs() : textView->saveFile( {} );
-    //else if( auto* markdownView = qobject_cast< QMarkdownView* >( view ) )
-    //    started = saveAs ? markdownView->saveFileAs() : markdownView->saveFile( {} );
     //else if( auto* imageView = qobject_cast< QImageView* >( view ) )
     //    started = saveAs ? imageView->saveFileAs() : imageView->saveFile( {} );
     //else if( auto* pdfView = qobject_cast< QPDFView* >( view ) )
@@ -1936,10 +1935,6 @@ void MainWindow::updateStatusBar()
             .arg( tv->currentEncodingDisplayName() )
             .arg( language );
     }
-    //else if( qobject_cast< QMarkdownView* >( v ) )
-    //{
-    //    info = tr( "Markdown" );
-    //}
     m_statusLabel->setText( info );
 }
 
