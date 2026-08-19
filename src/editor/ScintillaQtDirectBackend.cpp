@@ -4,6 +4,7 @@
 #include "core/solThemeManager.hpp"
 #include "ScintillaEditorSettings.hpp"
 #include "TextLexerRegistry.hpp"
+#include "MarkdownStructure.hpp"
 #include "ScintillaDocument.hpp"
 #include "utils/solPhaseTrace.hpp"
 
@@ -29,11 +30,11 @@ constexpr int kBraceBadLightIndicatorId = 25;
 
 /// 편집 후 접기 깊이를 다시 세기까지 기다리는 시간.
 /// 문서 전체를 훑으므로 한 글자마다 돌면 큰 파일에서 타이핑이 끊긴다.
-constexpr int kRstFoldDebounceMs = 200;
+constexpr int kContainerFoldDebounceMs = 200;
 
 /// 이보다 긴 문서에서는 reST 접기를 포기한다. 전체 재계산 비용이 편집
 /// 반응성을 해치는 쪽이 접기가 없는 것보다 나쁘다.
-constexpr int kRstFoldMaxLines = 200000;
+constexpr int kContainerFoldMaxLines = 200000;
 
 /// Scintilla 접기 깊이는 12비트다. 실제 문서가 이만큼 중첩될 일은 없지만
 /// 깨진 입력으로 넘치는 것은 막아야 한다.
@@ -200,11 +201,11 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 	// 접기 깊이(ChangeFold)와 마커(ChangeMarker)도 들어가는데 둘 다 텍스트
 	// 변경이 아니다.
 	//
-	// 그 구분을 하지 않으면 updateRstFoldLevels() 가 줄마다 보내는
+	// 그 구분을 하지 않으면 updateContainerFoldLevels() 가 줄마다 보내는
 	// SCI_SETFOLDLEVEL 이 그대로 textChanged 로 되돌아온다. 실측(2058줄
 	// code-svc.rst): **파일을 여는 것만으로 textChanged 가 2056번** 발생하고,
 	// 그 하나하나가 프리뷰 재빌드 요청과 LSP didChange(문서 전문 95KB 전송)를
-	// 유발했다. 게다가 핸들러가 다시 scheduleRstFoldUpdate() 를 걸어 스스로를
+	// 유발했다. 게다가 핸들러가 다시 scheduleContainerFoldUpdate() 를 걸어 스스로를
 	// 먹인다. 진단 마커(setDiagnosticMarks)도 같은 경로로 폭주할 수 있었다.
 	connect(m_editor, &ScintillaEditBase::modified, this,
 			[this](Scintilla::ModificationFlags type, Scintilla::Position, Scintilla::Position,
@@ -218,7 +219,7 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 				syncLineCountState(true);
 				// 제목 장식 한 줄만 고쳐도 그 아래 섹션 깊이가 통째로 바뀐다.
 				// 구조 계산은 문서 단위라 디바운스해서 돌린다.
-				scheduleRstFoldUpdate();
+				scheduleContainerFoldUpdate();
 				emit textChanged();
 			});
 	connect(m_editor, &ScintillaEditBase::updateUi,
@@ -296,7 +297,7 @@ void ScintillaQtDirectBackend::applySettings(const ScintillaEditorSettings& sett
 	configureCodeFolding(m_codeFoldingEnabled);
 	// reST 는 렉서가 접기 깊이를 채워 주지 않는다. 설정을 켠 직후에도
 	// 마진에 마커가 나오려면 여기서 한 번 세어 둬야 한다.
-	updateRstFoldLevels();
+	updateContainerFoldLevels();
 	const int currentChangeHistoryFlags = static_cast<int>(m_editor->send(sciMessage(SCI_GETCHANGEHISTORY)));
 	const int changeHistoryFlags = changeHistoryFlagsForMode(settings.changeHistoryMode);
 	if (currentChangeHistoryFlags == SC_CHANGE_HISTORY_DISABLED && changeHistoryFlags != SC_CHANGE_HISTORY_DISABLED) {
@@ -1097,15 +1098,16 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 	// 스타일을 요청하고, handleStyleNeeded() 가 직접 칠한다.
 	if (lexerKey.compare(QStringLiteral("rst-container"), Qt::CaseInsensitive) == 0) {
 		m_rstLexer = std::make_unique<mrst::rst::RstContainerLexer>();
+		m_foldSource = FoldSource::RstContainer;
 		m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
 		// SCI_SETPROPERTY("fold") 는 Lexilla 렉서에게 주는 설정이다. 컨테이너
-		// 렉싱에는 렉서 자체가 없으므로 접기 깊이는 updateRstFoldLevels() 가
+		// 렉싱에는 렉서 자체가 없으므로 접기 깊이는 updateContainerFoldLevels() 가
 		// 문서를 훑어 직접 넣는다.
 		m_currentLexerKey = lexerKey;
 		applySyntaxStyles(m_darkTheme);
 		m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
 		configureCodeFolding(m_codeFoldingEnabled);
-		updateRstFoldLevels();
+		updateContainerFoldLevels();
 		writeLexerTrace(displayName, lexerKey, true);
 		return true;
 	}
@@ -1155,13 +1157,22 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 		m_editor->send(sciMessage(SCI_SETPROPERTY),
 			reinterpret_cast<uptr_t>("lexer.markdown.header.eolfill"),
 			reinterpret_cast<sptr_t>("1"));
+		// LexMarkdown 은 3인자 LexerModule 로 등록되어 fnFolder 가 nullptr 이다.
+		// 위 SCI_SETPROPERTY("fold") 는 그래서 아무 효과가 없고 접기 마진만 빈 채로
+		// 남는다. 깊이는 updateContainerFoldLevels() 가 넣는다.
+		m_foldSource = FoldSource::Markdown;
 	}
+	// else 를 두지 않는다. applyLanguage() 는 맨 앞에서 clearLexer() 를 부르고
+	// 그것이 m_foldSource 를 Lexer 로 되돌린다.
 
 	m_currentLexerKey = lexerKey;
 	setKeywordsForLexer(lexerKey);
 	applySyntaxStyles(m_darkTheme);
 
 	m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
+	// 접기 깊이를 우리가 넣어야 하는 렉서면 여기서 한 번 채운다. 게이트가
+	// m_foldSource 를 보므로 다른 렉서에서는 조용히 반환한다.
+	updateContainerFoldLevels();
 	// SCI_GETLEXER 는 ILexer 의 GetIdentifier() 를 그대로 돌려주므로 렉서마다 값이
 	// 제각각이다. 적용 여부는 CreateLexer() 결과로 판단하는 편이 정확하다.
 	const bool applied = m_currentLexer != nullptr;
@@ -1169,17 +1180,17 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 	return applied;
 }
 
-void ScintillaQtDirectBackend::updateRstFoldLevels()
+void ScintillaQtDirectBackend::updateContainerFoldLevels()
 {
-	if (!m_editor || !m_rstLexer)
+	if (!m_editor || m_foldSource == FoldSource::Lexer)
 		return;
 
 	// 예약된 갱신이 있으면 취소한다. setText() 가 notifyChange 경로에서
-	// scheduleRstFoldUpdate() 로 200ms 예약을 걸고, 곧이어 applyLanguage() 가
+	// scheduleContainerFoldUpdate() 로 200ms 예약을 걸고, 곧이어 applyLanguage() 가
 	// 같은 계산을 즉시 한 번 더 한다. 취소하지 않으면 파일을 여는 것만으로
 	// 문서 전체 스캔이 두 번 돈다(즉시 실행이 예약보다 항상 더 최신이다).
-	if (m_rstFoldTimer != nullptr)
-		m_rstFoldTimer->stop();
+	if (m_containerFoldTimer != nullptr)
+		m_containerFoldTimer->stop();
 
 	if (!m_codeFoldingEnabled) {
 		// 접기를 끄면 마진이 사라지므로 깊이는 그대로 둬도 화면에는 영향이 없다.
@@ -1189,13 +1200,18 @@ void ScintillaQtDirectBackend::updateRstFoldLevels()
 	}
 
 	const int totalLines = lineCount();
-	if (totalLines <= 0 || totalLines > kRstFoldMaxLines)
+	if (totalLines <= 0 || totalLines > kContainerFoldMaxLines)
 		return;
 
 	const mrst::PhaseSpan span("editor.fold", QStringLiteral("%1lines").arg(totalLines));
 	const QByteArray text = textRangeUtf8(0, documentLength());
+	// 깊이를 세는 규칙만 마크업별로 갈린다. 아래 주입 루프는 공유한다 — 값이
+	// 같으면 보내지 않는 것까지 포함해서, 그 부분이 갈라지면 한쪽만 최적화가
+	// 빠지는 식으로 조용히 어긋난다.
+	const std::string source(text.constData(), static_cast<std::size_t>(text.size()));
 	const std::vector<mrst::rst::FoldLine> folds =
-		mrst::rst::computeFoldLevels(std::string(text.constData(), static_cast<std::size_t>(text.size())));
+		(m_foldSource == FoldSource::Markdown) ? mrst::md::computeMarkdownFoldLevels(source)
+		                                      : mrst::rst::computeFoldLevels(source);
 
 	const int lines = qMin(totalLines, static_cast<int>(folds.size()));
 	for (int line = 0; line < lines; ++line) {
@@ -1214,18 +1230,18 @@ void ScintillaQtDirectBackend::updateRstFoldLevels()
 	}
 }
 
-void ScintillaQtDirectBackend::scheduleRstFoldUpdate()
+void ScintillaQtDirectBackend::scheduleContainerFoldUpdate()
 {
-	if (!m_editor || !m_rstLexer)
+	if (!m_editor || m_foldSource == FoldSource::Lexer)
 		return;
 
-	if (m_rstFoldTimer == nullptr) {
-		m_rstFoldTimer = new QTimer(this);
-		m_rstFoldTimer->setSingleShot(true);
-		m_rstFoldTimer->setInterval(kRstFoldDebounceMs);
-		connect(m_rstFoldTimer, &QTimer::timeout, this, &ScintillaQtDirectBackend::updateRstFoldLevels);
+	if (m_containerFoldTimer == nullptr) {
+		m_containerFoldTimer = new QTimer(this);
+		m_containerFoldTimer->setSingleShot(true);
+		m_containerFoldTimer->setInterval(kContainerFoldDebounceMs);
+		connect(m_containerFoldTimer, &QTimer::timeout, this, &ScintillaQtDirectBackend::updateContainerFoldLevels);
 	}
-	m_rstFoldTimer->start();
+	m_containerFoldTimer->start();
 }
 
 bool ScintillaQtDirectBackend::isLineVisible(int line) const
@@ -1419,9 +1435,12 @@ void ScintillaQtDirectBackend::clearLexer()
 {
 	// 컨테이너 렉서는 ILexer 가 아니어서 아래 조기 반환에 가려져 있었다.
 	// 남겨 두면 다른 언어로 바꾼 뒤에도 reST 접기 깊이를 계속 계산한다.
-	if (m_rstFoldTimer)
-		m_rstFoldTimer->stop();
+	if (m_containerFoldTimer)
+		m_containerFoldTimer->stop();
 	m_rstLexer.reset();
+	// 접기 깊이의 출처도 되돌린다. applyLanguage() 가 맨 앞에서 이 함수를 부르므로
+	// 여기 한 곳이면 none 경로와 CreateLexer 실패 경로까지 전부 덮인다.
+	m_foldSource = FoldSource::Lexer;
 
 	if (!m_currentLexer) {
 		m_currentLexerKey.clear();

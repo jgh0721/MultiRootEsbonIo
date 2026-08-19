@@ -188,10 +188,26 @@ private:
 	void applyMarkdownSyntaxStyles();
 	void setKeywordsForLexer(const QString& lexerKey);
 	void handleStyleNeeded(int endPosition);
-	/// reST 는 Lexilla 렉서가 없어 접기 깊이도 우리가 계산해 넣는다.
-	/// 섹션 깊이는 문서 앞부분 전체에 의존하므로 문서 단위로 다시 센다.
-	void updateRstFoldLevels();
-	void scheduleRstFoldUpdate();
+	/// 접기 깊이를 누가 채우는가.
+	///
+	/// Lexilla 렉서에 folder 함수가 있으면 Scintilla 가 알아서 하지만 둘은 그렇지
+	/// 않다 — reST 는 렉서 자체가 없고, Markdown 은 LexMarkdown 이 3인자
+	/// LexerModule 로 등록되어 fnFolder 가 nullptr 이다. 그 둘만 우리가 문서를
+	/// 훑어 SCI_SETFOLDLEVEL 로 직접 넣는다.
+	///
+	/// 이 값이 아니라 m_rstLexer 로 게이트를 두면 Markdown 은 한 줄도 주입되지
+	/// 않는다(그 포인터는 reST 컨테이너 렉싱에서만 만들어진다).
+	enum class FoldSource
+	{
+		Lexer,          ///< Lexilla 렉서가 채운다. 우리는 손대지 않는다
+		RstContainer,
+		Markdown
+	};
+
+	/// reST 와 Markdown 은 접기 깊이를 우리가 계산해 넣는다. 섹션 깊이가 문서
+	/// 앞부분 전체에 의존하므로 문서 단위로 다시 센다.
+	void updateContainerFoldLevels();
+	void scheduleContainerFoldUpdate();
 
 	QPointer<ScintillaEditBase> m_editor;
 	std::unique_ptr<mrst::rst::RstContainerLexer> m_rstLexer;   // 컨테이너 렉싱 중에만 유효
@@ -206,6 +222,8 @@ private:
 	int                 m_lineNumberMarginDigits = 0;
 	int                 m_lastKnownLineCount = 1;
 	/// 편집 중에 매 글자 문서 전체의 접기 깊이를 다시 세지 않는다.
-	class QTimer*       m_rstFoldTimer = nullptr;
+	class QTimer*       m_containerFoldTimer = nullptr;
+	/// 접기 깊이의 출처. clearLexer() 가 Lexer 로 되돌린다.
+	FoldSource          m_foldSource = FoldSource::Lexer;
 };
 

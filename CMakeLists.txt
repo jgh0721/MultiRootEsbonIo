@@ -164,6 +164,8 @@ add_executable(${PROJECT_NAME}
         src/editor/QBaseEditor.hpp
         src/editor/RstContainerLexer.cpp
         src/editor/RstContainerLexer.hpp
+        src/editor/MarkdownStructure.cpp
+        src/editor/MarkdownStructure.hpp
         src/editor/CompletionPopupWidget.cpp
         src/editor/CompletionPopupWidget.hpp
         src/editor/CompletionDetailPopup.cpp
@@ -312,6 +314,7 @@ if(MRST_BUILD_TESTS)
             tests/TestRunner.hpp
             tests/tst_RstContainerLexer.cpp
             tests/tst_RstFolding.cpp
+            tests/tst_MdFolding.cpp
             tests/tst_LspMessageRouting.cpp
             tests/tst_ProjectResolution.cpp
             tests/tst_RstCompletionContext.cpp
@@ -325,6 +328,7 @@ if(MRST_BUILD_TESTS)
             # 테스트 대상 프로덕션 소스는 OBJECT 라이브러리로 빼지 않고 명시 나열한다
             # (globbing 금지 + 단일 타깃이라는 이 프로젝트의 규칙을 따른다).
             src/editor/RstContainerLexer.cpp
+            src/editor/MarkdownStructure.cpp
             src/core/solRstOfflineCompletions.cpp
             src/core/solRstPathCompletion.cpp
             src/core/solRstPathIndex.cpp
