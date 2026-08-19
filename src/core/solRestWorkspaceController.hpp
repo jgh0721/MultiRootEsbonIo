@@ -259,6 +259,8 @@ private:
     /// 프리뷰의 원격 리소스 허용 상태. -1 은 아직 한 번도 적용하지 않은 것으로,
     /// 첫 적용에서 불필요한 리로드를 하지 않기 위해 구분한다.
     int                                 previewAllowRemote_ = -1;
+    /// 마지막으로 적용한 수식 렌더러. 바뀌면 셸을 다시 읽어야 한다.
+    QString                             previewMathRenderer_;
     /// 저장하지 않은 편집을 프리뷰에 반영할지 (설정 preview/applyUnsavedEdits).
     bool                                previewApplyUnsavedEdits_ = true;
     /// 직전 빌드의 재파싱 시간이 이 값을 넘는 문서는 반영에서 제외한다.

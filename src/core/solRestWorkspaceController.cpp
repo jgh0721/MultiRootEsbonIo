@@ -1328,6 +1328,25 @@ void WorkspaceController::reloadSettings()
     const int maxReadMs = settings.value( QStringLiteral( "preview/unsavedEditMaxReadMs" ), 2000 ).toInt();
     previewUnsavedMaxReadMs_ = ( maxReadMs > 0 ) ? maxReadMs : -1;
 
+    // 수식 렌더러를 바꾸면 셸을 다시 읽어야 한다. 라이브러리는 한 번 로드되면
+    // 내릴 수 없어서 재렌더로는 갈 수 없다. allowRemoteContent 의 선례와 같은
+    // 판단이지만, 그것과 달리 **Sphinx 경로에는 영향이 없다** — 이 값은 Sphinx
+    // 출력과 무관하므로 md 프리뷰가 떠 있을 때만 손댄다.
+    const QString mathRenderer =
+        settings.value( QStringLiteral( "preview/mathRenderer" ), QStringLiteral( "katex" ) ).toString();
+    if( previewMathRenderer_ != mathRenderer )
+    {
+        const bool firstApply = previewMathRenderer_.isEmpty();
+        previewMathRenderer_ = mathRenderer;
+        DocumentContext* context = contextFor( activeView_ );
+        if( !firstApply && context != nullptr && routeFor( *context ) == PreviewRoute::MarkdownJs )
+        {
+            showPreviewShell( context->path );
+            markdownPreview_->requestRender( context->path, textForPreview( *context ),
+                                            /*immediate=*/true, /*force=*/true );
+        }
+    }
+
     applyPreviewWebSettings();
 }
 

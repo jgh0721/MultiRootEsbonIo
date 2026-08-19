@@ -869,23 +869,49 @@ QWidget* QSettingsDialog::createPreviewPage()
         new QCheckBox( tr( "인터넷에서 스크립트·스타일·이미지 불러오기" ), group );
     m_previewAllowRemoteCheck->setToolTip(
         tr( "끄면 프리뷰가 외부로 요청을 보내지 않습니다.\n"
-            "대신 CDN 스크립트로 그리는 다이어그램은 텍스트로 남습니다." ) );
+            "대신 CDN 스크립트로 그리는 수식과 다이어그램은 텍스트로 남습니다." ) );
     groupLayout->addWidget( m_previewAllowRemoteCheck );
 
     auto* hint = new QLabel(
-        tr( "mermaid 다이어그램처럼 CDN 스크립트가 그려 주는 요소는 이 항목이 켜져 "
-            "있어야 렌더링됩니다. 프리뷰 HTML 은 로컬 파일로 열리는데, 브라우저 "
-            "엔진은 로컬 문서가 외부 주소를 여는 것을 기본적으로 막기 때문입니다.\n\n"
-            "끄면 프리뷰는 로컬 파일만 읽습니다. 외부로 요청이 나가지 않는 대신 "
-            "그런 요소는 원본 텍스트 블록으로 남습니다 — 폐쇄망에서는 어차피 "
-            "받아올 수 없으므로 꺼 두는 편이 낫습니다." ),
+        tr( "프리뷰는 로컬 문서로 열리는데, 브라우저 엔진은 로컬 문서가 외부 주소를 "
+            "여는 것을 기본적으로 막습니다. 그래서 다음 요소는 이 항목이 켜져 있어야 "
+            "렌더링됩니다.\n"
+            "· reStructuredText — mermaid 다이어그램, MathJax 수식\n"
+            "· Markdown — KaTeX 수식($...$), mermaid 다이어그램\n\n"
+            "끄면 프리뷰는 로컬 자원만 읽습니다. 두 마크업 모두 본문·표·코드 블록은 "
+            "그대로 표시되고 수식과 다이어그램만 원본 텍스트로 남습니다 — 폐쇄망에서는 "
+            "어차피 받아올 수 없으므로 꺼 두는 편이 낫습니다.\n\n"
+            "Markdown 본문을 그리는 변환기는 프로그램에 내장되어 있어, 이 항목을 끄거나 "
+            "네트워크가 없어도 항상 동작합니다." ),
         group );
     hint->setWordWrap( true );
     groupLayout->addWidget( hint );
 
     layout->addWidget( group );
 
-    auto* unsavedGroup  = new QGroupBox( tr( "미저장 편집" ), page );
+    auto* mathGroup  = new QGroupBox( tr( "수식" ), page );
+    auto* mathLayout = new QFormLayout( mathGroup );
+
+    m_previewMathRendererCombo = new QComboBox( mathGroup );
+    // 저장값은 인덱스가 아니라 식별자다. 항목이 늘거나 순서가 바뀌어도 사용자의
+    // 설정 파일이 다른 렌더러를 가리키게 되지 않는다.
+    m_previewMathRendererCombo->addItem( QStringLiteral( "KaTeX" ), QStringLiteral( "katex" ) );
+    mathLayout->addRow( tr( "수식 렌더러:" ), m_previewMathRendererCombo );
+
+    // 항목이 하나뿐이어도 활성 상태로 보여 준다. 이것은 조작기이면서 **표시값**이기도
+    // 하다 — 화면의 수식을 무엇이 그렸는지는 수식이 안 나올 때 사용자가 가장 먼저
+    // 알고 싶어 하는 정보다. 비활성으로 두면 "무슨 조건이 안 맞아 잠긴 것" 으로 읽혀
+    // 없는 조건을 찾아 헤매게 된다.
+    auto* mathHint = new QLabel(
+        tr( "지금은 KaTeX 만 지원합니다. Markdown 프리뷰에만 적용되며, 수식은 "
+            "인터넷에서 받아 그리므로 위의 외부 리소스 항목이 켜져 있어야 합니다." ),
+        mathGroup );
+    mathHint->setWordWrap( true );
+    mathLayout->addRow( mathHint );
+
+    layout->addWidget( mathGroup );
+
+    auto* unsavedGroup  = new QGroupBox( tr( "미저장 편집 (reStructuredText)" ), page );
     auto* unsavedLayout = new QVBoxLayout( unsavedGroup );
 
     m_previewUnsavedCheck =
@@ -935,6 +961,11 @@ QWidget* QSettingsDialog::createPreviewPage()
     // 컨트롤러가 프리뷰를 새 설정으로 다시 읽는다.
     connect( m_previewAllowRemoteCheck, &QCheckBox::toggled, this, [this]( const bool checked ) {
         AppSettings().setValue( QStringLiteral( "preview/allowRemoteContent" ), checked );
+        emit settingsApplied();
+    } );
+    connect( m_previewMathRendererCombo, &QComboBox::currentIndexChanged, this, [this]( int ) {
+        AppSettings().setValue( QStringLiteral( "preview/mathRenderer" ),
+                                m_previewMathRendererCombo->currentData().toString() );
         emit settingsApplied();
     } );
     connect( m_previewUnsavedCheck, &QCheckBox::toggled, this, [this, limitRow]( const bool checked ) {
@@ -990,6 +1021,16 @@ void QSettingsDialog::loadPreviewSettings()
         m_previewStubDoxygenCheck->setChecked(
             settings.value( QStringLiteral( "preview/stubDoxygenWhileTyping" ), true ).toBool() );
     }
+    if( m_previewMathRendererCombo != nullptr )
+    {
+        // QSignalBlocker 가 없으면 언어를 바꿀 때 buildPages() 가 다시 돌면서
+        // currentIndexChanged 가 발화해 설정을 덮어쓴다.
+        const QSignalBlocker blocker( m_previewMathRendererCombo );
+        const QString renderer =
+            settings.value( QStringLiteral( "preview/mathRenderer" ), QStringLiteral( "katex" ) ).toString();
+        const int index = m_previewMathRendererCombo->findData( renderer );
+        m_previewMathRendererCombo->setCurrentIndex( index >= 0 ? index : 0 );
+    }
 }
 
 void QSettingsDialog::savePreviewSettings()
@@ -1014,6 +1055,11 @@ void QSettingsDialog::savePreviewSettings()
     {
         settings.setValue( QStringLiteral( "preview/stubDoxygenWhileTyping" ),
                            m_previewStubDoxygenCheck->isChecked() );
+    }
+    if( m_previewMathRendererCombo != nullptr )
+    {
+        settings.setValue( QStringLiteral( "preview/mathRenderer" ),
+                           m_previewMathRendererCombo->currentData().toString() );
     }
 }
 
