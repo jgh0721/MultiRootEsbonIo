@@ -1,6 +1,8 @@
 ﻿#include "stdafx.h"
 #include "solRstOfflineCompletions.hpp"
 
+#include "core/solRstPathCompletion.hpp"
+
 #include <QCoreApplication>
 #include <QObject>
 #include <QRegularExpression>
@@ -141,15 +143,6 @@ const QVector< RoleSpec >& roleTable()
     return table;
 }
 
-/// 경로 인자를 받는 directive (경로 완성 대상).
-bool takesPathArgument( const QString& name )
-{
-    static const QStringList names{ QStringLiteral( "image" ), QStringLiteral( "figure" ),
-                                   QStringLiteral( "include" ), QStringLiteral( "literalinclude" ),
-                                   QStringLiteral( "raw" ), QStringLiteral( "csv-table" ) };
-    return names.contains( name );
-}
-
 QStringList optionsFor( const QString& directiveName )
 {
     for( const DirectiveSpec& spec : directiveTable() )
@@ -181,7 +174,7 @@ int leadingIndent( const QString& line )
 QString enclosingDirective( const QStringList& previousLines, const int currentIndent )
 {
     static const QRegularExpression directiveRe(
-        QStringLiteral( R"(^(\s*)\.\.\s+([a-zA-Z0-9_.-]+(?::[a-zA-Z0-9_.-]+)?)::)" ) );
+        QStringLiteral( R"(^(\s*)\.\.\s+(?:\|[^|]+\|\s+)?([a-zA-Z0-9_.-]+(?::[a-zA-Z0-9_.-]+)?)::)" ) );
 
     for( const QString& line : previousLines )
     {
@@ -199,6 +192,31 @@ QString enclosingDirective( const QStringList& previousLines, const int currentI
     return {};
 }
 
+
+/// prefix 가 정해진 컨텍스트를 마무리한다.
+///
+/// replaceLength 는 언제나 **친 것 전체**다. 경로 항목의 insertText 를 문서 기준
+/// 전체 상대 경로로 통일했기 때문이다 — 그래야 "현재 디렉터리 한 단계" 후보와
+/// "프로젝트 전역 퍼지" 후보가 한 목록에 섞여도 삽입 규칙이 하나로 유지된다.
+/// 반면 팝업 필터는 마지막 조각만 봐야 한다. 후보의 라벨이 파일 이름뿐이라
+/// "../img/lo" 전체로 거르면 부분수열 검사가 전부 실패한다.
+Context finish( Context context )
+{
+    context.replaceLength = static_cast< int >( context.prefix.length() );
+    context.filterPrefix = context.kind == ContextKind::Path
+                               ? rstpath::splitTypedPath( context.prefix ).name
+                               : context.prefix;
+    return context;
+}
+
+/// 이 자리에 공백이 올 수 없는데 이미 들어 있으면 완성을 포기한다.
+///
+/// toctree 항목과 graphviz 인자가 그렇다. 공백이 보인다는 것은 사용자가 경로가
+/// 아닌 무언가를 쓰고 있다는 뜻이므로 팝업을 띄우지 않는 편이 맞다.
+bool valueFitsSlot( const QString& value, const rstpath::Slot& slot )
+{
+    return slot.spaces != rstpath::Spaces::Forbidden || !value.contains( QLatin1Char( ' ' ) );
+}
 }  // namespace
 
 QStringList knownDirectives()
@@ -228,32 +246,63 @@ Context detectContext( const QString& lineText, const int column, const QStringL
     const int caret = qBound( 0, column - 1, static_cast< int >( lineText.length() ) );
     const QString before = lineText.left( caret );
 
-    // ".. dir" / ".. dir::" — directive 이름
-    static const QRegularExpression directiveRe( QStringLiteral( R"(^(\s*)\.\.\s+([a-zA-Z0-9_.-]*)$)" ) );
+    // ".. dir" / ".. |sub| dir" — directive 이름
+    static const QRegularExpression directiveRe(
+        QStringLiteral( R"(^(\s*)\.\.\s+(?:\|[^|]+\|\s+)?([a-zA-Z0-9_.-]*)$)" ) );
     if( const QRegularExpressionMatch match = directiveRe.match( before ); match.hasMatch() )
     {
         context.kind = ContextKind::Directive;
         context.prefix = match.captured( 2 );
-        context.replaceLength = context.prefix.length();
-        return context;
+        return finish( std::move( context ) );
     }
 
-    // 경로 인자: ".. image:: pa"
-    static const QRegularExpression pathRe(
-        QStringLiteral( R"(^\s*\.\.\s+([a-zA-Z0-9_.-]+)::\s+(\S*)$)" ) );
-    if( const QRegularExpressionMatch match = pathRe.match( before ); match.hasMatch() )
+    // 경로 인자: ".. image:: pa" / ".. |logo| image:: pa"
+    //
+    // 인자를 (\S*) 가 아니라 (.*) 로 잡는다. image/figure/include/literalinclude 는
+    // final_argument_whitespace 가 켜져 있어 공백이 든 경로가 **문법적으로 정당**하다.
+    // 그리고 "::" 직후 공백이 없어도 받는다 — 사람들은 directive 이름 완성을 쓰지
+    // 않고 ".. image::" 를 통째로 치는데, 거기서 Ctrl+Space 가 죽으면 기능이 없는
+    // 것처럼 보인다.
+    static const QRegularExpression argumentRe( QStringLiteral(
+        R"(^\s*\.\.\s+(?:\|[^|]+\|\s+)?([a-zA-Z0-9_.-]+(?::[a-zA-Z0-9_.-]+)?)::([ \t]*)(.*)$)" ) );
+    if( const QRegularExpressionMatch match = argumentRe.match( before ); match.hasMatch() )
     {
-        if( takesPathArgument( match.captured( 1 ) ) )
+        const QString name = match.captured( 1 );
+        if( const rstpath::Slot* slot = rstpath::slotForArgument( name );
+            slot != nullptr && valueFitsSlot( match.captured( 3 ), *slot ) )
         {
             context.kind = ContextKind::Path;
-            context.directiveName = match.captured( 1 );
-            context.prefix = match.captured( 2 );
-            context.replaceLength = context.prefix.length();
-            return context;
+            context.pathSite = PathSlotSite::Argument;
+            context.directiveName = name;
+            context.prefix = match.captured( 3 );
+            context.argumentNeedsSpace = match.captured( 2 ).isEmpty();
+            return finish( std::move( context ) );
+        }
+        // 경로가 아닌 인자(raw 의 포맷 이름, csv-table 의 표 제목 등)는 완성하지
+        // 않는다. 아래 롤 검사로 흘려보내도 이 줄에는 걸릴 것이 없다.
+    }
+
+    // directive 블록 안 옵션의 **값**: "   :file: da"
+    static const QRegularExpression optionValueRe(
+        QStringLiteral( R"(^(\s+):([a-zA-Z0-9_-]+):([ \t]*)(.*)$)" ) );
+    if( const QRegularExpressionMatch match = optionValueRe.match( before ); match.hasMatch() )
+    {
+        const QString owner = enclosingDirective( previousLines, match.captured( 1 ).length() );
+        const QString option = match.captured( 2 );
+        if( const rstpath::Slot* slot = rstpath::slotForOption( owner, option );
+            slot != nullptr && valueFitsSlot( match.captured( 4 ), *slot ) )
+        {
+            context.kind = ContextKind::Path;
+            context.pathSite = PathSlotSite::Option;
+            context.directiveName = owner;
+            context.optionName = option;
+            context.prefix = match.captured( 4 );
+            context.argumentNeedsSpace = match.captured( 3 ).isEmpty();
+            return finish( std::move( context ) );
         }
     }
 
-    // directive 블록 안의 옵션: 들여쓰기 + ":opt"
+    // directive 블록 안의 옵션 **이름**: 들여쓰기 + ":opt"
     static const QRegularExpression optionRe( QStringLiteral( R"(^(\s+):([a-zA-Z0-9_-]*)$)" ) );
     if( const QRegularExpressionMatch match = optionRe.match( before ); match.hasMatch() )
     {
@@ -263,21 +312,48 @@ Context detectContext( const QString& lineText, const int column, const QStringL
             context.kind = ContextKind::DirectiveOption;
             context.directiveName = owner;
             context.prefix = match.captured( 2 );
-            context.replaceLength = context.prefix.length();
-            return context;
+            return finish( std::move( context ) );
         }
     }
 
-    // :ref:`tar` — 참조 대상
+    // directive **본문**의 각 줄이 경로인 경우 (지금은 toctree 뿐).
+    //
+    // 옵션 검사 뒤에 와야 한다. "   :maxdepth" 도 아래 정규식에 걸리기 때문이다.
+    // 소유 directive 를 반드시 확인하므로 평범한 들여쓴 산문에서는 발화하지 않는다.
+    static const QRegularExpression bodyRe( QStringLiteral( R"(^(\s+)(\S*)$)" ) );
+    if( const QRegularExpressionMatch match = bodyRe.match( before ); match.hasMatch() )
+    {
+        const QString owner = enclosingDirective( previousLines, match.captured( 1 ).length() );
+        if( const rstpath::Slot* slot = rstpath::slotForBody( owner ); slot != nullptr )
+        {
+            context.kind = ContextKind::Path;
+            context.pathSite = PathSlotSite::Body;
+            context.directiveName = owner;
+            context.prefix = match.captured( 2 );
+            return finish( std::move( context ) );
+        }
+    }
+
+    // :ref:`tar` — 참조 대상. :download: 와 :doc: 는 대상이 경로다.
     static const QRegularExpression targetRe(
         QStringLiteral( R"(:([a-zA-Z0-9_.-]+):`([^`]*)$)" ) );
     if( const QRegularExpressionMatch match = targetRe.match( before ); match.hasMatch() )
     {
-        context.kind = ContextKind::RoleTarget;
-        context.directiveName = match.captured( 1 );
-        context.prefix = match.captured( 2 );
-        context.replaceLength = context.prefix.length();
-        return context;
+        const QString role = match.captured( 1 );
+        const QString target = match.captured( 2 );
+        if( const rstpath::Slot* slot = rstpath::slotForRoleTarget( role );
+            slot != nullptr && valueFitsSlot( target, *slot ) )
+        {
+            context.kind = ContextKind::Path;
+            context.pathSite = PathSlotSite::RoleTarget;
+        }
+        else
+        {
+            context.kind = ContextKind::RoleTarget;
+        }
+        context.directiveName = role;
+        context.prefix = target;
+        return finish( std::move( context ) );
     }
 
     // 인라인 role 이름: ":re"
@@ -287,8 +363,7 @@ Context detectContext( const QString& lineText, const int column, const QStringL
     {
         context.kind = ContextKind::Role;
         context.prefix = match.captured( 1 ).mid( 1 );   // 앞의 ':' 제외
-        context.replaceLength = context.prefix.length();
-        return context;
+        return finish( std::move( context ) );
     }
 
     return context;

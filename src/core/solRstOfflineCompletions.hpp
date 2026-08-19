@@ -17,14 +17,44 @@ enum class ContextKind
     Path,           ///< image/include 등의 경로 인자
 };
 
+/// Path 컨텍스트에서 경로가 문법의 어느 자리에 있는가.
+///
+/// 슬롯 표(rstpath)를 다시 찾을 수 있도록 detectContext 가 남겨 둔다. 표 자체를
+/// 여기 두지 않는 것은 이 모듈이 파일 시스템도 Qt GUI 도 모르는 순수 판정기로
+/// 남아야 하기 때문이다.
+enum class PathSlotSite
+{
+    None,
+    Argument,     ///< ".. image:: <여기>"
+    Option,       ///< "   :file: <여기>"
+    Body,         ///< toctree 본문의 각 줄
+    RoleTarget,   ///< :download:`<여기>`
+};
+
 struct Context
 {
     ContextKind                         kind = ContextKind::None;
-    QString                             prefix;          ///< 이미 입력된 부분
-    QString                             directiveName;   ///< DirectiveOption 일 때 어떤 directive 인지
+    /// 이미 입력된 부분. **경로면 경로 전체**다 (예: "../img/lo").
+    QString                             prefix;
+    /// DirectiveOption/Path 면 소유 directive, RoleTarget 이면 롤 이름.
+    QString                             directiveName;
+    /// 옵션 값 자리일 때 그 옵션 이름 (":file:" 이면 "file").
+    QString                             optionName;
     /// 완성 항목을 넣을 때 지워야 할 글자 수. prefix 길이와 같지만
     /// 컨텍스트에 따라 달라질 수 있어 따로 둔다.
     int                                 replaceLength = 0;
+
+    PathSlotSite                        pathSite = PathSlotSite::None;
+
+    /// 팝업의 퍼지 필터에 넘길 접두.
+    ///
+    /// 경로가 아니면 prefix 와 같다. 경로면 **마지막 구분자 뒤 조각**이다.
+    /// 경로 후보의 라벨은 파일 이름뿐이라 "../img/lo" 전체로 거르면
+    /// 부분수열 검사가 전부 실패해 목록이 통째로 사라진다.
+    QString                             filterPrefix;
+
+    /// ".. image::" 처럼 인자 앞 공백이 아직 없다. 삽입 문자열 앞에 공백을 붙인다.
+    bool                                argumentNeedsSpace = false;
 };
 
 struct Item

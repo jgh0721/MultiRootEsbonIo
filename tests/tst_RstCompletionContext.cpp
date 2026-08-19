@@ -34,6 +34,31 @@ private slots:
     void stripsSnippetControlCharacter();
     void limitsItemCount();
     void mergeKeepsPrimaryOrderAndSkipsDuplicates();
+
+    // ── 경로 슬롯 (2026-08 정정) ──
+    void rejectsRawFormatArgument();
+    void rejectsCsvTableTitleArgument();
+    void detectsPathInOptionValue_data();
+    void detectsPathInOptionValue();
+    void optionValuePathNeedsMatchingOwner();
+    void detectsToctreeBodyEntry();
+    void toctreeBodyNeedsToctreeOwner();
+    void detectsGraphvizArgument();
+    void graphvizGivesUpOnSpace();
+    void detectsDownloadRoleTarget();
+    void detectsDocRoleTarget();
+    void keepsPlainRoleTargetForRef();
+
+    // ── 필터 접두 / 치환 길이 ──
+    void filterPrefixIsLastSegment_data();
+    void filterPrefixIsLastSegment();
+    void filterPrefixEqualsPrefixOutsidePathContext();
+    void trailingSeparatorGivesEmptyFilterPrefix();
+
+    // ── 정규식 수정 ──
+    void detectsPathWithSpaces();
+    void detectsPathRightAfterDoubleColon();
+    void detectsSubstitutionImagePath();
 };
 
 void TestRstCompletionContext::detectsDirective_data()
@@ -242,6 +267,201 @@ void TestRstCompletionContext::mergeKeepsPrimaryOrderAndSkipsDuplicates()
 
     QCOMPARE( insertTexts( merged ), QStringList( { QStringLiteral( "b" ), QStringLiteral( "a" ),
                                                    QStringLiteral( "c" ) } ) );
+}
+
+// ── 경로 슬롯 ─────────────────────────────────────────────
+//
+// 예전 takesPathArgument() 는 raw 와 csv-table 의 **인자**를 경로로 봤다.
+// 둘 다 아니다. raw 의 인자는 포맷 이름이고 csv-table 의 인자는 표 제목이다.
+
+void TestRstCompletionContext::rejectsRawFormatArgument()
+{
+    const Context context = detectContext( QStringLiteral( ".. raw:: ht" ), 12 );
+    QVERIFY( context.kind != ContextKind::Path );
+}
+
+void TestRstCompletionContext::rejectsCsvTableTitleArgument()
+{
+    const Context context = detectContext( QStringLiteral( ".. csv-table:: 매출 표" ), 21 );
+    QVERIFY( context.kind != ContextKind::Path );
+}
+
+void TestRstCompletionContext::detectsPathInOptionValue_data()
+{
+    QTest::addColumn< QString >( "owner" );
+    QTest::addColumn< QString >( "line" );
+    QTest::addColumn< int >( "column" );
+    QTest::addColumn< QString >( "option" );
+    QTest::addColumn< QString >( "prefix" );
+
+    QTest::newRow( "csv-table :file:" )
+        << ".. csv-table:: 매출" << "   :file: dat" << 15 << "file" << "dat";
+    QTest::newRow( "raw :file:" ) << ".. raw:: html" << "   :file: sni" << 15 << "file" << "sni";
+    QTest::newRow( "image :target:" )
+        << ".. image:: a.png" << "   :target: fu" << 16 << "target" << "fu";
+    QTest::newRow( "literalinclude :diff:" )
+        << ".. literalinclude:: a.py" << "   :diff: ol" << 14 << "diff" << "ol";
+}
+
+void TestRstCompletionContext::detectsPathInOptionValue()
+{
+    QFETCH( QString, owner );
+    QFETCH( QString, line );
+    QFETCH( int, column );
+    QFETCH( QString, option );
+    QFETCH( QString, prefix );
+
+    const Context context = detectContext( line, column, { QString{}, owner } );
+    QCOMPARE( int( context.kind ), int( ContextKind::Path ) );
+    QCOMPARE( int( context.pathSite ), int( PathSlotSite::Option ) );
+    QCOMPARE( context.optionName, option );
+    QCOMPARE( context.prefix, prefix );
+}
+
+void TestRstCompletionContext::optionValuePathNeedsMatchingOwner()
+{
+    // note 에는 :file: 옵션이 없다. 소유 directive 를 확인하지 않으면 평범한
+    // 들여쓴 필드 목록에서도 파일 목록이 튀어나온다.
+    const Context context =
+        detectContext( QStringLiteral( "   :file: dat" ), 14, { QString{}, QStringLiteral( ".. note::" ) } );
+    QVERIFY( context.kind != ContextKind::Path );
+}
+
+void TestRstCompletionContext::detectsToctreeBodyEntry()
+{
+    const Context context = detectContext( QStringLiteral( "   guide/set" ), 13,
+                                          { QStringLiteral( "   :maxdepth: 2" ),
+                                           QStringLiteral( ".. toctree::" ) } );
+    QCOMPARE( int( context.kind ), int( ContextKind::Path ) );
+    QCOMPARE( int( context.pathSite ), int( PathSlotSite::Body ) );
+    QCOMPARE( context.directiveName, QStringLiteral( "toctree" ) );
+    QCOMPARE( context.prefix, QStringLiteral( "guide/set" ) );
+    QCOMPARE( context.filterPrefix, QStringLiteral( "set" ) );
+}
+
+void TestRstCompletionContext::toctreeBodyNeedsToctreeOwner()
+{
+    // 평범한 들여쓴 본문 한 단어. 여기서 팝업이 뜨면 산문을 쓸 수가 없다.
+    const Context context =
+        detectContext( QStringLiteral( "   메모" ), 6, { QString{}, QStringLiteral( ".. note::" ) } );
+    QVERIFY( context.kind != ContextKind::Path );
+}
+
+void TestRstCompletionContext::detectsGraphvizArgument()
+{
+    const Context context = detectContext( QStringLiteral( ".. graphviz:: dia" ), 18 );
+    QCOMPARE( int( context.kind ), int( ContextKind::Path ) );
+    QCOMPARE( context.directiveName, QStringLiteral( "graphviz" ) );
+}
+
+void TestRstCompletionContext::graphvizGivesUpOnSpace()
+{
+    // graphviz 는 final_argument_whitespace 가 꺼져 있다. 공백이 보이면
+    // 경로를 쓰는 중이 아니다.
+    const Context context = detectContext( QStringLiteral( ".. graphviz:: dia gram" ), 23 );
+    QVERIFY( context.kind != ContextKind::Path );
+}
+
+void TestRstCompletionContext::detectsDownloadRoleTarget()
+{
+    const Context context = detectContext( QStringLiteral( "받기 :download:`arch/dia" ), 24 );
+    QCOMPARE( int( context.kind ), int( ContextKind::Path ) );
+    QCOMPARE( int( context.pathSite ), int( PathSlotSite::RoleTarget ) );
+    QCOMPARE( context.prefix, QStringLiteral( "arch/dia" ) );
+    QCOMPARE( context.filterPrefix, QStringLiteral( "dia" ) );
+}
+
+void TestRstCompletionContext::detectsDocRoleTarget()
+{
+    const Context context = detectContext( QStringLiteral( ":doc:`guide/int" ), 16 );
+    QCOMPARE( int( context.kind ), int( ContextKind::Path ) );
+    QCOMPARE( int( context.pathSite ), int( PathSlotSite::RoleTarget ) );
+}
+
+void TestRstCompletionContext::keepsPlainRoleTargetForRef()
+{
+    // :ref: 대상은 경로가 아니라 라벨이다. 여기까지 Path 로 바뀌면 안 된다.
+    const Context context = detectContext( QStringLiteral( ":ref:`my-la" ), 12 );
+    QCOMPARE( int( context.kind ), int( ContextKind::RoleTarget ) );
+}
+
+// ── 필터 접두 / 치환 길이 ─────────────────────────────────
+
+void TestRstCompletionContext::filterPrefixIsLastSegment_data()
+{
+    QTest::addColumn< QString >( "typed" );
+    QTest::addColumn< QString >( "filterPrefix" );
+
+    QTest::newRow( "상대 경로" ) << "../img/lo" << "lo";
+    QTest::newRow( "백슬래시" ) << "..\\img\\lo" << "lo";
+    QTest::newRow( "구분자 없음" ) << "logo" << "logo";
+    QTest::newRow( "소스 루트 절대" ) << "/_static/lo" << "lo";
+    QTest::newRow( "이스케이프한 공백" ) << "img/my\\ pho" << "my pho";
+}
+
+void TestRstCompletionContext::filterPrefixIsLastSegment()
+{
+    QFETCH( QString, typed );
+    QFETCH( QString, filterPrefix );
+
+    const QString line = QStringLiteral( ".. image:: " ) + typed;
+    const Context context = detectContext( line, int( line.length() ) + 1 );
+
+    QCOMPARE( int( context.kind ), int( ContextKind::Path ) );
+    QCOMPARE( context.prefix, typed );
+    // 지울 길이는 언제나 친 것 전체다. 항목의 insertText 가 문서 기준 전체
+    // 상대 경로이기 때문이다.
+    QCOMPARE( context.replaceLength, int( typed.length() ) );
+    QCOMPARE( context.filterPrefix, filterPrefix );
+}
+
+void TestRstCompletionContext::filterPrefixEqualsPrefixOutsidePathContext()
+{
+    const Context directive = detectContext( QStringLiteral( ".. code-bl" ), 11 );
+    QCOMPARE( directive.filterPrefix, directive.prefix );
+
+    const Context target = detectContext( QStringLiteral( ":ref:`my-la" ), 12 );
+    QCOMPARE( target.filterPrefix, target.prefix );
+}
+
+void TestRstCompletionContext::trailingSeparatorGivesEmptyFilterPrefix()
+{
+    const Context context = detectContext( QStringLiteral( ".. image:: img/" ), 16 );
+    QCOMPARE( int( context.kind ), int( ContextKind::Path ) );
+    QCOMPARE( context.filterPrefix, QString{} );
+    QCOMPARE( context.replaceLength, 4 );
+}
+
+// ── 정규식 수정 ───────────────────────────────────────────
+
+void TestRstCompletionContext::detectsPathWithSpaces()
+{
+    // image 는 final_argument_whitespace 가 켜져 있어 공백이 정당하다.
+    // 예전 정규식은 (\S*) 라 공백을 친 순간 컨텍스트를 잃었다.
+    const Context context = detectContext( QStringLiteral( ".. image:: my pho" ), 18 );
+    QCOMPARE( int( context.kind ), int( ContextKind::Path ) );
+    QCOMPARE( context.prefix, QStringLiteral( "my pho" ) );
+    QCOMPARE( context.filterPrefix, QStringLiteral( "my pho" ) );
+}
+
+void TestRstCompletionContext::detectsPathRightAfterDoubleColon()
+{
+    const Context context = detectContext( QStringLiteral( ".. image::" ), 11 );
+    QCOMPARE( int( context.kind ), int( ContextKind::Path ) );
+    QCOMPARE( context.prefix, QString{} );
+    QVERIFY( context.argumentNeedsSpace );
+
+    const Context spaced = detectContext( QStringLiteral( ".. image:: " ), 12 );
+    QCOMPARE( int( spaced.kind ), int( ContextKind::Path ) );
+    QVERIFY( !spaced.argumentNeedsSpace );
+}
+
+void TestRstCompletionContext::detectsSubstitutionImagePath()
+{
+    const Context context = detectContext( QStringLiteral( ".. |logo| image:: img/l" ), 24 );
+    QCOMPARE( int( context.kind ), int( ContextKind::Path ) );
+    QCOMPARE( context.directiveName, QStringLiteral( "image" ) );
+    QCOMPARE( context.filterPrefix, QStringLiteral( "l" ) );
 }
 
 MRST_REGISTER_TEST( TestRstCompletionContext );

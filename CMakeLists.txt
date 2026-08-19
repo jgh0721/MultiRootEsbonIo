@@ -133,6 +133,8 @@ add_executable(${PROJECT_NAME}
         src/core/solRestWorkspaceController.hpp
         src/core/solRstOfflineCompletions.cpp
         src/core/solRstOfflineCompletions.hpp
+        src/core/solRstPathCompletion.cpp
+        src/core/solRstPathCompletion.hpp
         src/core/solSphinxProjectRegistry.cpp
         src/core/solSphinxProjectRegistry.hpp
         src/core/solVirtualProjectMgr.cpp
@@ -309,6 +311,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_LspMessageRouting.cpp
             tests/tst_ProjectResolution.cpp
             tests/tst_RstCompletionContext.cpp
+            tests/tst_RstPathCompletion.cpp
             tests/tst_RstOutline.cpp
             tests/tst_WorkspaceSearch.cpp
             tests/tst_GlossaryParsing.cpp
@@ -319,6 +322,7 @@ if(MRST_BUILD_TESTS)
             # (globbing 금지 + 단일 타깃이라는 이 프로젝트의 규칙을 따른다).
             src/editor/RstContainerLexer.cpp
             src/core/solRstOfflineCompletions.cpp
+            src/core/solRstPathCompletion.cpp
             src/core/solUpdateManifest.cpp
             src/core/solFileKinds.cpp
             src/core/solGlossaryIndex.cpp

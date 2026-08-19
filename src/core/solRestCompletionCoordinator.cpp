@@ -238,7 +238,7 @@ void CompletionCoordinator::notifyGlossaryReady( const QString& projectId )
 
     offlineItems_ = local;
     popup_->setItems( offlineItems_ );
-    popup_->updateFilter( shownContext_.prefix );
+    popup_->updateFilter( shownContext_.filterPrefix );
     showOrRefreshPopup();
 }
 
@@ -383,7 +383,7 @@ void CompletionCoordinator::onCharAdded( const int character )
             return;
         }
         shownContext_ = context;
-        popup_->updateFilter( context.prefix );
+        popup_->updateFilter( context.filterPrefix );
         return;
     }
 
@@ -433,7 +433,7 @@ void CompletionCoordinator::trigger( const QString& triggerCharacter, const bool
     if( !offlineItems_.isEmpty() )
     {
         popup_->setItems( offlineItems_ );
-        popup_->updateFilter( context.prefix );
+        popup_->updateFilter( context.filterPrefix );
         showPopupAtCaret();
     }
     else if( !explicitInvoke )
@@ -521,7 +521,7 @@ void CompletionCoordinator::applyLspItems( const QString& projectId, const int r
         rstcomplete::finalizeItems( rstcomplete::mergeItems( std::move( converted ), offline ) );
 
     popup_->setItems( toDisplayList( merged ) );
-    popup_->updateFilter( shownContext_.prefix );
+    popup_->updateFilter( shownContext_.filterPrefix );
     showOrRefreshPopup();
 }
 
