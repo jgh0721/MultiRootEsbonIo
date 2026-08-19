@@ -83,6 +83,27 @@ void writeLexerTrace(const QString& displayName, const QString& lexerKey, const 
 		   << Qt::endl;
 }
 
+/// 등폭 ASCII 지름길을 켤지 여부.
+///
+/// Scintilla 는 스타일에 `checkMonospaced` 가 켜져 있으면 폰트를 realise 할 때
+/// `"Ayfi"` + ASCII 그래픽 문자 전체를 재서 문자 폭이 전부 같은지 **실측**한다
+/// (ViewStyle.cxx). 같으면 `PositionCache::MeasureWidths` 가 ASCII 로만 된
+/// 세그먼트에 대해 플랫폼 측정을 아예 건너뛰고 곱셈 한 번으로 끝낸다.
+///
+/// 그래서 켜는 것 자체에는 오판 위험이 없다 — 비례 폰트면 프로브가 알아서
+/// 걸러낸다. "등폭이라고 가정해라" 가 아니라 "재 봐라" 이기 때문이다.
+/// 실측(2000줄 전체 wrap, Debug): Consolas ASCII 566.8ms → 5.6ms.
+///
+/// 남는 위험은 하나뿐이다. 프로브 문자열은 통과했는데 다른 글자쌍("VA" 등)에만
+/// 커닝이 있는 폰트라면 그 줄에서 캐럿이 한두 픽셀 밀린다. 그때 쓰라고 탈출구를
+/// 둔다 — 설정 항목으로 만들지 않은 이유는 올바른 값이 언제나 "켬" 이고 사용자가
+/// 이 값을 판단할 근거가 없기 때문이다.
+bool monospaceFastPathEnabled()
+{
+	static const bool enabled = qgetenv("MRST_DISABLE_MONOSPACE_FASTPATH").trimmed().isEmpty();
+	return enabled;
+}
+
 bool isBraceCharacter(const sptr_t ch)
 {
 	switch (static_cast<char>(ch)) {
@@ -155,16 +176,27 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 	m_editor->setAttribute(Qt::WA_OpaquePaintEvent);
 	m_editor->setAttribute(Qt::WA_NoSystemBackground);
 
-	// Windows DirectWrite 렌더링: 안티앨리어싱 격자 아티팩트 방지
-	m_editor->send(sciMessage(SCI_SETTECHNOLOGY), 4 );
+	// SCI_SETTECHNOLOGY 는 여기 없다. Qt 포트에서는 완전한 no-op 이기 때문이다 —
+	// PlatQt.cpp 의 Surface::Allocate(Technology) 가 인자를 그냥 버리고, Editor.cxx 는
+	// `case Message::SetTechnology: // No action by default` 다 (오버라이드하는 것은
+	// ScintillaWin.cxx 뿐). 렌더러는 Qt 의 QPainter 이고, 글리프 래스터화는 Qt 6.11 의
+	// 기본 폰트 DB 인 DirectWrite 가 이미 하고 있다. 실측으로 리가처와 컬러 이모지가
+	// 모두 나오는 것을 확인했다.
 	m_editor->send(sciMessage(SCI_SETBUFFEREDDRAW), 0);
 	m_editor->send(sciMessage(SCI_SETFONTQUALITY),
 		static_cast<sptr_t>(Scintilla::FontQuality::QualityAntialiased));
 	m_editor->send(sciMessage(SCI_SETIDLESTYLING), SC_IDLESTYLING_ALL);
 
-	// 멀티 페이즈 드로잉: 배경을 연속된 영역으로 그려 글자 간 갭 방지
+	// 멀티 페이즈 드로잉: 배경을 연속된 영역으로 그려 글자 간 갭 방지.
+	// 안티앨리어싱 격자 아티팩트를 실제로 막는 것이 이것이다.
 	m_editor->send(sciMessage(SCI_SETPHASESDRAW), SC_PHASES_MULTIPLE);
-	// 레이아웃 캐시: 문서 전체 캐시로 서브픽셀 위치 일관성 유지
+	// 레이아웃 캐시: 화면에 보이는 줄만 담는다(SC_CACHE_PAGE).
+	//
+	// SC_CACHE_DOCUMENT 로 넓혀 봤지만 값을 하지 않는다. 2000줄 실전 문서 기준으로
+	// 첫 wrap 1.8→2.8ms, 재-wrap 1.6→1.9ms 로 **오히려 느려지고** 작업 집합이
+	// 0.6→3.0 MiB 로 늘었다(2만 줄이면 30 MiB 대). 폭 측정 자체가 싸진 뒤로는 줄
+	// 레이아웃을 남겨 둘 이유가 없고 캐시 관리 비용만 남기 때문이다.
+	// 다시 재려면 mrst_ui_tests 의 layoutCacheModeCost 를 MRST_PERF=1 로 돌린다.
 	m_editor->send(sciMessage(SCI_SETLAYOUTCACHE), SC_CACHE_PAGE);
 	// 선택 레이어: 텍스트 아래 반투명 배경으로 그려 원래 lexer 글자가 계속 보이게 한다.
 	m_editor->send(sciMessage(SCI_SETSELECTIONLAYER), SC_LAYER_UNDER_TEXT);
@@ -181,6 +213,11 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 	m_editor->send(sciMessage(SCI_SETMOUSEDWELLTIME), 400);
 
 	m_editor->send(sciMessage(SCI_SETCODEPAGE), Scintilla::CpUtf8);
+	// 등폭 폰트에서 ASCII 세그먼트의 폭 계산을 곱셈으로 끝낸다. 기본 폰트에도
+	// 걸리도록 여기서 한 번 켜 두고, setEditorFont() 가 폰트를 바꿀 때마다
+	// STYLE_DEFAULT 에 다시 넣는다 (SCI_STYLECLEARALL 이 전 스타일로 퍼뜨린다).
+	m_editor->send(sciMessage(SCI_STYLESETCHECKMONOSPACED), STYLE_DEFAULT,
+				   monospaceFastPathEnabled() ? 1 : 0);
 	m_editor->send(sciMessage(SCI_SETMARGINTYPEN), 0, static_cast<sptr_t>(Scintilla::MarginType::Number));
 	configureBraceHighlightIndicators();
 	configureCodeFolding(m_codeFoldingEnabled);
@@ -757,9 +794,18 @@ void ScintillaQtDirectBackend::setEditorFont(const QFont& font)
 	const int pointSize = qMax(1, font.pointSize() > 0 ? font.pointSize() : font.pointSizeF() > 0.0 ? qRound(font.pointSizeF()) : 10);
 	m_editor->sends(sciMessage(SCI_STYLESETFONT), STYLE_DEFAULT, family.constData());
 	m_editor->send(sciMessage(SCI_STYLESETSIZE), STYLE_DEFAULT, pointSize);
+	// 폰트가 바뀌면 등폭 판정을 다시 해야 하므로 STYLE_CLEARALL 앞에서 다시 켠다.
+	// SCI_STYLERESETDEFAULT 를 보내면 이 값이 날아가는데, 이 프로젝트는 그 메시지를
+	// 어디서도 보내지 않는다. 보내게 되는 날 여기도 함께 손봐야 한다.
+	m_editor->send(sciMessage(SCI_STYLESETCHECKMONOSPACED), STYLE_DEFAULT,
+				   monospaceFastPathEnabled() ? 1 : 0);
+	m_editor->send(sciMessage(SCI_STYLECLEARALL));
+	// 줄번호 스타일은 STYLECLEARALL **뒤에** 설정해야 한다. ViewStyle::ClearStyles()
+	// 가 STYLE_DEFAULT 를 전 스타일에 통째로 복사하므로, 앞에서 설정하면 그대로
+	// 덮어써진다. 지금은 본문과 같은 폰트라 증상이 없지만 줄번호 폰트를 따로
+	// 두려는 순간 조용히 무시된다.
 	m_editor->sends(sciMessage(SCI_STYLESETFONT), STYLE_LINENUMBER, family.constData());
 	m_editor->send(sciMessage(SCI_STYLESETSIZE), STYLE_LINENUMBER, pointSize);
-	m_editor->send(sciMessage(SCI_STYLECLEARALL));
 	updateLineNumberMargin(m_lineNumberMarginDigits);
 }
 
