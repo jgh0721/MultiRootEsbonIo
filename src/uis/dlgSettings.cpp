@@ -112,6 +112,13 @@ namespace
                       QStringLiteral("xml"), QStringLiteral("hypertext"), QStringLiteral("css"),
                       QStringLiteral("bash"), QStringLiteral("sql")};
         }
+        // 전용 스타일 함수를 쓰는 렉서는 이 목록에서 뺀다. 아래 lexerDetailEntries()
+        // 가 만드는 text.lexer.<lexer>.<10개 일반 토큰> 키를 그 렉서에도 만들어 주면
+        // 사용자가 색을 바꿀 수는 있지만 applySyntaxStyles() 가 그 키를 읽지 않으므로
+        // 아무 일도 일어나지 않는다. 전형적인 "설정했는데 반응이 없다" 버그다.
+        // 그 렉서의 색은 자기 범위에 따로 있다 (markdown -> TEXT Lexer Markdown).
+        for (const QString& specialised : {QStringLiteral("markdown")})
+            lexers.removeAll(specialised);
         lexers.removeDuplicates();
         lexers.sort(Qt::CaseInsensitive);
         return lexers;
