@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <QJsonObject>
 #include <QObject>
 #include <QString>
 #include <QUrl>
@@ -61,6 +62,8 @@ public slots:
 private:
     void                                push();
     [[nodiscard]] QString               buildOptionsJson() const;
+    /// 프리뷰 CSS 변수로 꽂을 색 팔레트. markdown.* 테마 키를 그대로 쓴다.
+    [[nodiscard]] QJsonObject           buildThemeJson() const;
 
     QTimer*                             debounce_ = nullptr;
     /// 브리지 핸드셰이크 전에 들어온 요청. 마지막 하나만 들고 있는다 —

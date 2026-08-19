@@ -6,6 +6,7 @@
 #include "solEsbonioLspClient.hpp"
 #include "solEsbonioLspPool.hpp"
 #include "solPreviewBridge.hpp"
+#include "solThemeManager.hpp"
 #include "solGlossaryIndex.hpp"
 #include "solMarkdownPreviewController.hpp"
 #include "solRstPathIndex.hpp"
@@ -123,6 +124,17 @@ WorkspaceController::WorkspaceController( QObject* parent )
                 // 비어 있어 아무 일도 일어나지 않는다.
                 syncPreviewFromEditor();
             } );
+
+    // 테마가 바뀌면 색만 다시 보낸다. **페이지를 다시 읽지 않는다** — 세션에서
+    // 받아 둔 mermaid(3.4MB)와 KaTeX 를 버리게 되고, 테마 전환은 흔한 조작이다.
+    // 색은 CSS 변수로 꽂히므로 재렌더 한 번이면 즉시 반영된다.
+    connect( &ThemeManager::instance(), &ThemeManager::themeChanged, this, [this]( ThemeManager::Theme ) {
+        DocumentContext* context = contextFor( activeView_ );
+        if( context == nullptr || routeFor( *context ) != PreviewRoute::MarkdownJs )
+            return;
+        markdownPreview_->requestRender( context->path, textForPreview( *context ),
+                                        /*immediate=*/true, /*force=*/true );
+    } );
 
     // 용어집은 Esbonio 가 아니라 우리가 직접 훑는다. objects.inv 에는 이름만 있고
     // 정의 본문이 없어서 팝업에 보여 줄 것이 나오지 않는다.

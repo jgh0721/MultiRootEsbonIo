@@ -12,6 +12,7 @@
 #include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
+#include <iterator>
 
 namespace mrst {
 namespace {
@@ -167,8 +168,59 @@ QString MarkdownPreviewController::buildOptionsJson() const
         // mermaid 는 초기화할 때 테마 이름을 받는다. 나중에 바꿀 수 없어서
         // 로드 시점에 알려 줘야 한다.
         { QStringLiteral( "dark" ), ThemeManager::instance().currentTheme() == ThemeManager::Dark },
+        // 색은 CSS 변수로 꽂는다. 그래서 테마를 바꿀 때 페이지를 다시 읽지 않아도
+        // 되고, 세션에서 받아 둔 mermaid/KaTeX 를 버리지 않는다.
+        { QStringLiteral( "theme" ), buildThemeJson() },
     };
     return QString::fromUtf8( QJsonDocument( options ).toJson( QJsonDocument::Compact ) );
+}
+
+QJsonObject MarkdownPreviewController::buildThemeJson() const
+{
+    // markdown.* 테마 키 아홉 개를 그대로 쓴다. **새 키를 만들지 않는다** — 그 키는
+    // 이미 editableColorEntries() 에 있어 설정 대화상자의 "Markdown" 범위로 노출되어
+    // 있었고, 지금까지는 아무 데도 쓰이지 않는 죽은 색이었다. 되살리면 그 UI 가
+    // 그날부터 의미를 갖는다.
+    //
+    // 편집기 구문 색(text.lexer.markdown.*)과는 완전히 별개다. markdown.codeBackground
+    // 와 text.lexer.markdown.codeBackground 는 다른 키다.
+    auto&      theme = ThemeManager::instance();
+    const bool dark = theme.currentTheme() == ThemeManager::Dark;
+
+    const auto hex = [ &theme ]( const char* key ) {
+        return theme.color( QString::fromLatin1( key ) ).name( QColor::HexRgb );
+    };
+
+    const QString codeBackground = hex( "markdown.codeBackground" );
+
+    QJsonObject out{
+        { QStringLiteral( "bg" ), hex( "markdown.background" ) },
+        { QStringLiteral( "fg" ), hex( "markdown.foreground" ) },
+        { QStringLiteral( "link" ), hex( "markdown.link" ) },
+        { QStringLiteral( "heading" ), hex( "markdown.heading" ) },
+        { QStringLiteral( "border" ), hex( "markdown.border" ) },
+        { QStringLiteral( "code-bg" ), codeBackground },
+        { QStringLiteral( "inline-code" ), hex( "markdown.inlineCode" ) },
+        { QStringLiteral( "quote" ), hex( "markdown.blockquote" ) },
+        { QStringLiteral( "task-done" ), hex( "markdown.taskChecked" ) },
+        // 표 머리 배경은 코드 배경을 그대로 쓴다. 키를 하나 더 만들 값이 없다.
+        { QStringLiteral( "table-head-bg" ), codeBackground },
+    };
+
+    // 경고 상자 다섯 색은 테마 키가 없다. markdown.* 를 늘리는 대신 테마별 고정값을
+    // 쓴다 — 요점은 다섯이 서로 구별되는 것이고, 사용자가 그것을 하나씩 고르고 싶어할
+    // 이유가 없다. 값은 GitHub 의 두 테마에서 가져왔다.
+    static const char* kAlertKeys[] = { "alert-note", "alert-tip", "alert-important",
+                                       "alert-warning", "alert-caution" };
+    static const char* kAlertLight[] = { "#0969da", "#1a7f37", "#8250df", "#9a6700", "#cf222e" };
+    static const char* kAlertDark[] = { "#4493f8", "#3fb950", "#ab7df8", "#d29922", "#f85149" };
+    for( std::size_t i = 0; i < std::size( kAlertKeys ); ++i )
+    {
+        out.insert( QString::fromLatin1( kAlertKeys[ i ] ),
+                    QString::fromLatin1( dark ? kAlertDark[ i ] : kAlertLight[ i ] ) );
+    }
+
+    return out;
 }
 
 void MarkdownPreviewController::onRenderCompleted( const int token, const bool ok, const QString& message )
