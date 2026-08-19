@@ -220,6 +220,8 @@ private:
     void                                advanceStartupPhase();
     /// QWebEnginePage 를 만들고 컨트롤러에 붙인다. 여기서 Chromium 이 뜬다.
     void                                initialisePreview();
+    /// 프리뷰가 0 폭으로 시작하는 것을 막는다. 세션이 정한 배치는 덮지 않는다.
+    void                                ensureVisiblePreviewSplit();
     /// hot-exit 스냅샷 복원. 생성자에서 하면 첫 프레임 앞을 막는다.
     void                                restoreHotExitSnapshots();
 

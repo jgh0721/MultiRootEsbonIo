@@ -413,6 +413,14 @@ MainWindow::MainWindow( QWidget* parent )
     Ui.splitter_2->setChildrenCollapsible( false );
     Ui.splitter_2->setStretchFactor( 0, 1 );
     Ui.splitter_2->setStretchFactor( 1, 1 );
+    // setChildrenCollapsible(false) 는 "핸들을 끌어 접을 수 없다" 는 뜻일 뿐이고,
+    // 최소 폭이 0 이면 레이아웃 계산에서 0 이 될 수 있다. 실제로 그렇게 된다 —
+    // 창을 최대화하면 늘어난 폭이 전부 편집기로 가고 프리뷰가 0 폭으로 사라진다
+    // (프리뷰가 없는 것처럼 보이지만 핸들을 끌면 되살아난다). 하한을 준다.
+    //
+    // 값을 작게 잡는 이유: 이 하한은 편집기의 최소 폭과 더해져 창의 최소 폭이
+    // 되므로, 크게 잡으면 탭이 열리는 동안 레이아웃이 창을 강제로 넓힌다.
+    Ui.frmWebPreview->setMinimumWidth( 120 );
     Ui.frmEditor->setAutoFillBackground( true );
     Ui.frmWebPreview->setAutoFillBackground( true );
 
@@ -528,6 +536,35 @@ void MainWindow::advanceStartupPhase()
         openStartupPaths( startupPaths_ );
     else
         restoreLastSession();
+
+    // 세션이 배치를 정하지 않는 경로가 둘 있다 — 명령줄 인자로 기동한 경우와,
+    // `.multiroot/workspace.json` 이 아직 없는 새 워크스페이스다. 그러면 스플리터가
+    // Qt 기본 배분에 맡겨지고 프리뷰가 0 폭으로 시작한다(핸들을 끌면 되살아나므로
+    // "프리뷰 기능이 없다" 로 오인하기 쉽다). 탭을 다 연 뒤에 손본다.
+    ensureVisiblePreviewSplit();
+}
+
+void MainWindow::ensureVisiblePreviewSplit()
+{
+    QSplitter* splitter = Ui.splitter_2;
+    if( splitter == nullptr )
+        return;
+
+    const QList< int > sizes = splitter->sizes();
+    if( sizes.size() != 2 )
+        return;
+
+    // 세션이 남긴 배치는 덮지 않는다. 사용자가 좁혀 둔 프리뷰를 되돌리면
+    // 그 조작이 매 실행마다 사라진다. 실질적으로 보이지 않는 경우만 손본다.
+    constexpr int kVisibleEnough = 120;
+    if( sizes.at( 1 ) >= kVisibleEnough )
+        return;
+
+    const int total = sizes.at( 0 ) + sizes.at( 1 );
+    if( total <= 0 )
+        return;   // 아직 레이아웃이 없다. 최소 폭 하한이 남은 몫을 한다.
+
+    splitter->setSizes( { total / 2, total - total / 2 } );
 }
 
 void MainWindow::initialisePreview()
