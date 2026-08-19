@@ -13,7 +13,13 @@
 #include "thirdparty/scintilla-qt/PlatQtMetrics.hpp"
 
 #include <algorithm>
+#include <utility>
 #include <vector>
+
+// 캐시 모드를 넓혔을 때 메모리를 얼마나 더 먹는지 보려면 프로세스 작업 집합을
+// 읽어야 한다. Qt 에는 대응물이 없다.
+#include <windows.h>
+#include <psapi.h>
 
 /// 폭 측정(`Surface::MeasureWidths`) 비용을 재는 계측 하네스.
 ///
@@ -36,6 +42,7 @@ class ScintillaTextMetricsTest : public QObject
 private slots:
     void                                positionsAgreeAcrossPaths();
     void                                fullWrapCost();
+    void                                layoutCacheModeCost();
 };
 
 namespace {
@@ -475,6 +482,90 @@ void ScintillaTextMetricsTest::fullWrapCost()
     // 단언은 하나뿐이다 — 측정이 실제로 일어났는지. 벽시계 임계값을 넣으면
     // 빌드 기계가 바쁜 날 빨간불이 뜨고, 그 빨간불은 아무도 고치지 않는다.
     QVERIFY( editor.send( SCI_GETLINECOUNT ) >= kFixtureLines );
+}
+
+/// 줄 레이아웃 캐시를 문서 전체로 넓히는 것이 값을 하는지 잰다.
+///
+/// `SC_CACHE_PAGE` 에서는 `SignificantLines::LineMayCache` 가 화면 밖 줄을 걸러서,
+/// 전체 wrap 패스가 **아무것도 캐시하지 않고** llTemporary 를 재사용한다. 그래서
+/// 창 크기가 바뀌어 다시 wrap 할 때마다 처음부터 다 계산한다. `SC_CACHE_DOCUMENT`
+/// 는 그걸 남기지만 대가로 줄 수에 비례하는 메모리를 먹는다.
+///
+/// 폭 측정 자체가 싸진 뒤로는 이 교환의 무게가 달라졌을 수 있어 다시 잰다.
+void ScintillaTextMetricsTest::layoutCacheModeCost()
+{
+    if( qgetenv( "MRST_PERF" ).trimmed().isEmpty() )
+        QSKIP( "성능 계측은 MRST_PERF=1 일 때만 돈다" );
+    if( !QFontDatabase::families().contains( QStringLiteral( "Consolas" ) ) )
+        QSKIP( "Consolas 가 없다" );
+
+    const QByteArray text = buildCorpus( Corpus::Realistic );
+
+    qInfo().noquote() << QStringLiteral( "\n줄 레이아웃 캐시 모드 (%1줄, 실전 말뭉치, Consolas %2pt)" )
+                             .arg( kFixtureLines ).arg( kPointSize );
+    qInfo().noquote() << QStringLiteral( "%1 %2 %3 %4" )
+                             .arg( QStringLiteral( "모드" ), -14 )
+                             .arg( QStringLiteral( "첫 wrap" ), 12 )
+                             .arg( QStringLiteral( "재-wrap" ), 12 )
+                             .arg( QStringLiteral( "작업집합 증가" ), 16 );
+
+    for( const auto& mode : { std::pair< int, const char* >{ SC_CACHE_PAGE, "PAGE" },
+                              std::pair< int, const char* >{ SC_CACHE_DOCUMENT, "DOCUMENT" } } )
+    {
+        ScintillaEditBase editor;
+        editor.resize( kViewWidth, kViewHeight );
+        editor.show();
+        QApplication::processEvents();
+        editor.send( SCI_SETCODEPAGE, SC_CP_UTF8 );
+        editor.send( SCI_SETMARGINWIDTHN, 0, 0 );
+        editor.send( SCI_SETMARGINWIDTHN, 1, 0 );
+        editor.send( SCI_SETMARGINWIDTHN, 2, 0 );
+        editor.send( SCI_SETLAYOUTCACHE, mode.first );
+        editor.send( SCI_STYLESETCHECKMONOSPACED, STYLE_DEFAULT, 1 );
+        editor.sends( SCI_STYLESETFONT, STYLE_DEFAULT, "Consolas" );
+        editor.send( SCI_STYLESETSIZE, STYLE_DEFAULT, kPointSize );
+        editor.send( SCI_STYLECLEARALL );
+
+        PROCESS_MEMORY_COUNTERS before{};
+        before.cb = sizeof( before );
+        GetProcessMemoryInfo( GetCurrentProcess(), &before, sizeof( before ) );
+
+        editor.send( SCI_SETWRAPMODE, SC_WRAP_NONE );
+        editor.sends( SCI_SETTEXT, 0, text.constData() );
+        editor.send( SCI_ENSUREVISIBLE, 0 );
+
+        QElapsedTimer timer;
+        timer.start();
+        editor.send( SCI_SETWRAPMODE, SC_WRAP_CHAR );
+        editor.send( SCI_ENSUREVISIBLE, kFixtureLines - 1 );
+        const double firstMs = timer.nsecsElapsed() / 1e6;
+
+        // 텍스트는 그대로 두고 wrap 만 다시 시킨다. 창 크기를 바꿨을 때와 같은 일이
+        // 벌어지는데, 캐시가 살아 있으면 여기서 값을 한다.
+        std::vector< double > again;
+        for( int round = 0; round < kRepeat; ++round )
+        {
+            editor.send( SCI_SETWRAPMODE, SC_WRAP_NONE );
+            timer.restart();
+            editor.send( SCI_SETWRAPMODE, SC_WRAP_CHAR );
+            editor.send( SCI_ENSUREVISIBLE, kFixtureLines - 1 );
+            again.push_back( timer.nsecsElapsed() / 1e6 );
+        }
+
+        PROCESS_MEMORY_COUNTERS after{};
+        after.cb = sizeof( after );
+        GetProcessMemoryInfo( GetCurrentProcess(), &after, sizeof( after ) );
+        const double grewMiB =
+            ( double( after.WorkingSetSize ) - double( before.WorkingSetSize ) ) / ( 1024.0 * 1024.0 );
+
+        qInfo().noquote() << QStringLiteral( "%1 %2 %3 %4" )
+                                 .arg( QString::fromLatin1( mode.second ), -14 )
+                                 .arg( QString::number( firstMs, 'f', 1 ), 12 )
+                                 .arg( QString::number( median( again ), 'f', 1 ), 12 )
+                                 .arg( QStringLiteral( "%1 MiB" ).arg( grewMiB, 0, 'f', 1 ), 16 );
+    }
+
+    QVERIFY( true );
 }
 
 MRST_REGISTER_TEST( ScintillaTextMetricsTest );

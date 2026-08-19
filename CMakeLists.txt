@@ -454,6 +454,10 @@ if(MRST_BUILD_TESTS)
             qlementine
             ScintillaEditBaseQt
     )
+    if(WIN32)
+        # 레이아웃 캐시 모드를 견줄 때 프로세스 작업 집합을 읽는다(GetProcessMemoryInfo).
+        target_link_libraries(mrst_ui_tests PRIVATE psapi)
+    endif()
     if(MSVC)
         target_compile_options(mrst_ui_tests PRIVATE /utf-8 /permissive- /Zc:__cplusplus)
     endif()

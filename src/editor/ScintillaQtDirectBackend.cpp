@@ -190,8 +190,13 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 	// 멀티 페이즈 드로잉: 배경을 연속된 영역으로 그려 글자 간 갭 방지.
 	// 안티앨리어싱 격자 아티팩트를 실제로 막는 것이 이것이다.
 	m_editor->send(sciMessage(SCI_SETPHASESDRAW), SC_PHASES_MULTIPLE);
-	// 레이아웃 캐시: 화면에 보이는 줄만 담는다(SC_CACHE_PAGE). 문서 전체를 담는
-	// SC_CACHE_DOCUMENT 는 줄 수에 비례해 메모리를 먹으므로 측정 없이 올리지 않는다.
+	// 레이아웃 캐시: 화면에 보이는 줄만 담는다(SC_CACHE_PAGE).
+	//
+	// SC_CACHE_DOCUMENT 로 넓혀 봤지만 값을 하지 않는다. 2000줄 실전 문서 기준으로
+	// 첫 wrap 1.8→2.8ms, 재-wrap 1.6→1.9ms 로 **오히려 느려지고** 작업 집합이
+	// 0.6→3.0 MiB 로 늘었다(2만 줄이면 30 MiB 대). 폭 측정 자체가 싸진 뒤로는 줄
+	// 레이아웃을 남겨 둘 이유가 없고 캐시 관리 비용만 남기 때문이다.
+	// 다시 재려면 mrst_ui_tests 의 layoutCacheModeCost 를 MRST_PERF=1 로 돌린다.
 	m_editor->send(sciMessage(SCI_SETLAYOUTCACHE), SC_CACHE_PAGE);
 	// 선택 레이어: 텍스트 아래 반투명 배경으로 그려 원래 lexer 글자가 계속 보이게 한다.
 	m_editor->send(sciMessage(SCI_SETSELECTIONLAYER), SC_LAYER_UNDER_TEXT);
