@@ -1009,7 +1009,7 @@ void WorkspaceController::refreshDocumentOutline()
 
     // 폴백을 먼저 내보낸다. Esbonio 가 데워지기 전에도 개요가 비어 있지 않게.
     emit documentOutlineReady( context->path,
-                              parseRstOutline( activeView_->text(), context->path ) );
+                              parseDocumentOutline( activeView_->text(), context->path ) );
 
     // LSP 가 살아 있으면 더 정확한 결과로 덮어쓴다.
     if( LspClient* client = lspPool_->clientFor( context->projectId );

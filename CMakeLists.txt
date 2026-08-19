@@ -315,6 +315,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_RstContainerLexer.cpp
             tests/tst_RstFolding.cpp
             tests/tst_MdFolding.cpp
+            tests/tst_MdOutline.cpp
             tests/tst_LspMessageRouting.cpp
             tests/tst_ProjectResolution.cpp
             tests/tst_RstCompletionContext.cpp
