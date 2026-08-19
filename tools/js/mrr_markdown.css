@@ -23,6 +23,13 @@
     --mrr-md-inline-code: #24292f;
     --mrr-md-quote: #57606a;
     --mrr-md-table-head-bg: #f6f8fa;
+    --mrr-md-task-done: #1a7f37;
+    /* GitHub 경고 상자 다섯 색. C++ 이 테마 팔레트로 덮어쓴다. */
+    --mrr-md-alert-note: #0969da;
+    --mrr-md-alert-tip: #1a7f37;
+    --mrr-md-alert-important: #8250df;
+    --mrr-md-alert-warning: #9a6700;
+    --mrr-md-alert-caution: #cf222e;
 }
 
 html, body {
@@ -115,3 +122,63 @@ img { max-width: 100%; }
 /* 마커만 있고 본문이 없는 인용문(경고박스)에서 빈 문단이 남는다. 높이가 0 이면
    ranges() 가 알아서 걸러내므로 매핑에는 영향이 없다. */
 p:empty { display: none; }
+
+/* ── GFM 작업 목록 ─────────────────────────────────────── */
+/* 체크박스는 마커로 그린다. <input> 을 끼우면 누를 수 있는 것처럼 보이고, DOM 요소를
+   더하면 앵커 y 순서에 영향이 갈 수 있다. */
+li.mrr-task {
+    list-style: none;
+    margin-left: -1.4em;
+}
+li.mrr-task::before {
+    content: "\2610";           /* 빈 사각형 */
+    display: inline-block;
+    width: 1.4em;
+    color: var(--mrr-md-quote);
+}
+li.mrr-task.mrr-task-done::before {
+    content: "\2611";           /* 체크된 사각형 */
+    color: var(--mrr-md-task-done);
+}
+
+/* ── GitHub 경고 상자 ─────────────────────────────────── */
+/* 제목은 ::before 가 data-mrr-alert-title 을 읽어 그린다. 그 속성은 core 규칙이
+   blockquote_open 에 심는다 — 마커 문단을 지우지 않으므로 줄 매핑이 보존된다. */
+blockquote.mrr-alert {
+    border-left-color: var(--mrr-md-alert-note);
+    color: var(--mrr-md-fg);
+}
+blockquote.mrr-alert::before {
+    content: attr(data-mrr-alert-title);
+    display: block;
+    font-weight: 600;
+    color: var(--mrr-md-alert-note);
+    margin-bottom: 0.3em;
+}
+blockquote.mrr-alert-tip { border-left-color: var(--mrr-md-alert-tip); }
+blockquote.mrr-alert-tip::before { color: var(--mrr-md-alert-tip); }
+blockquote.mrr-alert-important { border-left-color: var(--mrr-md-alert-important); }
+blockquote.mrr-alert-important::before { color: var(--mrr-md-alert-important); }
+blockquote.mrr-alert-warning { border-left-color: var(--mrr-md-alert-warning); }
+blockquote.mrr-alert-warning::before { color: var(--mrr-md-alert-warning); }
+blockquote.mrr-alert-caution { border-left-color: var(--mrr-md-alert-caution); }
+blockquote.mrr-alert-caution::before { color: var(--mrr-md-alert-caution); }
+
+/* ── 각주 ─────────────────────────────────────────────── */
+.footnotes {
+    margin-top: 2em;
+    padding-top: 0.8em;
+    border-top: 1px solid var(--mrr-md-border);
+    font-size: 0.92em;
+    color: var(--mrr-md-quote);
+}
+.footnotes hr { display: none; }   /* 위 border-top 과 겹친다 */
+.footnote-backref { text-decoration: none; }
+
+/* ── mermaid ───────────────────────────────────────────── */
+/* 원격 리소스가 꺼져 있거나 CDN 을 못 받으면 이 블록이 원본 텍스트로 남는다.
+   .rst 프리뷰에서 sphinxcontrib-mermaid 가 실패할 때와 같은 모습이다. */
+pre.mermaid {
+    background: var(--mrr-md-code-bg);
+    text-align: center;
+}
