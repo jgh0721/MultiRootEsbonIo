@@ -2473,6 +2473,29 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
     </message>
 </context>
 <context>
+    <name>mrst::FilePreviewLoader</name>
+    <message>
+        <source>%1 프레임</source>
+        <translation type="unfinished">%1 フレーム</translation>
+    </message>
+    <message>
+        <source>디렉터리</source>
+        <translation type="unfinished">フォルダー</translation>
+    </message>
+    <message>
+        <source>미리보기를 만들 수 없습니다</source>
+        <translation type="unfinished">プレビューを作成できません</translation>
+    </message>
+    <message>
+        <source>이미지가 너무 큽니다</source>
+        <translation type="unfinished">画像が大きすぎます</translation>
+    </message>
+    <message>
+        <source>파일을 읽을 수 없습니다</source>
+        <translation type="unfinished">ファイルを読み取れません</translation>
+    </message>
+</context>
+<context>
     <name>mrst::LspClient</name>
     <message>
         <source>Esbonio 시작 실패: %1</source>
@@ -2488,6 +2511,13 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
     <message>
         <source>최대 프로세스 수를 넘었지만 축출할 대상이 없습니다.</source>
         <translation type="unfinished">最大プロセス数を超えましたが、退避できる対象がありません。</translation>
+    </message>
+</context>
+<context>
+    <name>mrst::PathIndex</name>
+    <message>
+        <source>경로 인덱스: %1 개 [%2]</source>
+        <translation type="unfinished">パスインデックス: %1 件 [%2]</translation>
     </message>
 </context>
 <context>

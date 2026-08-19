@@ -2479,6 +2479,29 @@ For example: 42 or 42:5</translation>
     </message>
 </context>
 <context>
+    <name>mrst::FilePreviewLoader</name>
+    <message>
+        <source>%1 프레임</source>
+        <translation type="unfinished">%1 frames</translation>
+    </message>
+    <message>
+        <source>디렉터리</source>
+        <translation type="unfinished">Folder</translation>
+    </message>
+    <message>
+        <source>미리보기를 만들 수 없습니다</source>
+        <translation type="unfinished">Preview unavailable</translation>
+    </message>
+    <message>
+        <source>이미지가 너무 큽니다</source>
+        <translation type="unfinished">Image is too large</translation>
+    </message>
+    <message>
+        <source>파일을 읽을 수 없습니다</source>
+        <translation type="unfinished">Cannot read the file</translation>
+    </message>
+</context>
+<context>
     <name>mrst::LspClient</name>
     <message>
         <source>Esbonio 시작 실패: %1</source>
@@ -2494,6 +2517,13 @@ For example: 42 or 42:5</translation>
     <message>
         <source>최대 프로세스 수를 넘었지만 축출할 대상이 없습니다.</source>
         <translation type="unfinished">The process limit was exceeded but there is nothing to evict.</translation>
+    </message>
+</context>
+<context>
+    <name>mrst::PathIndex</name>
+    <message>
+        <source>경로 인덱스: %1 개 [%2]</source>
+        <translation type="unfinished">Path index: %1 entries [%2]</translation>
     </message>
 </context>
 <context>
