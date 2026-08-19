@@ -75,6 +75,11 @@ private slots:
     void scanSkipsExcludedDirectoriesAtAnyDepth();
     void scanReturnsRootRelativeForwardSlashPaths();
     void scanRespectsLimit();
+
+    // ── Esbonio 항목 재기준화 ──
+    void rebasesLspLastSegmentOntoTypedDirectory();
+    void rebasedLspItemDeduplicatesAgainstOurOwn();
+    void rebaseLeavesFullPathItemsAlone();
 };
 
 // ── 슬롯 표 ───────────────────────────────────────────────
@@ -643,6 +648,60 @@ void TestRstPathCompletion::scanRespectsLimit()
     }
 
     QCOMPARE( mrst::scanPathIndex( temporary.path(), 5 ).size(), 5 );
+}
+
+// ── Esbonio 항목 재기준화 ─────────────────────────────────
+//
+// Esbonio 는 경로 항목에 label = 파일 이름만 담고 바꿀 범위는 textEdit 로만
+// 표현하는데 우리 클라이언트는 textEdit 를 읽지 않는다. 우리 치환 길이는 친
+// 경로 전체라, 고치지 않고 넣으면 디렉터리가 통째로 날아간다.
+
+void TestRstPathCompletion::rebasesLspLastSegmentOntoTypedDirectory()
+{
+    const Query query = makeQuery( QStringLiteral( ".. image:: ../img/lo" ), 21 );
+
+    QVector< mrst::rstcomplete::Item > items{
+        { QStringLiteral( "logo.png" ), QStringLiteral( "logo.png" ), QString{}, 17 },
+        { QStringLiteral( "icons" ), QStringLiteral( "icons" ), QString{}, 19 },
+    };
+
+    const QVector< mrst::rstcomplete::Item > rebased =
+        rebaseLspPathItems( std::move( items ), query );
+
+    QCOMPARE( rebased.at( 0 ).insertText, QStringLiteral( "../img/logo.png" ) );
+    // 이미지라는 사실도 우리 kind 로 표시해 목록에서 알아볼 수 있게 한다.
+    QCOMPARE( rebased.at( 0 ).kind, mrst::rstcomplete::kKindImageFile );
+    QCOMPARE( rebased.at( 1 ).insertText, QStringLiteral( "../img/icons/" ) );
+}
+
+void TestRstPathCompletion::rebasedLspItemDeduplicatesAgainstOurOwn()
+{
+    const Query query = makeQuery( QStringLiteral( ".. image:: ../img/lo" ), 21 );
+
+    const QVector< Candidate > ours =
+        oneLevelCandidates( query, fakeLister( { { QStringLiteral( "logo.png" ), false } } ) );
+    QVERIFY( !ours.isEmpty() );
+
+    QVector< mrst::rstcomplete::Item > lsp{
+        { QStringLiteral( "logo.png" ), QStringLiteral( "logo.png" ), QString{}, 17 } };
+    const QVector< mrst::rstcomplete::Item > rebased =
+        rebaseLspPathItems( std::move( lsp ), query );
+
+    // 재기준화를 거쳐야 비로소 같은 문자열이 되어 중복이 걸린다.
+    const Candidate* logo = findByLabel( ours, QStringLiteral( "logo.png" ) );
+    QVERIFY( logo != nullptr );
+    QCOMPARE( rebased.first().insertText, logo->insertText );
+}
+
+void TestRstPathCompletion::rebaseLeavesFullPathItemsAlone()
+{
+    const Query query = makeQuery( QStringLiteral( ".. image:: ../img/lo" ), 21 );
+    QVector< mrst::rstcomplete::Item > items{
+        { QStringLiteral( "sub/logo.png" ), QStringLiteral( "sub/logo.png" ), QString{}, 17 } };
+
+    const QVector< mrst::rstcomplete::Item > rebased =
+        rebaseLspPathItems( std::move( items ), query );
+    QCOMPARE( rebased.first().insertText, QStringLiteral( "sub/logo.png" ) );
 }
 
 MRST_REGISTER_TEST( TestRstPathCompletion );

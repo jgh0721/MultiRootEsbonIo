@@ -248,21 +248,27 @@ CompletionCoordinator::localCandidatesFor( const rstcomplete::Context& context )
     return items;
 }
 
+rstpath::Query CompletionCoordinator::pathQueryFor( const rstcomplete::Context& context ) const
+{
+    rstpath::Query query;
+    query.context = context;
+    const QString documentPath = editorPath();
+    if( !documentPath.isEmpty() )
+        query.documentDirectory = QFileInfo( documentPath ).absolutePath();
+    query.sourceRoot = sourceRoot_;
+    query.workspaceRoot = workspaceRoot_;
+    return query;
+}
+
 QList< CompletionDisplayItem >
 CompletionCoordinator::pathCandidatesFor( const rstcomplete::Context& context )
 {
     QList< CompletionDisplayItem > items;
     pathCandidates_.clear();
 
-    const QString documentPath = editorPath();
-    if( documentPath.isEmpty() )
+    const rstpath::Query query = pathQueryFor( context );
+    if( query.documentDirectory.isEmpty() )
         return items;
-
-    rstpath::Query query;
-    query.context = context;
-    query.documentDirectory = QFileInfo( documentPath ).absolutePath();
-    query.sourceRoot = sourceRoot_;
-    query.workspaceRoot = workspaceRoot_;
 
     QVector< rstpath::Candidate > found =
         rstpath::oneLevelCandidates( query, rstpath::diskLister() );
@@ -642,11 +648,44 @@ void CompletionCoordinator::applyLspItems( const QString& projectId, const int r
     for( const LspCompletionItem& item : items )
         converted.push_back( fromLsp( item ) );
 
-    harvestVocabulary( items );
+    // 경로 컨텍스트에서는 파일 이름을 directive/role 어휘로 먹이지 않는다.
+    // 렉서의 3-state 캐시가 파일 이름을 아는 directive 로 착각한다.
+    const rstpath::Slot* pathSlot = rstpath::slotFor( shownContext_ );
+    if( pathSlot == nullptr )
+        harvestVocabulary( items );
 
     const QString lineText = activeView_.isNull() ? QString{}
                                                   : activeView_->lineText( inFlight_.line );
     converted = rstcomplete::normalizeLspItems( std::move( converted ), lineText, inFlight_.column );
+
+    if( pathSlot != nullptr )
+    {
+        // 경로에서는 **우리 후보가 우선**이다. Esbonio 는 4종 directive 만,
+        // 확장자 필터 없이, 내부 Sphinx 빌드가 끝난 뒤에야 답한다. 그리고
+        // 그 항목은 마지막 세그먼트뿐이라 우리 형태로 고쳐야 디렉터리가
+        // 날아가지 않는다. 그렇게 맞춰 놓아야 중복 제거도 옳게 된다.
+        QList< CompletionDisplayItem > display = offlineItems_;
+        QSet< QString > seen;
+        seen.reserve( display.size() + converted.size() );
+        for( const CompletionDisplayItem& item : std::as_const( display ) )
+            seen.insert( item.insertText );
+
+        const QVector< rstcomplete::Item > rebased = rstpath::rebaseLspPathItems(
+            std::move( converted ), pathQueryFor( shownContext_ ) );
+        for( const rstcomplete::Item& item : rebased )
+        {
+            if( item.insertText.isEmpty() || seen.contains( item.insertText ) )
+                continue;
+            seen.insert( item.insertText );
+            display.push_back(
+                { item.label, item.insertText, item.detail, item.kind, item.label, 0 } );
+        }
+
+        popup_->setItems( display );
+        popup_->updateFilter( shownContext_.filterPrefix );
+        showOrRefreshPopup();
+        return;
+    }
 
     // LSP 가 우선, 오프라인 표는 빈 자리만 메운다.
     QVector< rstcomplete::Item > offline;

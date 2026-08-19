@@ -167,4 +167,14 @@ struct Candidate
 [[nodiscard]] QVector< Candidate > mergeCandidates( QVector< Candidate > oneLevel,
                                                     const QVector< Candidate >& global );
 
+/// Esbonio 가 준 경로 항목을 우리 형태로 고쳐 놓는다.
+///
+/// Esbonio 는 `label` 에 파일 이름만 담고 바꿀 범위는 `textEdit` 로만 표현하는데
+/// 우리 LSP 클라이언트는 `textEdit` 를 읽지 않는다. 우리 치환 길이는 **친 경로
+/// 전체**라 그대로 넣으면 `.. image:: img/lo` 가 `.. image:: logo.png` 가 되어
+/// **디렉터리가 날아간다**. 앞에 지금 보고 있는 디렉터리를 붙여 맞춘다.
+/// 중복 제거도 insertText 로 하므로 이걸 거치지 않으면 같은 파일이 두 번 뜬다.
+[[nodiscard]] QVector< rstcomplete::Item > rebaseLspPathItems( QVector< rstcomplete::Item > items,
+                                                               const Query& query );
+
 }   // namespace mrst::rstpath

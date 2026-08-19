@@ -537,4 +537,30 @@ QVector< Candidate > mergeCandidates( QVector< Candidate > oneLevel,
     return oneLevel;
 }
 
+QVector< rstcomplete::Item > rebaseLspPathItems( QVector< rstcomplete::Item > items,
+                                                 const Query& query )
+{
+    const Slot* slot = slotFor( query.context );
+    if( slot == nullptr )
+        return items;
+
+    const QString directory = resolveTypedDirectory( query );
+    if( directory.isEmpty() )
+        return items;
+
+    for( rstcomplete::Item& item : items )
+    {
+        // 이미 경로 형태로 온 항목(구분자가 있다)은 건드리지 않는다.
+        if( item.label.contains( QLatin1Char( '/' ) ) || item.label.contains( QLatin1Char( '\\' ) ) )
+            continue;
+
+        const bool isDirectory = item.kind == 19;   // LSP CompletionItemKind::Folder
+        const QString absolute = directory + QLatin1Char( '/' ) + item.label;
+        item.insertText = insertTextFor( query, *slot, absolute, isDirectory );
+        if( !isDirectory && filekinds::isImageFile( item.label ) )
+            item.kind = rstcomplete::kKindImageFile;
+    }
+    return items;
+}
+
 }   // namespace mrst::rstpath

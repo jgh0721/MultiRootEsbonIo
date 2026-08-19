@@ -129,6 +129,8 @@ private:
                                         pathCandidatesFor( const rstcomplete::Context& context );
     /// 경로 컨텍스트에서 글자가 하나 더 들어왔을 때 후보를 다시 만든다.
     void                                recollectPathItems();
+    /// 후보 생성기에 넘길 바깥 사정(문서 디렉터리·소스 루트·워크스페이스 루트).
+    [[nodiscard]] rstpath::Query        pathQueryFor( const rstcomplete::Context& context ) const;
     /// 경로 인자 안에서 평범한 글자를 쳤을 때도 후보를 다시 모을 것인가.
     ///
     /// 트리거 문자만 보면 안 된다. ".. image:: M" 에서 한 단계 후보가
