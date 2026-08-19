@@ -244,8 +244,14 @@ QStringList collectProjectDocuments( const QString& sourceRoot, const QString& r
         return {};
     }
 
-    static const QStringList suffixes{ QStringLiteral( "rst" ), QStringLiteral( "txt" ),
-                                      QStringLiteral( "md" ) };
+    // 확장자 목록의 단일 출처는 filekinds 다. 여기에 사본을 두었더니 .rest 와
+    // .markdown / .mdown 이 빠져 있었다 — 그 확장자로 쓴 문서는 프로젝트 개요에
+    // 아예 올라오지 않는다.
+    //
+    // 이 목록은 용어집 인덱스(solGlossaryIndex) 와 공유한다. 넓히면 그쪽 스캔
+    // 범위도 함께 넓어진다. parseGlossary() 는 `.. glossary::` 를 찾으므로 md 에서
+    // 오탐하지 않고 비용은 파일 I/O 뿐이며 상한(kMaxGlossaryDocuments)도 이미 있다.
+    const QStringList& suffixes = filekinds::documentExtensions();
 
     QStringList documents;
     QDirIterator iterator( root.absolutePath(), QDir::Files | QDir::NoDotAndDotDot,

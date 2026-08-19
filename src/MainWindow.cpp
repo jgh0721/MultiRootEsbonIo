@@ -2676,7 +2676,7 @@ void MainWindow::setupOutlineTrees()
                     return;
                 if( documents.isEmpty() )
                 {
-                    setOutlinePlaceholder( tree, tr( "활성 프로젝트에 reST 문서가 없습니다." ), "noRstDocs" );
+                    setOutlinePlaceholder( tree, tr( "활성 프로젝트에 문서가 없습니다." ), "noProjectDocs" );
                     return;
                 }
 
@@ -2722,8 +2722,8 @@ void MainWindow::retranslateOutlinePlaceholders()
             item->setText( 0, MainWindow::tr( "활성 Sphinx 프로젝트가 없습니다." ) );
         else if( id == QLatin1String( "noSymbols" ) )
             item->setText( 0, MainWindow::tr( "문서 심볼이 없습니다." ) );
-        else if( id == QLatin1String( "noRstDocs" ) )
-            item->setText( 0, MainWindow::tr( "활성 프로젝트에 reST 문서가 없습니다." ) );
+        else if( id == QLatin1String( "noProjectDocs" ) )
+            item->setText( 0, MainWindow::tr( "활성 프로젝트에 문서가 없습니다." ) );
     };
     retranslate( Ui.treOutlineDocument );
     retranslate( Ui.treOutlineProject );
