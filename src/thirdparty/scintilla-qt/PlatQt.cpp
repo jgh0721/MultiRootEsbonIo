@@ -1,3 +1,34 @@
+// == 이 파일은 Scintilla 상류 소스의 사본이다 ==============================
+//
+// 기준점: missdeer/scintilla rel-5-6-6 (82f7656) 의
+//         qt/ScintillaEditBase/PlatQt.cpp
+//
+// 왜 갈라졌나: Scintilla 코어에도 등폭 지름길이 있지만(PositionCache.cxx) 그것은
+//   세그먼트가 **전부 ASCII 그래픽**일 때만 걸린다. 한글이 한 글자만 섞여도
+//   세그먼트 전체가 플랫폼 측정으로 오는데, 한국어 문서에서는 그게 대부분이다.
+//   자동 줄바꿈이 기본으로 켜져 있어서 이 비용이 화면 밖 줄까지 번진다.
+//
+// 무엇을 바꿨나:
+//   1. 문자 폭을 전부 아는 텍스트는 QTextLayout 을 만들지 않고 곱셈으로 끝낸다
+//      (MonospaceWidths / FillMonospacePositions). 폰트별로 ASCII 폭과 전각 CJK
+//      폭을 한 번 실측해 두고, 그 밖의 문자는 폴백 경로에서 배운다(LearnWidths).
+//   2. 두 함수의 `if (!font) return;` 이 positions 배열을 안 채우고 반환했다.
+//      계약 위반이라 호출자가 초기화되지 않은 값을 읽었다. 0 으로 채운다.
+//   3. 호출 횟수 카운터와 켜고 끄는 스위치(PlatQtMetrics.hpp). 지름길이 실제로
+//      걸렸는지 확인할 유일한 방법이고 - Scintilla 는 판정 결과를 알려주지 않는다 -
+//      테스트가 두 경로의 문자 위치를 견주는 수단이기도 하다.
+//
+// 시도했다가 걷어낸 것: QTextLine::glyphRuns 로 코드유닛별 위치를 한 번에 받아
+//   cursorToX 의 O(n^2) 를 없애는 경로. 실측에서 ASCII 는 13% 빨랐지만 한글은
+//   6% 느렸고(폰트 폴백으로 런이 갈려 QList 할당이 늘었다), 무엇보다 결합 문자와
+//   soft hyphen 과 폰트 폴백에서 폴백 경로와 다른 위치를 냈다(정확성 테스트가
+//   34건 잡았다). 위 1번이 그 자리를 훨씬 크게 메운다.
+//
+// 상류가 바뀌면: cmake/BuildScintillaLexilla.cmake 의 해시 가드가 구성 시점에
+//   FATAL_ERROR 로 멈춘다. 상류 파일과 이 파일을 diff 해서 상류 변경을 옮긴 뒤
+//   그 해시를 갱신할 것. 헤더(PlatQt.h)는 복제하지 않았으므로 상류 것을 쓴다 -
+//   클래스 선언이 바뀌면 조용한 드리프트가 아니라 컴파일 에러로 드러난다.
+// =========================================================================
 // @file PlatQt.cpp
 //          Copyright (c) 1990-2011, Scientific Toolworks, Inc.
 //
@@ -15,6 +46,13 @@
 #include "XPM.h"
 #include "UniConversion.h"
 #include "DBCS.h"
+
+// ↓ 우리가 더한 것
+#include "PlatQtMetrics.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
 
 #include <QApplication>
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
@@ -141,10 +179,50 @@ static QFont::Stretch QStretchFromFontStretch(Scintilla::FontStretch stretch)
 	}
 }
 
+// 우리가 더한 것: ASCII / 전각 CJK 폭 캐시.
+//
+// Scintilla 코어에도 등폭 지름길이 있지만(PositionCache.cxx) 그것은 세그먼트가
+// **전부 ASCII 그래픽**일 때만 걸린다. 한글이 한 글자만 섞여도 세그먼트 전체가
+// 플랫폼 측정으로 온다. 한국어 문서에서는 그게 대부분이다.
+//
+// 그런데 실측해 보면 한글 음절·호환 자모·한자는 어느 폰트에서든 폭이 정확히
+// 같다. 한글 글리프가 없어 폰트 폴백이 일어나는 Consolas 에서도 그렇다(폴백
+// 폰트가 하나로 고정되므로). 다만 ASCII 폭의 정수배는 아니다 — Consolas 1.82,
+// Cascadia Code 1.71, 나눔고딕코딩만 정확히 2.0 이다. 그래서 폭을 둘 다 잰다.
+//
+// 넓히지 않은 범위와 그 이유(11pt 실측 편차):
+//   한글 자모 U+1100  결합이 일어나 폭 0 이 섞인다 (편차 1275)
+//   CJK 기호 U+3000   전각 공백 등에서 폰트마다 갈린다 (편차 85)
+//   가나 U+3040/30A0  폰트마다 반각/전각이 갈린다
+//   전각 기호 U+FF01  Consolas·나눔고딕코딩에서 반각으로 나온다
+struct MonospaceWidths {
+	bool probed = false;
+	bool usable = false;
+	XYPOSITION ascii = 0;
+	XYPOSITION cjk = 0;
+
+	// 프로브 범위 밖 문자의 폭을 폴백 경로에서 배워 둔다.
+	//
+	// 한국어 문서에는 초성+한자키로 넣는 기호가 흔하다 — ※ ○ → ℃ 「」 ‘’ … ―
+	// ± × ÷ ≠ ㎡ 같은 것들. 이들은 동아시아 폭이 Ambiguous 라 폰트마다 반각과
+	// 전각이 갈리므로 정적 범위로 묶을 수 없다(실측: 화살표 U+2190 은 Consolas
+	// 에서 편차 10.09). 그런데 **한 폰트 안에서는** 값이 정해져 있다.
+	//
+	// 폴백 경로는 어차피 QTextLayout 을 만들어 문자별 위치를 다 계산한다. 거기서
+	// 폭을 주워 담아 두면 다음번 같은 문자는 지름길을 탄다. 학습 자체는 공짜다.
+	//
+	// 값이 음수면 "문맥마다 달라서 못 믿는다" 는 표시다. 폭 0 인 문자(결합 마크
+	// 따위)도 여기 넣는다 — 앞 글자에 붙는지 여부가 문맥에 달렸기 때문이다.
+	QHash<unsigned int, XYPOSITION> learned;
+};
+
 class FontAndCharacterSet : public Font {
 public:
 	CharacterSet characterSet = CharacterSet::Ansi;
 	std::unique_ptr<QFont> pfont;
+	// const Font* 로만 접근되므로 mutable 이다. ViewStyle::Refresh 가 폰트를
+	// 통째로 다시 만들기 때문에(fonts.clear()) 무효화는 저절로 된다.
+	mutable MonospaceWidths widths;
 	explicit FontAndCharacterSet(const FontParameters &fp) : characterSet(fp.characterSet) {
 		pfont = std::make_unique<QFont>();
 		pfont->setStyleStrategy(ChooseStrategy(fp.extraFontFlag));
@@ -654,18 +732,253 @@ void SurfaceImpl::PopClip()
 	GetPainter()->restore();
 }
 
+
+// ── 우리가 더한 것: ASCII + 전각 CJK 만으로 된 텍스트는 곱셈으로 끝낸다 ──
+//
+// 실측한 안전 범위. 이 밖은 폰트마다 폭이 갈려서 넣을 수 없다(위 MonospaceWidths
+// 주석에 범위별 편차를 적어 두었다).
+namespace {
+
+constexpr bool IsFullWidthCJK(unsigned int cp) noexcept
+{
+	return (cp >= 0xAC00 && cp <= 0xD7A3)    // 한글 음절
+	    || (cp >= 0x3130 && cp <= 0x318E)    // 호환 자모
+	    || (cp >= 0x4E00 && cp <= 0x9FA5);   // 한자
+}
+
+/// 문자별 advance 가 전부 같으면 그 폭을 돌려준다. 문턱은 Scintilla 의
+/// ViewStyle 이 등폭을 판정할 때 쓰는 것과 같다(최소폭의 1e-6).
+bool UniformAdvance(const QTextLine &tl, int n, XYPOSITION &widthOut)
+{
+	if (n <= 0)
+		return false;
+	qreal minW = 0.0;
+	qreal maxW = 0.0;
+	qreal prev = 0.0;
+	for (int i = 0; i < n; i++) {
+		const qreal x = tl.cursorToX(i + 1);
+		const qreal w = x - prev;
+		prev = x;
+		if (i == 0) {
+			minW = w;
+			maxW = w;
+		} else {
+			minW = std::min(minW, w);
+			maxW = std::max(maxW, w);
+		}
+	}
+	if (minW <= 0.0 || (maxW - minW) >= minW * 1e-6)
+		return false;
+	widthOut = static_cast<XYPOSITION>(minW);
+	return true;
+}
+
+/// 폰트당 한 번만 잰다. ViewStyle::Refresh 가 폰트를 다시 만들면 캐시도 함께
+/// 사라지므로 무효화 로직이 따로 필요 없다.
+MonospaceWidths &MonospaceWidthsFor(const Font *font, QPaintDevice *device)
+{
+	const FontAndCharacterSet *pfcs = AsFontAndCharacterSet(font);
+	MonospaceWidths &w = pfcs->widths;
+	if (w.probed)
+		return w;
+	w.probed = true;
+
+	const auto measure = [&](const QString &sample, XYPOSITION &out) {
+		QTextLayout tlay(sample, *pfcs->pfont, device);
+		tlay.beginLayout();
+		const QTextLine tl = tlay.createLine();
+		tlay.endLayout();
+		return UniformAdvance(tl, sample.size(), out);
+	};
+
+	// "Ay" 는 커닝이, "fi" 는 리가처가 있는 폰트를 걸러내려는 것이다
+	// (Scintilla 의 ViewStyle 프로브와 같은 수법).
+	QString ascii = QStringLiteral("Ayfi");
+	for (int c = 0x20; c <= 0x7E; c++)
+		ascii.append(QChar(c));
+	// 세 범위에서 고르게 뽑는다. 한쪽에 몰리면 폰트 폴백이 범위마다 다를 때
+	// 그것을 놓친다.
+	QString cjk;
+	for (int cp = 0xAC00; cp <= 0xD7A3; cp += 397)
+		cjk.append(QChar(cp));
+	for (int cp = 0x3131; cp <= 0x318E; cp += 11)
+		cjk.append(QChar(cp));
+	for (int cp = 0x4E00; cp <= 0x9FA5; cp += 599)
+		cjk.append(QChar(cp));
+
+	XYPOSITION asciiWidth = 0;
+	XYPOSITION cjkWidth = 0;
+	if (measure(ascii, asciiWidth) && measure(cjk, cjkWidth)) {
+		w.usable = true;
+		w.ascii = asciiWidth;
+		w.cjk = cjkWidth;
+	}
+	return w;
+}
+
+unsigned int CodePointFromUTF8(const char *s, unsigned int bytes) noexcept
+{
+	const unsigned char b0 = static_cast<unsigned char>(s[0]);
+	switch (bytes) {
+	case 1:
+		return b0;
+	case 2:
+		return ((b0 & 0x1Fu) << 6) | (static_cast<unsigned char>(s[1]) & 0x3Fu);
+	case 3:
+		return ((b0 & 0x0Fu) << 12) |
+		       ((static_cast<unsigned char>(s[1]) & 0x3Fu) << 6) |
+		       (static_cast<unsigned char>(s[2]) & 0x3Fu);
+	case 4:
+		return ((b0 & 0x07u) << 18) |
+		       ((static_cast<unsigned char>(s[1]) & 0x3Fu) << 12) |
+		       ((static_cast<unsigned char>(s[2]) & 0x3Fu) << 6) |
+		       (static_cast<unsigned char>(s[3]) & 0x3Fu);
+	default:
+		return 0;
+	}
+}
+
+/// UTF-8 텍스트의 모든 문자 폭을 아는 경우에만 positions 를 채우고 true.
+/// 하나라도 모르면 false — 그때는 호출자가 원래 경로로 간다 (부분적으로 쓴
+/// 값은 그 경로가 덮어쓴다).
+bool FillMonospacePositions(std::string_view text, XYPOSITION *positions,
+			    const MonospaceWidths &w)
+{
+	XYPOSITION x = 0;
+	size_t i = 0;
+	const size_t len = text.length();
+	while (i < len) {
+		const unsigned char b0 = static_cast<unsigned char>(text[i]);
+		if (b0 >= 0x20 && b0 <= 0x7E) {
+			x += w.ascii;
+			positions[i++] = x;
+			continue;
+		}
+		const unsigned int bytes = UTF8BytesOfLead[b0];
+		if (bytes < 2 || (i + bytes) > len)
+			return false;
+		const unsigned int cp = CodePointFromUTF8(&text[i], bytes);
+		XYPOSITION width = 0;
+		if (bytes == 3 && IsFullWidthCJK(cp)) {
+			width = w.cjk;
+		} else {
+			const auto found = w.learned.constFind(cp);
+			if (found == w.learned.constEnd() || *found < 0)
+				return false;
+			width = *found;
+		}
+		x += width;
+		// 계약: 한 문자의 모든 바이트가 그 문자의 오른쪽 끝을 갖는다.
+		for (unsigned int b = 0; b < bytes; b++)
+			positions[i++] = x;
+	}
+	return true;
+}
+
+/// 폴백 경로가 계산해 둔 positions 에서 문자 폭을 주워 담는다.
+///
+/// 이미 값이 있고 다르면 음수로 덮어 "못 믿는다" 고 표시한다. 같은 문자가
+/// 문맥에 따라 다른 폭을 갖는다는 뜻이고(커닝 따위), 그런 문자는 지름길로
+/// 처리하면 안 된다.
+void LearnWidths(std::string_view text, const XYPOSITION *positions, MonospaceWidths &w)
+{
+	XYPOSITION prev = 0;
+	size_t i = 0;
+	const size_t len = text.length();
+	while (i < len) {
+		const unsigned char b0 = static_cast<unsigned char>(text[i]);
+		const unsigned int bytes = UTF8BytesOfLead[b0];
+		if (bytes == 0 || (i + bytes) > len)
+			return;
+		const XYPOSITION x = positions[i + bytes - 1];
+		const XYPOSITION width = x - prev;
+		prev = x;
+		i += bytes;
+
+		// ASCII 와 전각 CJK 는 프로브에서 이미 안다. 서로게이트(4바이트)는
+		// ZWJ 시퀀스처럼 이웃에 따라 합쳐지므로 배우지 않는다.
+		if (bytes < 2 || bytes > 3)
+			continue;
+		const unsigned int cp = CodePointFromUTF8(&text[i - bytes], bytes);
+		if (bytes == 3 && IsFullWidthCJK(cp))
+			continue;
+		// 폭 0 은 앞 글자에 결합했다는 뜻이라 문맥에 달렸다.
+		const XYPOSITION value = (width > 0) ? width : static_cast<XYPOSITION>(-1);
+		const auto found = w.learned.find(cp);
+		if (found == w.learned.end()) {
+			w.learned.insert(cp, value);
+		} else if (*found != value) {
+			*found = -1;
+		}
+	}
+}
+
+}  // namespace
+
+// 이 파일 전체가 namespace Scintilla::Internal 안이라, 카운터를 전역
+// mrst::scintilla 에 두려면 블록을 잠깐 닫았다 다시 열어야 한다. 그러지 않으면
+// Scintilla::Internal::mrst::scintilla 가 되어 테스트가 링크되지 않는다.
+}  // namespace Scintilla::Internal
+
+namespace mrst::scintilla {
+
+std::atomic<unsigned long long> &measureWidthsCallCount() noexcept
+{
+	static std::atomic<unsigned long long> counter{0};
+	return counter;
+}
+
+namespace {
+std::atomic<bool> &fastPathFlag() noexcept
+{
+	// 환경변수는 처음 물어볼 때 한 번만 읽는다. 그 뒤로는 테스트가 바꿀 수 있다.
+	static std::atomic<bool> flag{qgetenv("MRST_PLATQT_LEGACY_MEASURE").trimmed().isEmpty()};
+	return flag;
+}
+}  // namespace
+
+void setMonospaceFastPathEnabled(bool enabled) noexcept
+{
+	fastPathFlag().store(enabled, std::memory_order_relaxed);
+}
+
+bool monospaceFastPathEnabled() noexcept
+{
+	return fastPathFlag().load(std::memory_order_relaxed);
+}
+
+}  // namespace mrst::scintilla
+
+namespace Scintilla::Internal {
+
 void SurfaceImpl::MeasureWidths(const Font *font,
 				std::string_view text,
                                 XYPOSITION *positions)
 {
-	if (!font)
+	mrst::scintilla::measureWidthsCallCount().fetch_add(1, std::memory_order_relaxed);
+	if (!font) {
+		// 계약상 배열 전체를 채워야 한다. 원래 코드는 그냥 반환해서 호출자가
+		// 초기화되지 않은 값을 읽었다.
+		std::fill(positions, positions + text.length(), static_cast<XYPOSITION>(0));
 		return;
+	}
 	SetCodec(font);
+	// 문자 폭을 전부 아는 텍스트면 QTextLayout 을 아예 만들지 않는다. Scintilla
+	// 코어의 지름길은 세그먼트가 **전부 ASCII** 일 때만 걸리므로, 한글이 한 글자만
+	// 섞여도 여기로 온다. 한국어 문서에서는 그게 대부분이다.
+	MonospaceWidths *mw = nullptr;
+	if (mode.codePage == SC_CP_UTF8 && ::mrst::scintilla::monospaceFastPathEnabled()) {
+		mw = &MonospaceWidthsFor(font, GetPaintDevice());
+		if (mw->usable && FillMonospacePositions(text, positions, *mw))
+			return;
+	}
 	QString su = UnicodeFromText(codec, text);
 	QTextLayout tlay(su, *FontPointer(font), GetPaintDevice());
 	tlay.beginLayout();
 	QTextLine tl = tlay.createLine();
 	tlay.endLayout();
+	// 세그먼트는 BreakFinder 가 300 바이트를 넘으면 100 안팎으로 재분할하므로
+	// 사실상 언제나 스택에 든다.
 	if (mode.codePage == SC_CP_UTF8) {
 		int fit = su.size();
 		int ui=0;
@@ -674,7 +987,7 @@ void SurfaceImpl::MeasureWidths(const Font *font,
 			const unsigned char uch = text[i];
 			const unsigned int byteCount = UTF8BytesOfLead[uch];
 			const int codeUnits = UTF16LengthFromUTF8ByteCount(byteCount);
-			qreal xPosition = tl.cursorToX(ui+codeUnits);
+			const qreal xPosition = tl.cursorToX(ui+codeUnits);
 			for (size_t bytePos=0; (bytePos<byteCount) && (i<text.length()); bytePos++) {
 				positions[i++] = xPosition;
 			}
@@ -687,11 +1000,13 @@ void SurfaceImpl::MeasureWidths(const Font *font,
 			positions[i++] = lastPos;
 		}
 	} else if (mode.codePage) {
-		// DBCS
+		// DBCS — 이 앱에서는 도달하지 않는다. SCI_SETCODEPAGE 에 CpUtf8 이외의
+		// 값을 보내는 코드가 없어서(설정의 useUtf8 은 항상 참) 테스트로 덮을
+		// 수도 없다. 상류와 어긋나지 않게 형태만 맞춰 둔다.
 		int ui = 0;
 		for (size_t i=0; i<text.length();) {
 			size_t lenChar = DBCSIsLeadByte(mode.codePage, text[i]) ? 2 : 1;
-			qreal xPosition = tl.cursorToX(ui+1);
+			const qreal xPosition = tl.cursorToX(ui+1);
 			for (unsigned int bytePos=0; (bytePos<lenChar) && (i<text.length()); bytePos++) {
 				positions[i++] = xPosition;
 			}
@@ -703,6 +1018,10 @@ void SurfaceImpl::MeasureWidths(const Font *font,
 			positions[i] = tl.cursorToX(i+1);
 		}
 	}
+	// 방금 계산한 결과에서 처음 보는 문자의 폭을 주워 둔다. 다음번에는 이 세그먼트가
+	// 지름길을 탄다 — 한국어 문서의 ※ ○ → ℃ 같은 기호가 여기서 학습된다.
+	if (mw && mw->usable)
+		LearnWidths(text, positions, *mw);
 }
 
 XYPOSITION SurfaceImpl::WidthText(const Font *font, std::string_view text)
@@ -763,8 +1082,17 @@ void SurfaceImpl::MeasureWidthsUTF8(const Font *font,
 				std::string_view text,
 				XYPOSITION *positions)
 {
-	if (!font)
+	mrst::scintilla::measureWidthsCallCount().fetch_add(1, std::memory_order_relaxed);
+	if (!font) {
+		std::fill(positions, positions + text.length(), static_cast<XYPOSITION>(0));
 		return;
+	}
+	MonospaceWidths *mw = nullptr;
+	if (::mrst::scintilla::monospaceFastPathEnabled()) {
+		mw = &MonospaceWidthsFor(font, GetPaintDevice());
+		if (mw->usable && FillMonospacePositions(text, positions, *mw))
+			return;
+	}
 	QString su = QString::fromUtf8(text.data(), static_cast<int>(text.length()));
 	QTextLayout tlay(su, *FontPointer(font), GetPaintDevice());
 	tlay.beginLayout();
@@ -777,7 +1105,7 @@ void SurfaceImpl::MeasureWidthsUTF8(const Font *font,
 		const unsigned char uch = text[i];
 		const unsigned int byteCount = UTF8BytesOfLead[uch];
 		const int codeUnits = UTF16LengthFromUTF8ByteCount(byteCount);
-		qreal xPosition = tl.cursorToX(ui+codeUnits);
+		const qreal xPosition = tl.cursorToX(ui+codeUnits);
 		for (size_t bytePos=0; (bytePos<byteCount) && (i<text.length()); bytePos++) {
 			positions[i++] = xPosition;
 		}
@@ -789,6 +1117,14 @@ void SurfaceImpl::MeasureWidthsUTF8(const Font *font,
 	while (i<text.length()) {
 		positions[i++] = lastPos;
 	}
+	// 방금 계산한 결과에서 처음 보는 문자의 폭을 주워 둔다. 다음번에는 이 세그먼트가
+	// 지름길을 탄다 — 한국어 문서의 ※ ○ → ℃ 같은 기호가 여기서 학습된다.
+	//
+	// UTF-8 문서는 PositionCache 가 MeasureWidths 가 아니라 이쪽을 부른다
+	// (PositionCache.cxx 의 unicode 분기). 학습을 여기 두지 않으면 아무것도 배우지
+	// 못한다 — 실제로 그렇게 만들어 놓고 한참 헤맸다.
+	if (mw && mw->usable)
+		LearnWidths(text, positions, *mw);
 }
 
 XYPOSITION SurfaceImpl::WidthTextUTF8(const Font *font, std::string_view text)
