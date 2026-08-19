@@ -664,7 +664,11 @@
     </message>
     <message>
         <source>활성 프로젝트에 reST 문서가 없습니다.</source>
-        <translation type="unfinished">アクティブプロジェクトに reST ドキュメントがありません。</translation>
+        <translation type="obsolete">アクティブプロジェクトに reST ドキュメントがありません。</translation>
+    </message>
+    <message>
+        <source>활성 프로젝트에 문서가 없습니다.</source>
+        <translation type="unfinished">アクティブなプロジェクトにドキュメントがありません。</translation>
     </message>
 </context>
 <context>
@@ -2079,8 +2083,20 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
         <translation type="unfinished">Markdown</translation>
     </message>
     <message>
+        <source>Markdown 굵게(**)</source>
+        <translation type="unfinished">Markdown 太字 (**)</translation>
+    </message>
+    <message>
+        <source>Markdown 기울임(*)</source>
+        <translation type="unfinished">Markdown 斜体 (*)</translation>
+    </message>
+    <message>
         <source>Markdown 링크</source>
         <translation type="unfinished">Markdown リンク</translation>
+    </message>
+    <message>
+        <source>Markdown 목록 마커</source>
+        <translation type="unfinished">Markdown リストマーカー</translation>
     </message>
     <message>
         <source>Markdown 문서 배경</source>
@@ -2091,6 +2107,10 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
         <translation type="unfinished">Markdown 本文</translation>
     </message>
     <message>
+        <source>Markdown 수평선</source>
+        <translation type="unfinished">Markdown 水平線</translation>
+    </message>
+    <message>
         <source>Markdown 인라인 코드</source>
         <translation type="unfinished">Markdown インラインコード</translation>
     </message>
@@ -2099,16 +2119,52 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
         <translation type="unfinished">Markdown 引用</translation>
     </message>
     <message>
+        <source>Markdown 인용문(&gt;)</source>
+        <translation type="unfinished">Markdown 引用 (&gt;)</translation>
+    </message>
+    <message>
         <source>Markdown 제목</source>
         <translation type="unfinished">Markdown 見出し</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 1</source>
+        <translation type="unfinished">Markdown 見出し 1</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 2</source>
+        <translation type="unfinished">Markdown 見出し 2</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 3</source>
+        <translation type="unfinished">Markdown 見出し 3</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 4</source>
+        <translation type="unfinished">Markdown 見出し 4</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 5</source>
+        <translation type="unfinished">Markdown 見出し 5</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 6</source>
+        <translation type="unfinished">Markdown 見出し 6</translation>
     </message>
     <message>
         <source>Markdown 체크 항목</source>
         <translation type="unfinished">Markdown チェック済み項目</translation>
     </message>
     <message>
+        <source>Markdown 취소선(~~)</source>
+        <translation type="unfinished">Markdown 取り消し線 (~~)</translation>
+    </message>
+    <message>
         <source>Markdown 코드 배경</source>
         <translation type="unfinished">Markdown コードの背景</translation>
+    </message>
+    <message>
+        <source>Markdown 코드 블록</source>
+        <translation type="unfinished">Markdown コードブロック</translation>
     </message>
     <message>
         <source>Markdown 테두리</source>
@@ -2173,6 +2229,10 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
     <message>
         <source>TEXT Lexer</source>
         <translation type="unfinished">TEXT Lexer</translation>
+    </message>
+    <message>
+        <source>TEXT Lexer Markdown</source>
+        <translation type="unfinished">TEXT Lexer Markdown</translation>
     </message>
     <message>
         <source>TEXT Lexer reST</source>

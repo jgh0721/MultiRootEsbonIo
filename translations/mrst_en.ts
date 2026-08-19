@@ -670,7 +670,11 @@ Open it as text anyway?
     </message>
     <message>
         <source>활성 프로젝트에 reST 문서가 없습니다.</source>
-        <translation type="unfinished">The active project has no reST documents.</translation>
+        <translation type="obsolete">The active project has no reST documents.</translation>
+    </message>
+    <message>
+        <source>활성 프로젝트에 문서가 없습니다.</source>
+        <translation type="unfinished">No documents in the active project.</translation>
     </message>
 </context>
 <context>
@@ -2085,8 +2089,20 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">Markdown</translation>
     </message>
     <message>
+        <source>Markdown 굵게(**)</source>
+        <translation type="unfinished">Markdown bold (**)</translation>
+    </message>
+    <message>
+        <source>Markdown 기울임(*)</source>
+        <translation type="unfinished">Markdown italic (*)</translation>
+    </message>
+    <message>
         <source>Markdown 링크</source>
         <translation type="unfinished">Markdown link</translation>
+    </message>
+    <message>
+        <source>Markdown 목록 마커</source>
+        <translation type="unfinished">Markdown list marker</translation>
     </message>
     <message>
         <source>Markdown 문서 배경</source>
@@ -2097,6 +2113,10 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">Markdown body text</translation>
     </message>
     <message>
+        <source>Markdown 수평선</source>
+        <translation type="unfinished">Markdown horizontal rule</translation>
+    </message>
+    <message>
         <source>Markdown 인라인 코드</source>
         <translation type="unfinished">Markdown inline code</translation>
     </message>
@@ -2105,16 +2125,52 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">Markdown block quote</translation>
     </message>
     <message>
+        <source>Markdown 인용문(&gt;)</source>
+        <translation type="unfinished">Markdown blockquote (&gt;)</translation>
+    </message>
+    <message>
         <source>Markdown 제목</source>
         <translation type="unfinished">Markdown heading</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 1</source>
+        <translation type="unfinished">Markdown heading 1</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 2</source>
+        <translation type="unfinished">Markdown heading 2</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 3</source>
+        <translation type="unfinished">Markdown heading 3</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 4</source>
+        <translation type="unfinished">Markdown heading 4</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 5</source>
+        <translation type="unfinished">Markdown heading 5</translation>
+    </message>
+    <message>
+        <source>Markdown 제목 6</source>
+        <translation type="unfinished">Markdown heading 6</translation>
     </message>
     <message>
         <source>Markdown 체크 항목</source>
         <translation type="unfinished">Markdown checked item</translation>
     </message>
     <message>
+        <source>Markdown 취소선(~~)</source>
+        <translation type="unfinished">Markdown strikethrough (~~)</translation>
+    </message>
+    <message>
         <source>Markdown 코드 배경</source>
         <translation type="unfinished">Markdown code background</translation>
+    </message>
+    <message>
+        <source>Markdown 코드 블록</source>
+        <translation type="unfinished">Markdown code block</translation>
     </message>
     <message>
         <source>Markdown 테두리</source>
@@ -2179,6 +2235,10 @@ For example: 42 or 42:5</translation>
     <message>
         <source>TEXT Lexer</source>
         <translation type="unfinished">TEXT Lexer</translation>
+    </message>
+    <message>
+        <source>TEXT Lexer Markdown</source>
+        <translation type="unfinished">TEXT Lexer Markdown</translation>
     </message>
     <message>
         <source>TEXT Lexer reST</source>
