@@ -19,6 +19,7 @@ class QTimer;
 namespace mrst {
 
 class GlossaryIndex;
+class PathIndex;
 
 /// 자동완성 조율자.
 ///
@@ -47,6 +48,10 @@ public:
     void                                setActiveProject( const QString& projectId,
                                                          const QString& sourceRoot,
                                                          const QString& workspaceRoot );
+    /// 워크스페이스 전역 경로 인덱스를 주입한다. 소유권 없음.
+    void                                setPathIndex( PathIndex* index );
+    /// 전역 경로 인덱스가 갱신됐다. 경로 후보를 띄우고 있으면 다시 채운다.
+    void                                notifyPathIndexReady( const QString& root );
     /// 용어집 인덱스를 주입한다. 소유권 없음.
     /// `:term:` 후보와 상세 패널의 정의 본문이 여기서 온다.
     void                                setGlossaryIndex( GlossaryIndex* glossary );
@@ -124,6 +129,12 @@ private:
                                         pathCandidatesFor( const rstcomplete::Context& context );
     /// 경로 컨텍스트에서 글자가 하나 더 들어왔을 때 후보를 다시 만든다.
     void                                recollectPathItems();
+    /// 경로 인자 안에서 평범한 글자를 쳤을 때도 후보를 다시 모을 것인가.
+    ///
+    /// 트리거 문자만 보면 안 된다. ".. image:: M" 에서 한 단계 후보가
+    /// 전부 걸러져 팝업이 닫히면, 뒤에 무엇을 쳐도 다시 열릴 길이 없어
+    /// "이름만 알면 프로젝트 어디서든 찾아 준다" 는 길이 막힌다.
+    [[nodiscard]] bool                  shouldRearmForPath();
 
     [[nodiscard]] rstcomplete::Context  contextAtCaret() const;
     [[nodiscard]] QStringList           previousLinesAtCaret( int count ) const;
@@ -134,6 +145,7 @@ private:
     /// 목록 오른쪽(또는 마우스 옆)에 뜨는 상세 패널. 목록과 같은 수명.
     QPointer< CompletionDetailPopup >   detail_;
     GlossaryIndex*                      glossary_ = nullptr;
+    PathIndex*                          pathIndex_ = nullptr;
     QTimer*                             debounce_ = nullptr;
     QPointer< QTextView >               activeView_;
     QString                             activeProjectId_;
@@ -144,6 +156,9 @@ private:
     /// 지금 팝업에 올라간 경로 후보. insertText -> 후보.
     /// 상세 패널이 절대 경로와 종류를 여기서 가져간다.
     QHash< QString, rstpath::Candidate > pathCandidates_;
+    /// Esc 로 닫은 경로 컨텍스트. null 이면 닫은 적이 없다.
+    QString                             dismissedPathPrefix_;
+    int                                 dismissedPathLine_ = 0;
 
     QString                             pendingTrigger_;
     bool                                pendingExplicit_ = false;

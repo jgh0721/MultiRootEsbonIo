@@ -6,6 +6,7 @@
 #include "solEsbonioLspPool.hpp"
 #include "solPreviewBridge.hpp"
 #include "solGlossaryIndex.hpp"
+#include "solRstPathIndex.hpp"
 #include "solRestCompletionCoordinator.hpp"
 #include "solRestOutlineService.hpp"
 #include "solPythonEnvMgr.hpp"
@@ -92,6 +93,7 @@ WorkspaceController::WorkspaceController( QObject* parent )
     , lspPool_( new LspServerPool( this ) )
     , completions_( new CompletionCoordinator( this ) )
     , glossary_( new GlossaryIndex( this ) )
+    , pathIndex_( new PathIndex( this ) )
 {
     connect( virtualProjects_, &VirtualProjectManager::logMessage, this, &WorkspaceController::logMessage );
 
@@ -104,6 +106,14 @@ WorkspaceController::WorkspaceController( QObject* parent )
                 if( count > 0 )
                     emit logMessage( tr( "용어집 %1개 [%2]" ).arg( count ).arg( projectId ) );
             } );
+
+    // 경로 후보의 "프로젝트 전역" 절반. 뿌리는 srcdir 이 아니라 워크스페이스
+    // 루트다 - 실사용 문서가 참조하는 이미지 대부분이 srcdir 밖에 있다.
+
+    completions_->setPathIndex( pathIndex_ );
+    connect( pathIndex_, &PathIndex::ready, this,
+            [this]( const QString& root, int ) { completions_->notifyPathIndexReady( root ); } );
+    connect( pathIndex_, &PathIndex::logMessage, this, &WorkspaceController::logMessage );
 
     // 자동완성 조율자는 LSP 풀을 모른다. 라우팅은 여기서만 한다.
     connect( completions_, &CompletionCoordinator::logMessage, this, &WorkspaceController::logMessage );
@@ -1446,6 +1456,10 @@ void WorkspaceController::notifyDocumentSaved( QTextView* view )
     // 저장한 문서가 용어집일 수 있다. 파일 하나 때문에 전부 다시 훑지만
     // 프로젝트 개요 스캔과 같은 규모라 체감되지 않는다.
     refreshGlossary( true );
+
+    // 새 파일이 생겼을 수 있다. 스로틀이 있어 저장할 때마다 훑지는 않는다.
+    if( pathIndex_ != nullptr && !registry_->workspaceRoot().isEmpty() )
+        pathIndex_->invalidate( registry_->workspaceRoot() );
 }
 
 DocumentContext* WorkspaceController::contextFor( QTextView* view )

@@ -25,14 +25,6 @@ struct CompletionDisplayItem
     int                                 scoreBias = 0;
 };
 
-/// 부분 일치(subsequence) 검사와 점수 매기기.
-///
-/// 연속 일치·단어 경계·접두 일치에 가산점을 주고 건너뛴 글자에 감점한다.
-/// matchedPositions 는 강조 표시용 candidate 기준 문자 인덱스.
-[[nodiscard]] bool fuzzyMatchCompletion( const QString& pattern, const QString& candidate,
-                                         int* score = nullptr,
-                                         QVector< int >* matchedPositions = nullptr );
-
 /// 편집기 위에 뜨는 자동완성 목록.
 ///
 /// **포커스를 절대 가져가지 않는다.** 캐럿이 편집기에 남아 있어야 계속 타이핑할

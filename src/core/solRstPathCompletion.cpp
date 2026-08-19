@@ -8,6 +8,7 @@
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QHash>
+#include <QSet>
 
 #include <algorithm>
 #include <utility>
@@ -289,9 +290,12 @@ QString insertTextFor( const Query& query, const Slot& slot, const QString& abso
     const TypedPath typed = splitTypedPath( query.context.prefix );
 
     QString relative;
-    if( typed.fromSourceRoot && !query.sourceRoot.isEmpty() )
+    // 사용자가 고른 표기를 뒤엎지 않는다. '/' 로 시작해 쳤으면 그대로 둔다.
+    // 단 소스 루트 밖 파일에까지 그러면 "/../.." 같은 것이 나오므로 그때는
+    // 문서 기준 상대 경로로 돌아간다 (전역 후보에서 실제로 생긴다).
+    if( typed.fromSourceRoot && !query.sourceRoot.isEmpty()
+        && isWithin( query.sourceRoot, absolutePath ) )
     {
-        // 사용자가 고른 표기를 뒤엎지 않는다. '/' 로 시작해 쳤으면 그대로 둔다.
         relative = QLatin1Char( '/' )
                    + QDir( query.sourceRoot ).relativeFilePath( absolutePath );
     }
@@ -442,6 +446,95 @@ QVector< Candidate > oneLevelCandidates( const Query& query, const DirectoryList
     }
 
     return candidates;
+}
+
+QVector< Candidate > fuzzyCandidates( const Query& query, const QString& indexRoot,
+                                      const QStringList& indexedPaths, const int limit )
+{
+    QVector< Candidate > candidates;
+    const Slot* slot = slotFor( query.context );
+    if( slot == nullptr || indexRoot.isEmpty() || indexedPaths.isEmpty() )
+        return candidates;
+
+    const TypedPath typed = splitTypedPath( query.context.prefix );
+    // 접두가 너무 짧으면 전역 목록이 사실상 무작위다. 한 단계 후보만 남긴다.
+    if( typed.name.length() < 2 )
+        return candidates;
+
+    struct Scored
+    {
+        Candidate                       candidate;
+        int                             score = 0;
+        int                             depth = 0;
+    };
+
+    QVector< Scored > scored;
+    const QDir root( indexRoot );
+
+    for( const QString& relative : indexedPaths )
+    {
+        const qsizetype separator = relative.lastIndexOf( QLatin1Char( '/' ) );
+        const QString fileName = separator < 0 ? relative : relative.mid( separator + 1 );
+
+        int score = 0;
+        if( !rstcomplete::fuzzyMatchCompletion( typed.name, fileName, &score ) )
+            continue;
+        if( !acceptsFileName( fileName, *slot ) )
+            continue;
+
+        const QString absolute = root.absoluteFilePath( relative );
+        if( slot->shape == Shape::DocName && !isWithin( query.sourceRoot, absolute ) )
+            continue;
+
+        Scored entry;
+        entry.candidate.label =
+            slot->shape == Shape::DocName ? stripDocumentSuffix( fileName ) : fileName;
+        entry.candidate.insertText = insertTextFor( query, *slot, absolute, false );
+        // 오른쪽 흐린 글씨에 상대 디렉터리를 둔다. 같은 이름이 여럿일 때 이것만이
+        // 구분 수단이고, "여기 말고 다른 데" 라는 신호도 된다.
+        entry.candidate.detail = separator < 0 ? QString{} : relative.left( separator );
+        entry.candidate.kind = kindFor( fileName, false );
+        entry.candidate.absolutePath = absolute;
+        entry.score = score;
+        entry.depth = static_cast< int >( relative.count( QLatin1Char( '/' ) ) );
+        scored.push_back( entry );
+    }
+
+    std::stable_sort( scored.begin(), scored.end(),
+                     []( const Scored& left, const Scored& right ) {
+                         if( left.score != right.score )
+                             return left.score > right.score;
+                         if( left.depth != right.depth )
+                             return left.depth < right.depth;   // 얕은 쪽이 먼저
+                         return left.candidate.insertText < right.candidate.insertText;
+                     } );
+
+    candidates.reserve( qMin( static_cast< int >( scored.size() ), limit ) );
+    for( const Scored& entry : std::as_const( scored ) )
+    {
+        candidates.push_back( entry.candidate );
+        if( candidates.size() >= limit )
+            break;
+    }
+    return candidates;
+}
+
+QVector< Candidate > mergeCandidates( QVector< Candidate > oneLevel,
+                                      const QVector< Candidate >& global )
+{
+    QSet< QString > seen;
+    seen.reserve( static_cast< qsizetype >( oneLevel.size() + global.size() ) );
+    for( const Candidate& candidate : std::as_const( oneLevel ) )
+        seen.insert( candidate.insertText );
+
+    for( const Candidate& candidate : global )
+    {
+        if( seen.contains( candidate.insertText ) )
+            continue;   // 눈앞의 디렉터리에 이미 있는 파일. 한 단계 후보가 이긴다
+        seen.insert( candidate.insertText );
+        oneLevel.push_back( candidate );
+    }
+    return oneLevel;
 }
 
 }   // namespace mrst::rstpath

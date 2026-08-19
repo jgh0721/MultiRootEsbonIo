@@ -4,6 +4,7 @@
 #include "editor/QBaseEditor.hpp"
 #include "editor/RstContainerLexer.hpp"
 #include "solGlossaryIndex.hpp"
+#include "solRstPathIndex.hpp"
 
 #include <QApplication>
 #include <QDir>
@@ -97,6 +98,24 @@ CompletionCoordinator::~CompletionCoordinator()
     qApp->removeEventFilter( this );
     delete detail_.data();
     delete popup_.data();
+}
+
+void CompletionCoordinator::setPathIndex( PathIndex* index )
+{
+    pathIndex_ = index;
+}
+
+void CompletionCoordinator::notifyPathIndexReady( const QString& root )
+{
+    if( !isPopupVisible() || popup_.isNull() )
+        return;
+    if( rstpath::slotFor( shownContext_ ) == nullptr )
+        return;   // 사용자가 이미 딴 데로 갔다
+    if( root != workspaceRoot_ && !workspaceRoot_.isEmpty() )
+        return;
+
+    // 인덱스가 늦게 도착했다. 지금 목록에 전역 후보를 보태 준다.
+    recollectPathItems();
 }
 
 void CompletionCoordinator::setGlossaryIndex( GlossaryIndex* glossary )
@@ -245,8 +264,22 @@ CompletionCoordinator::pathCandidatesFor( const rstcomplete::Context& context )
     query.sourceRoot = sourceRoot_;
     query.workspaceRoot = workspaceRoot_;
 
-    const QVector< rstpath::Candidate > found =
+    QVector< rstpath::Candidate > found =
         rstpath::oneLevelCandidates( query, rstpath::diskLister() );
+
+    // 워크스페이스 전역 인덱스는 여기서 처음 필요해진다. 프로젝트를 열 때가
+    // 아니라 지금 시작하는 것이 지연 시작의 요점이다.
+    if( pathIndex_ != nullptr && !workspaceRoot_.isEmpty() )
+    {
+        pathIndex_->ensure( workspaceRoot_ );
+        if( pathIndex_->isReadyFor( workspaceRoot_ ) )
+        {
+            found = rstpath::mergeCandidates(
+                std::move( found ),
+                rstpath::fuzzyCandidates( query, pathIndex_->indexedRoot(),
+                                         pathIndex_->paths() ) );
+        }
+    }
 
     items.reserve( static_cast< qsizetype >( found.size() ) );
     for( const rstpath::Candidate& candidate : found )
@@ -430,6 +463,8 @@ void CompletionCoordinator::hidePopup()
 
 void CompletionCoordinator::requestExplicit()
 {
+    // 사용자가 직접 부른 것이다. Esc 로 눌러 둔 것을 푼다.
+    dismissedPathPrefix_ = QString{};
     debounce_->stop();
     trigger( QString{}, true );
 }
@@ -465,12 +500,36 @@ void CompletionCoordinator::onCharAdded( const int character )
         return;
     }
 
-    if( !isTriggerCharacter( character ) )
+    if( !isTriggerCharacter( character ) && !shouldRearmForPath() )
         return;
 
     pendingTrigger_ = QString( QChar( character ) );
     pendingExplicit_ = false;
     debounce_->start();
+}
+
+bool CompletionCoordinator::shouldRearmForPath()
+{
+    if( activeView_.isNull() )
+        return false;
+
+    const rstcomplete::Context context = contextAtCaret();
+    if( rstpath::slotFor( context ) == nullptr )
+    {
+        dismissedPathPrefix_ = QString{};
+        return false;
+    }
+
+    // Esc 로 닫았으면 같은 자리에서 계속 치는 동안에는 다시 열지 않는다.
+    // 지우거나 다른 줄로 가면 다시 열린다.
+    if( !dismissedPathPrefix_.isNull() && dismissedPathLine_ == activeView_->caretLine()
+        && context.prefix.startsWith( dismissedPathPrefix_ ) )
+    {
+        return false;
+    }
+
+    dismissedPathPrefix_ = QString{};
+    return true;
 }
 
 void CompletionCoordinator::flushTrigger()
@@ -717,7 +776,16 @@ bool CompletionCoordinator::eventFilter( QObject* watched, QEvent* event )
         auto* widget = qobject_cast< QWidget* >( watched );
         const bool insideEditor = widget != nullptr && !activeView_.isNull()
                                && ( widget == activeView_ || activeView_->isAncestorOf( widget ) );
-        if( insideEditor && popup_->handleKeyPress( static_cast< QKeyEvent* >( event ) ) )
+        auto* keyEvent = static_cast< QKeyEvent* >( event );
+        if( insideEditor && keyEvent->key() == Qt::Key_Escape
+            && rstpath::slotFor( shownContext_ ) != nullptr )
+        {
+            // 같은 자리에서 계속 치는 동안 다시 열리지 않게 눌러 둔다.
+            dismissedPathPrefix_ = shownContext_.prefix.isNull() ? QString( QLatin1String( "" ) )
+                                                                : shownContext_.prefix;
+            dismissedPathLine_ = activeView_.isNull() ? 0 : activeView_->caretLine();
+        }
+        if( insideEditor && popup_->handleKeyPress( keyEvent ) )
             return true;
     }
     else if( event->type() == QEvent::FocusOut || event->type() == QEvent::WindowDeactivate )

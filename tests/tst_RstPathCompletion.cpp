@@ -2,7 +2,11 @@
 
 #include "core/solRstOfflineCompletions.hpp"
 #include "core/solRstPathCompletion.hpp"
+#include "core/solRstPathIndex.hpp"
 
+#include <QDir>
+#include <QFile>
+#include <QTemporaryDir>
 #include <QTest>
 
 using namespace mrst::rstpath;
@@ -57,6 +61,20 @@ private slots:
     void docNameSlotStripsSuffixAndStaysInsideSourceRoot();
     void escapesSpacesInInsertTextForImageSlot();
     void prependsSpaceWhenArgumentHasNone();
+
+    // ── 전역 퍼지 후보 ──
+    void findsFileAnywhereByNameAlone();
+    void skipsGlobalSearchWhenNameTooShort();
+    void globalCandidatesRespectSlotExtensions();
+    void globalCandidatesCarryRelativeDirectoryInDetail();
+    void globalCandidatesRankShallowerPathsFirst();
+    void docNameSlotRejectsPathsOutsideSourceRoot();
+    void mergeKeepsOneLevelFirstAndDropsDuplicates();
+
+    // ── 인덱스 순회 ──
+    void scanSkipsExcludedDirectoriesAtAnyDepth();
+    void scanReturnsRootRelativeForwardSlashPaths();
+    void scanRespectsLimit();
 };
 
 // ── 슬롯 표 ───────────────────────────────────────────────
@@ -453,6 +471,178 @@ void TestRstPathCompletion::prependsSpaceWhenArgumentHasNone()
     const Candidate* logo = findByLabel( candidates, QStringLiteral( "logo.png" ) );
     QVERIFY( logo != nullptr );
     QCOMPARE( logo->insertText, QStringLiteral( " logo.png" ) );
+}
+
+// ── 전역 퍼지 후보 ─────────────────────────────────────────
+//
+// 이 기능의 값어치는 대부분 여기서 나온다. 실사용 문서가 쓰는 경로는
+// "../../../../Resources/Novel/Pt5/Vol12/LN_P5V12-3.jpg" 같은 것이라 손으로
+// 치기가 고약한데, 파일 이름만 알면 여기서 잡힌다.
+
+namespace {
+
+constexpr const char* kIndexRoot = "C:/proj";
+
+const QStringList& sampleIndex()
+{
+    static const QStringList paths{
+        QStringLiteral( "Resources/Novel/Pt5/Vol12/LN_P5V12-3.jpg" ),
+        QStringLiteral( "Resources/Novel/Pt1/Vol1/Map01KOR.jpg" ),
+        QStringLiteral( "docs/_static/cover.png" ),
+        QStringLiteral( "docs/guide/index.rst" ),
+        QStringLiteral( "docs/ref/index.rst" ),
+        QStringLiteral( "notes.txt" ),
+    };
+    return paths;
+}
+
+}   // namespace
+
+void TestRstPathCompletion::findsFileAnywhereByNameAlone()
+{
+    const Query query = makeQuery( QStringLiteral( ".. image:: P5V12-3" ), 19 );
+    const QVector< Candidate > candidates =
+        fuzzyCandidates( query, QString::fromLatin1( kIndexRoot ), sampleIndex() );
+
+    QCOMPARE( candidates.size(), 1 );
+    QCOMPARE( candidates.first().label, QStringLiteral( "LN_P5V12-3.jpg" ) );
+    // 문서는 C:/proj/docs/guide 에 있다. 소스 루트 밖으로 나가는 경로가 나와야 한다.
+    QCOMPARE( candidates.first().insertText,
+             QStringLiteral( "../../Resources/Novel/Pt5/Vol12/LN_P5V12-3.jpg" ) );
+}
+
+void TestRstPathCompletion::skipsGlobalSearchWhenNameTooShort()
+{
+    // 접두 없이 전역 목록을 통째로 붙이는 것은 소음이다.
+    const Query empty = makeQuery( QStringLiteral( ".. image:: " ), 12 );
+    QVERIFY( fuzzyCandidates( empty, QString::fromLatin1( kIndexRoot ), sampleIndex() ).isEmpty() );
+
+    const Query single = makeQuery( QStringLiteral( ".. image:: c" ), 13 );
+    QVERIFY( fuzzyCandidates( single, QString::fromLatin1( kIndexRoot ), sampleIndex() ).isEmpty() );
+}
+
+void TestRstPathCompletion::globalCandidatesRespectSlotExtensions()
+{
+    // "index" 는 .rst 만 맞는다. 이미지 자리에서는 하나도 나오면 안 된다.
+    const Query image = makeQuery( QStringLiteral( ".. image:: index" ), 17 );
+    QVERIFY( fuzzyCandidates( image, QString::fromLatin1( kIndexRoot ), sampleIndex() ).isEmpty() );
+
+    const Query include = makeQuery( QStringLiteral( ".. include:: index" ), 19 );
+    QCOMPARE( fuzzyCandidates( include, QString::fromLatin1( kIndexRoot ), sampleIndex() ).size(), 2 );
+}
+
+void TestRstPathCompletion::globalCandidatesCarryRelativeDirectoryInDetail()
+{
+    // 라벨은 파일 이름뿐이라 동명 파일이 여럿이면 이것만이 구분 수단이다.
+    const Query query = makeQuery( QStringLiteral( ".. include:: index" ), 19 );
+    const QVector< Candidate > candidates =
+        fuzzyCandidates( query, QString::fromLatin1( kIndexRoot ), sampleIndex() );
+
+    QStringList details;
+    for( const Candidate& candidate : candidates )
+        details << candidate.detail;
+    details.sort();
+    QCOMPARE( details, QStringList( { QStringLiteral( "docs/guide" ), QStringLiteral( "docs/ref" ) } ) );
+}
+
+void TestRstPathCompletion::globalCandidatesRankShallowerPathsFirst()
+{
+    const QStringList index{ QStringLiteral( "a/b/c/d/cover.png" ),
+                            QStringLiteral( "cover.png" ) };
+    const Query query = makeQuery( QStringLiteral( ".. image:: cover" ), 17 );
+    const QVector< Candidate > candidates =
+        fuzzyCandidates( query, QString::fromLatin1( kIndexRoot ), index );
+
+    QCOMPARE( candidates.size(), 2 );
+    QCOMPARE( candidates.first().detail, QString{} );   // 루트 바로 아래가 먼저
+}
+
+void TestRstPathCompletion::docNameSlotRejectsPathsOutsideSourceRoot()
+{
+    Query query;
+    query.context = mrst::rstcomplete::detectContext(
+        QStringLiteral( "   Map01" ), 9, { QStringLiteral( ".. toctree::" ) } );
+    query.documentDirectory = QString::fromLatin1( kSourceRoot );
+    query.sourceRoot = QString::fromLatin1( kSourceRoot );
+
+    // Resources/ 는 소스 루트 밖이다. docname 으로 제안하면 반드시 빌드 경고가 된다.
+    QVERIFY( fuzzyCandidates( query, QString::fromLatin1( kIndexRoot ), sampleIndex() ).isEmpty() );
+}
+
+void TestRstPathCompletion::mergeKeepsOneLevelFirstAndDropsDuplicates()
+{
+    Candidate near;
+    near.label = QStringLiteral( "cover.png" );
+    near.insertText = QStringLiteral( "_static/cover.png" );
+    Candidate far;
+    far.label = QStringLiteral( "other.png" );
+    far.insertText = QStringLiteral( "../x/other.png" );
+    Candidate duplicate;
+    duplicate.label = QStringLiteral( "cover.png" );
+    duplicate.insertText = QStringLiteral( "_static/cover.png" );
+
+    const QVector< Candidate > merged = mergeCandidates( { near }, { duplicate, far } );
+    QCOMPARE( merged.size(), 2 );
+    QCOMPARE( merged.at( 0 ).insertText, QStringLiteral( "_static/cover.png" ) );
+    QCOMPARE( merged.at( 1 ).insertText, QStringLiteral( "../x/other.png" ) );
+}
+
+// ── 인덱스 순회 ───────────────────────────────────────────
+
+void TestRstPathCompletion::scanSkipsExcludedDirectoriesAtAnyDepth()
+{
+    QTemporaryDir temporary;
+    QVERIFY( temporary.isValid() );
+    const QDir root( temporary.path() );
+
+    // 실사용 워크스페이스는 프로젝트 **안쪽 깊은 곳**에 _build 를 두고 원본
+    // 이미지를 통째로 복사해 둔다. 거기까지 걸러야 후보가 오염되지 않는다.
+    QVERIFY( root.mkpath( QStringLiteral( "docs/source/_build/preview/_images" ) ) );
+    QVERIFY( root.mkpath( QStringLiteral( "docs/source/_static" ) ) );
+    QVERIFY( root.mkpath( QStringLiteral( ".git/objects" ) ) );
+
+    const QStringList files{ QStringLiteral( "docs/source/_static/cover.png" ),
+                            QStringLiteral( "docs/source/_build/preview/_images/cover.png" ),
+                            QStringLiteral( ".git/objects/blob" ) };
+    for( const QString& relative : files )
+    {
+        QFile file( root.absoluteFilePath( relative ) );
+        QVERIFY( file.open( QIODevice::WriteOnly ) );
+        file.close();
+    }
+
+    const QStringList found = mrst::scanPathIndex( temporary.path() );
+    QCOMPARE( found, QStringList( { QStringLiteral( "docs/source/_static/cover.png" ) } ) );
+}
+
+void TestRstPathCompletion::scanReturnsRootRelativeForwardSlashPaths()
+{
+    QTemporaryDir temporary;
+    QVERIFY( temporary.isValid() );
+    const QDir root( temporary.path() );
+    QVERIFY( root.mkpath( QStringLiteral( "a/b" ) ) );
+
+    QFile file( root.absoluteFilePath( QStringLiteral( "a/b/c.txt" ) ) );
+    QVERIFY( file.open( QIODevice::WriteOnly ) );
+    file.close();
+
+    const QStringList found = mrst::scanPathIndex( temporary.path() );
+    QCOMPARE( found, QStringList( { QStringLiteral( "a/b/c.txt" ) } ) );
+}
+
+void TestRstPathCompletion::scanRespectsLimit()
+{
+    QTemporaryDir temporary;
+    QVERIFY( temporary.isValid() );
+    const QDir root( temporary.path() );
+    for( int index = 0; index < 12; ++index )
+    {
+        QFile file( root.absoluteFilePath( QStringLiteral( "f%1.txt" ).arg( index ) ) );
+        QVERIFY( file.open( QIODevice::WriteOnly ) );
+        file.close();
+    }
+
+    QCOMPARE( mrst::scanPathIndex( temporary.path(), 5 ).size(), 5 );
 }
 
 MRST_REGISTER_TEST( TestRstPathCompletion );

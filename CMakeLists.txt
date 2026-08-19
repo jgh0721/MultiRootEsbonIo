@@ -135,6 +135,8 @@ add_executable(${PROJECT_NAME}
         src/core/solRstOfflineCompletions.hpp
         src/core/solRstPathCompletion.cpp
         src/core/solRstPathCompletion.hpp
+        src/core/solRstPathIndex.cpp
+        src/core/solRstPathIndex.hpp
         src/core/solSphinxProjectRegistry.cpp
         src/core/solSphinxProjectRegistry.hpp
         src/core/solVirtualProjectMgr.cpp
@@ -323,6 +325,7 @@ if(MRST_BUILD_TESTS)
             src/editor/RstContainerLexer.cpp
             src/core/solRstOfflineCompletions.cpp
             src/core/solRstPathCompletion.cpp
+            src/core/solRstPathIndex.cpp
             src/core/solUpdateManifest.cpp
             src/core/solFileKinds.cpp
             src/core/solGlossaryIndex.cpp

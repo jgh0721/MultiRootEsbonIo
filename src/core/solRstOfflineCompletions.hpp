@@ -57,6 +57,18 @@ struct Context
     bool                                argumentNeedsSpace = false;
 };
 
+/// 부분 일치(subsequence) 검사와 점수 매기기.
+///
+/// 연속 일치·단어 경계·접두 일치에 가산점을 주고 건너뛴 글자에 감점한다.
+/// matchedPositions 는 강조 표시용 candidate 기준 문자 인덱스.
+///
+/// 팝업 위젯에 있던 것을 여기로 옮겼다. 경로 후보를 프로젝트 전역에서
+/// 고를 때 core 쪽에서도 같은 점수 규칙이 필요한데, core 가 editor 를
+/// include 할 수는 없기 때문이다.
+[[nodiscard]] bool fuzzyMatchCompletion( const QString& pattern, const QString& candidate,
+                                         int* score = nullptr,
+                                         QVector< int >* matchedPositions = nullptr );
+
 /// LSP CompletionItemKind 밖의 우리 전용 종류. 표준은 1~26 을 쓴다.
 ///
 /// 이미지 파일만 따로 나누는 이유는 상세 패널에 프리뷰가 뜨는 행을 목록에서

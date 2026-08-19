@@ -150,4 +150,21 @@ struct Candidate
                                                        const DirectoryLister& lister,
                                                        int limit = 300 );
 
+/// 워크스페이스 전역에서 이름으로 찾은 후보.
+///
+/// `indexedPaths` 는 `indexRoot` 기준 `/` 구분 상대 경로다 (PathIndex 가 준다).
+/// 마지막 조각이 두 글자 미만이면 아무것도 내지 않는다 — 접두 없이 전역 목록을
+/// 통째로 붙이는 것은 소음이다.
+///
+/// 이 기능의 값어치는 대부분 여기서 나온다. 실사용 문서가 쓰는 경로는
+/// `../../../../Resources/Novel/Pt5/Vol12/LN_P5V12-3.jpg` 같은 것이라
+/// 손으로 치기가 고약한데, 이름만 알면 여기서 잡힌다.
+[[nodiscard]] QVector< Candidate > fuzzyCandidates( const Query& query, const QString& indexRoot,
+                                                    const QStringList& indexedPaths,
+                                                    int limit = 50 );
+
+/// 한 단계 후보를 앞에 두고, 전역 후보 중 겹치지 않는 것만 뒤에 붙인다.
+[[nodiscard]] QVector< Candidate > mergeCandidates( QVector< Candidate > oneLevel,
+                                                    const QVector< Candidate >& global );
+
 }   // namespace mrst::rstpath

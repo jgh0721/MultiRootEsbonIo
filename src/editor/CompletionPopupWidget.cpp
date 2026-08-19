@@ -151,8 +151,15 @@ public:
             painter->setPen( dimmed );
             const QRect detailRect( rect.right() - detailWidth - kMargin, rect.top(),
                                    detailWidth, rect.height() );
+            // 경로에서 구분에 쓰이는 정보는 **꼬리**다. ElideRight 로 자르면
+            // "Resources/Novel/Pt1/Vol1" 과 "Resources/Novel/Pt5/Vol12" 가
+            // 둘 다 "Resources/Novel/Pt..." 가 되어 구분이 완전히 사라진다.
+            const int kind = index.data( kRoleKind ).toInt();
+            const bool pathLike = kind == 17 || kind == 19 || kind == rstcomplete::kKindImageFile;
             painter->drawText( detailRect, Qt::AlignVCenter | Qt::AlignRight,
-                              detailMetrics.elidedText( detail, Qt::ElideRight, detailRect.width() ) );
+                              detailMetrics.elidedText( detail,
+                                                       pathLike ? Qt::ElideLeft : Qt::ElideRight,
+                                                       detailRect.width() ) );
         }
 
         painter->restore();
@@ -214,61 +221,6 @@ private:
 
 }  // namespace
 
-bool fuzzyMatchCompletion( const QString& pattern, const QString& candidate, int* score,
-                           QVector< int >* matchedPositions )
-{
-    if( score != nullptr )
-        *score = 0;
-    if( matchedPositions != nullptr )
-        matchedPositions->clear();
-
-    if( pattern.isEmpty() )
-        return true;
-    if( pattern.length() > candidate.length() )
-        return false;
-
-    const QString foldedPattern = pattern.toCaseFolded();
-    const QString foldedCandidate = candidate.toCaseFolded();
-
-    QVector< int > positions;
-    positions.reserve( foldedPattern.length() );
-    int patternIndex = 0;
-    for( int index = 0; index < foldedCandidate.length() && patternIndex < foldedPattern.length(); ++index )
-    {
-        if( foldedCandidate.at( index ) == foldedPattern.at( patternIndex ) )
-        {
-            positions.push_back( index );
-            ++patternIndex;
-        }
-    }
-    if( patternIndex < foldedPattern.length() )
-        return false;
-
-    static const QString boundaryChars = QStringLiteral( "_-/\\ ." );
-    int total = 0;
-    int previous = -2;
-    for( int order = 0; order < positions.size(); ++order )
-    {
-        const int position = positions.at( order );
-        if( position == previous + 1 )
-            total += 5;
-        if( position == 0 )
-            total += 10;
-        else if( boundaryChars.contains( candidate.at( position - 1 ) ) )
-            total += 8;
-        if( order == position )
-            total += 3;
-        previous = position;
-    }
-    // 흩어져 있을수록 감점. "cb" 가 "code-block" 보다 "c...b" 를 이기지 않게.
-    total -= ( positions.last() - positions.first() + 1 ) - positions.size();
-
-    if( score != nullptr )
-        *score = total;
-    if( matchedPositions != nullptr )
-        *matchedPositions = positions;
-    return true;
-}
 
 CompletionPopupWidget::CompletionPopupWidget( QWidget* parent )
     : QFrame( parent, Qt::Tool | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint )
@@ -492,7 +444,7 @@ void CompletionPopupWidget::rebuild()
         const QString candidate = item.filterText.isEmpty() ? item.label : item.filterText;
         int score = 0;
         QVector< int > matches;
-        if( fuzzyMatchCompletion( prefix_, candidate, &score, &matches ) )
+        if( rstcomplete::fuzzyMatchCompletion( prefix_, candidate, &score, &matches ) )
             visible.push_back( { &item, score + item.scoreBias, matches } );
     }
 
@@ -531,7 +483,9 @@ void CompletionPopupWidget::rebuild()
                 matches.append( position );
         }
         row->setData( kRoleMatches, matches );
-        row->setToolTip( scored.item->detail );
+        // 오른쪽 흐린 글씨는 잘릴 수 있다. 마우스 사용자에게는 전체를 보여 준다.
+        row->setToolTip( scored.item->insertText.isEmpty() ? scored.item->detail
+                                                           : scored.item->insertText );
     }
 
     selectFirst();
@@ -547,13 +501,17 @@ void CompletionPopupWidget::resizeToRows()
     const int rowHeight = qMax( list_->sizeHintForRow( 0 ), 22 );
     const int rows = qMin( list_->count(), kMaxVisibleRows );
 
+    // 깊은 경로 하나가 목록 폭을 늘 상한까지 밀어 올리지 않게 상세 기여분을 자른다.
+    // 델리게이트도 어차피 rect.width()*2/5 까지만 그린다.
+    constexpr int kMaxDetailHint = 200;
+
     int widest = 0;
+    const QFontMetrics metrics( font() );
     for( int index = 0; index < list_->count(); ++index )
     {
-        const QFontMetrics metrics( font() );
         const int labelWidth = metrics.horizontalAdvance( list_->item( index )->data( kRoleLabel ).toString() );
         const int detailWidth = metrics.horizontalAdvance( list_->item( index )->data( kRoleDetail ).toString() );
-        widest = qMax( widest, labelWidth + detailWidth );
+        widest = qMax( widest, labelWidth + qMin( detailWidth, kMaxDetailHint ) );
     }
     const int chrome = kIconSize + kMargin * 6 + list_->verticalScrollBar()->sizeHint().width();
 

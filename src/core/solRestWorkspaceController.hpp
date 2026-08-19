@@ -23,6 +23,7 @@ class DiagnosticsStore;
 class GlossaryIndex;
 class LspClient;
 class LspServerPool;
+class PathIndex;
 class PreviewBridge;
 class ProjectRegistry;
 class PythonEnvManager;
@@ -216,6 +217,8 @@ private:
     LspServerPool*                      lspPool_ = nullptr;
     CompletionCoordinator*              completions_ = nullptr;
     GlossaryIndex*                      glossary_ = nullptr;
+    /// 워크스페이스 전역 경로 인덱스. 경로 완성이 처음 필요할 때 채워진다.
+    PathIndex*                          pathIndex_ = nullptr;
     QString                             lspState_;
     /// 프리뷰의 원격 리소스 허용 상태. -1 은 아직 한 번도 적용하지 않은 것으로,
     /// 첫 적용에서 불필요한 리로드를 하지 않기 위해 구분한다.
