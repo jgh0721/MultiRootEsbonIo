@@ -29,14 +29,160 @@
         CAUTION: "Caution"
     };
 
-    /// 렌더러가 준비되기 전에 들어온 마지막 요청. 하나만 들고 있는다 —
-    /// PreviewBridge::requestScrollToLine 의 hasPendingScroll_ 과 같은 관용구다.
-    ///
-    /// 이 큐가 없으면 경합이 생긴다. mrr_preview.js 는 DocumentReady 에 주입되어
-    /// 곧바로 bridge.ready() 를 보내는데, 그 시점에 코어 로드가 끝나 있다고
-    /// 보장할 수 없다(원격 우선일 때는 특히).
+    /// 수식 구분자. MyST 의 dollarmath 와 맞춘다 — 같은 문서를 나중에 myst 프로젝트에
+    /// 넣어도 문법이 통해야 한다. `$$` 가 `$` 보다 **앞**이어야 한다(auto-render 는
+    /// 배열 순서로 매칭한다).
+    var MATH_DELIMITERS = [
+        { left: "$$", right: "$$", display: true },
+        { left: "\\[", right: "\\]", display: true },
+        { left: "$", right: "$", display: false },
+        { left: "\\(", right: "\\)", display: false }
+    ];
+
+    var VENDOR_BASE = "qrc:/preview/md/vendor/";
+
+    /// 원격 로드 타임아웃. 사내망의 멈춘 TCP 연결에서는 error 도 load 도 영원히
+    /// 오지 않는다. 그 경우를 잡는 유일한 수단이다.
+    var CORE_TIMEOUT_MS = 2500;
+    /// mermaid 는 3.4MB 라 더 넉넉히 준다.
+    var HEAVY_TIMEOUT_MS = 8000;
+    /// 다이어그램은 타이핑이 멎은 뒤에 그린다. 도형 하나가 수십~수백 ms 라
+    /// 8Hz 로 다시 그리면 프리뷰가 멎는다.
+    var DIAGRAM_IDLE_MS = 400;
+
     var queued = null;
     var parser = null;
+    /// 렌더 요청과 함께 오는 옵션(테마·버전·원격 허용). 지연 로드가 이것을 본다.
+    var renderOptions = {};
+    var shellOptions = parseShellOptions();
+    var coreOrigin = "";
+    var coreFallbackReason = "";
+    var coreReady = false;
+    var reportedOrigin = "";
+    var mathState = "idle";        // idle | loading | ready | failed
+    var mathPromise = null;
+    var mermaidState = "idle";
+    var mermaidPromise = null;
+    var diagramTimer = 0;
+
+    /// 셸 URL 쿼리에서 코어 로드에 필요한 것만 읽는다.
+    ///
+    /// 렌더 요청의 optionsJson 을 기다릴 수 없다 — 코어 로드는 그보다 먼저 시작해야
+    /// 하고, 첫 렌더가 그것을 기다린다. 설정이 바뀌면 C++ 이 셸을 다시 읽으므로
+    /// 이 값들도 함께 갱신된다.
+    function parseShellOptions() {
+        var out = {
+            allowRemote: false,
+            coreSource: "bundled",
+            markdownItVersion: "",
+            cdnBase: "",
+            coreSri: ""
+        };
+        var query = String(window.location.search || "").replace(/^\?/, "");
+        var parts = query.split("&");
+        for (var i = 0; i < parts.length; i += 1) {
+            var pair = parts[i].split("=");
+            var key = decodeURIComponent(pair[0] || "");
+            var value = decodeURIComponent((pair[1] || "").replace(/\+/g, " "));
+            if (key === "remote") { out.allowRemote = value === "1"; }
+            else if (key === "core") { out.coreSource = value; }
+            else if (key === "mi") { out.markdownItVersion = value; }
+            else if (key === "cdn") { out.cdnBase = value; }
+            else if (key === "sri") { out.coreSri = value; }
+        }
+        return out;
+    }
+
+    function cdnUrl(pkg, version, path) {
+        var base = renderOptions.cdnBase || shellOptions.cdnBase;
+        if (!base || !version) {
+            return "";
+        }
+        return base + pkg + "@" + version + "/" + path;
+    }
+
+    // ── 자산 로더 ─────────────────────────────────────────
+
+    /// 스크립트를 확보한다.
+    ///
+    /// 실패 판정을 셋으로 나눈 이유는 각각 다른 고장을 잡기 때문이다. 하나라도
+    /// 빼면 그 고장에서 영원히 매달린다.
+    ///   * onerror       — DNS 실패, 연결 거부, 4xx/5xx, SRI 불일치, 정책 차단
+    ///   * 전역 심볼 확인 — 캡티브 포털이 200 으로 로그인 HTML 을 돌려준 경우.
+    ///                     onload 는 정상 발화하고 전역만 없다
+    ///   * 타임아웃      — TCP connect 가 매달린 사내망. 위 둘이 영원히 안 온다
+    function loadScript(url, isLoaded, timeoutMs, sri) {
+        return new Promise(function (resolve, reject) {
+            if (!url) {
+                reject(new Error("no-url"));
+                return;
+            }
+            var settled = false;
+            var element = document.createElement("script");
+            var timer = timeoutMs > 0 ? window.setTimeout(function () {
+                if (settled) { return; }
+                settled = true;
+                // 늦게 오는 onload 를 버린다.
+                element.onload = null;
+                element.onerror = null;
+                reject(new Error("timeout"));
+            }, timeoutMs) : 0;
+
+            element.onerror = function () {
+                if (settled) { return; }
+                settled = true;
+                if (timer) { window.clearTimeout(timer); }
+                reject(new Error("error"));
+            };
+            element.onload = function () {
+                if (settled) { return; }
+                settled = true;
+                if (timer) { window.clearTimeout(timer); }
+                if (isLoaded()) {
+                    resolve();
+                } else {
+                    reject(new Error("no-symbol"));
+                }
+            };
+            if (sri) {
+                // SRI 실패는 **좋은 실패**다. CDN 이 조용히 다른 바이트를 주면
+                // 스크립트가 차단되고 onerror 로 떨어져 번들 폴백이 발동한다.
+                element.integrity = sri;
+                element.crossOrigin = "anonymous";
+            }
+            element.src = url;
+            document.head.appendChild(element);
+        });
+    }
+
+    /// 스타일시트는 실패를 치명으로 보지 않는다. 없어도 수식 자체는 그려진다.
+    function loadStyle(url) {
+        return new Promise(function (resolve) {
+            if (!url) {
+                resolve();
+                return;
+            }
+            var element = document.createElement("link");
+            element.rel = "stylesheet";
+            element.href = url;
+            element.onload = function () { resolve(); };
+            element.onerror = function () { resolve(); };
+            document.head.appendChild(element);
+        });
+    }
+
+    function reportAssetFailure(assetId, reason) {
+        if (!window.__mrrBridge || typeof window.__mrrBridge.markdownAssetFailed !== "function") {
+            return;
+        }
+        window.__mrrBridge.markdownAssetFailed(assetId, reason);
+    }
+
+    function invalidatePreviewCache() {
+        if (typeof window.__mrrInvalidatePreviewCache === "function") {
+            window.__mrrInvalidatePreviewCache();
+        }
+    }
 
     // ── 줄 매핑 ───────────────────────────────────────────
 
@@ -226,6 +372,147 @@
         };
     }
 
+    // ── 수식 ──────────────────────────────────────────────
+
+    /// 수식 렌더러 계약. 새 렌더러를 넣을 때 이 다섯 개만 채운다.
+    ///
+    /// typeset() 은 thenable 을 돌려준다. **동기 렌더러는 이미 완료된 것을 돌려주면
+    /// 된다** — 호출자가 그것이 끝난 뒤에 좌표 캐시를 버리므로, 비동기 완료 통지가
+    /// 이 인터페이스로 표현된다(MathJax 라면 typesetPromise() 를 그대로 돌려준다).
+    var MATH_RENDERERS = {
+        katex: {
+            id: "katex",
+            scripts: function () {
+                return [
+                    cdnUrl("katex", renderOptions.katexVersion, "dist/katex.min.js"),
+                    cdnUrl("katex", renderOptions.katexVersion, "dist/contrib/auto-render.min.js")
+                ];
+            },
+            styles: function () {
+                return [cdnUrl("katex", renderOptions.katexVersion, "dist/katex.min.css")];
+            },
+            isLoaded: function () {
+                return typeof window.renderMathInElement === "function";
+            },
+            typeset: function (root) {
+                window.renderMathInElement(root, {
+                    delimiters: MATH_DELIMITERS,
+                    // 문법이 틀리면 예외 대신 빨간 원문으로 남는다. 산문의 달러
+                    // 기호가 수식으로 오해되는 경우가 있어(MyST 도 같은 문제다)
+                    // 그때 렌더 전체가 실패하면 안 된다.
+                    throwOnError: false
+                });
+                // 폰트가 늦게 오면 수식 폭이 변해 좌표 캐시가 낡는다. 폰트 로드가
+                // 정리될 때까지 기다린 뒤 완료를 보고하면 호출자가 그 뒤에 캐시를
+                // 버린다. 이 위험은 auto-render 고유가 아니라 KaTeX 고유다.
+                return (document.fonts && document.fonts.ready)
+                    ? document.fonts.ready
+                    : Promise.resolve();
+            }
+        }
+    };
+
+    function currentMathRenderer() {
+        return MATH_RENDERERS[renderOptions.mathRenderer] || MATH_RENDERERS.katex;
+    }
+
+    function ensureMath() {
+        if (mathState === "ready" || mathState === "failed") {
+            return Promise.resolve();
+        }
+        if (mathPromise) {
+            return mathPromise;
+        }
+        if (!renderOptions.allowRemote) {
+            // .rst 프리뷰와 같은 등급이다. 꺼져 있으면 수식이 원본 텍스트로 남는다.
+            mathState = "failed";
+            return Promise.resolve();
+        }
+
+        var renderer = currentMathRenderer();
+        var scripts = renderer.scripts();
+        mathState = "loading";
+        mathPromise = Promise.all(renderer.styles().map(loadStyle))
+            .then(function () {
+                // 순서가 있다. auto-render 는 katex 전역을 필요로 한다.
+                return scripts.reduce(function (chain, url) {
+                    return chain.then(function () {
+                        return loadScript(url, function () { return true; }, HEAVY_TIMEOUT_MS);
+                    });
+                }, Promise.resolve());
+            })
+            .then(function () {
+                if (!renderer.isLoaded()) {
+                    throw new Error("no-symbol");
+                }
+                mathState = "ready";
+            })
+            .catch(function (error) {
+                mathState = "failed";
+                reportAssetFailure(renderer.id, String((error && error.message) || error));
+            });
+        return mathPromise;
+    }
+
+    function hasMath(text) {
+        return /\$|\\\(|\\\[/.test(text);
+    }
+
+    // ── 다이어그램 ────────────────────────────────────────
+
+    function ensureMermaid() {
+        if (mermaidState === "ready" || mermaidState === "failed") {
+            return Promise.resolve();
+        }
+        if (mermaidPromise) {
+            return mermaidPromise;
+        }
+        if (!renderOptions.allowRemote) {
+            mermaidState = "failed";
+            return Promise.resolve();
+        }
+
+        mermaidState = "loading";
+        mermaidPromise = loadScript(
+            cdnUrl("mermaid", renderOptions.mermaidVersion, "dist/mermaid.min.js"),
+            function () { return typeof window.mermaid !== "undefined"; },
+            HEAVY_TIMEOUT_MS
+        ).then(function () {
+            window.mermaid.initialize({
+                startOnLoad: false,
+                theme: renderOptions.dark ? "dark" : "default"
+            });
+            mermaidState = "ready";
+        }).catch(function (error) {
+            mermaidState = "failed";
+            reportAssetFailure("mermaid", String((error && error.message) || error));
+        });
+        return mermaidPromise;
+    }
+
+    /// 다이어그램은 타이핑이 멎은 뒤에 그린다.
+    ///
+    /// 도형 하나가 수십~수백 ms 라 렌더마다(8Hz) 다시 그리면 프리뷰가 멎는다.
+    /// 그리고 나서 문서 높이가 달라지므로 좌표 캐시를 버려야 한다.
+    function scheduleDiagrams() {
+        if (diagramTimer) {
+            window.clearTimeout(diagramTimer);
+        }
+        diagramTimer = window.setTimeout(function () {
+            diagramTimer = 0;
+            var blocks = document.querySelectorAll("pre.mermaid");
+            if (!blocks.length) {
+                return;
+            }
+            ensureMermaid().then(function () {
+                if (mermaidState !== "ready") {
+                    return null;
+                }
+                return window.mermaid.run({ nodes: blocks });
+            }).then(invalidatePreviewCache, invalidatePreviewCache);
+        }, DIAGRAM_IDLE_MS);
+    }
+
     // ── 파서 ──────────────────────────────────────────────
 
     function ensureParser() {
@@ -279,11 +566,31 @@
         return root;
     }
 
-    function render(text, baseUrl) {
+    function applyThemeVariables(theme) {
+        if (!theme) {
+            return;
+        }
+        var style = document.documentElement.style;
+        for (var name in theme) {
+            if (Object.prototype.hasOwnProperty.call(theme, name)) {
+                style.setProperty("--mrr-md-" + name, String(theme[name]));
+            }
+        }
+    }
+
+    function render(text, baseUrl, optionsJson) {
         var md = ensureParser();
         if (!md) {
             return Promise.reject(new Error("renderer not ready"));
         }
+        if (optionsJson) {
+            try {
+                renderOptions = JSON.parse(optionsJson) || {};
+            } catch (error) {
+                renderOptions = {};
+            }
+        }
+        applyThemeVariables(renderOptions.theme);
         setDocumentBase(baseUrl);
 
         var source = String(text);
@@ -292,43 +599,136 @@
             source = source.slice(1);
         }
 
-        var html = md.render(source, { mrrLineCount: source.split("\n").length });
-        rootElement().innerHTML = html;
-        return Promise.resolve();
+        var root = rootElement();
+        root.innerHTML = md.render(source, { mrrLineCount: source.split("\n").length });
+
+        // 다이어그램은 유휴 시간에 따로 그린다.
+        scheduleDiagrams();
+
+        // 수식이 없으면 렌더러를 아예 받지 않는다. 서브트리 순회 비용도 0 이 된다.
+        if (!hasMath(source)) {
+            return Promise.resolve();
+        }
+        return ensureMath().then(function () {
+            if (mathState !== "ready") {
+                return null;
+            }
+            return currentMathRenderer().typeset(root);
+        });
     }
 
-    // 이 함수는 **동기적으로** 정의되어야 한다. 위 queued 주석 참고.
-    window.__mrrMarkdownRender = function (text, baseUrl, optionsJson) {
+    // 이 함수는 **동기적으로** 정의되어야 한다. mrr_preview.js 는 DocumentReady 에
+    // 주입되어 곧바로 bridge.ready() 를 보내므로, 그 시점에 훅이 없으면 첫 요청이
+    // 사라진다. 코어가 아직 없으면 마지막 요청 하나를 큐잉한다
+    // (PreviewBridge::requestScrollToLine 의 hasPendingScroll_ 과 같은 관용구다).
+    //
+    // 큐잉했으면 **null** 을 돌려준다. 호출자가 그것을 보고 회신을 미루고, 실제로
+    // 그린 뒤 이쪽에서 회신한다 — 큐잉을 실패로 보고하면 로그에 잡음만 남는다.
+    window.__mrrMarkdownRender = function (text, baseUrl, optionsJson, token) {
         if (!ensureParser()) {
-            // 코어가 아직 없다. 마지막 요청만 남기고 준비되면 흘려보낸다.
-            queued = { text: text, baseUrl: baseUrl, optionsJson: optionsJson };
-            return Promise.reject(new Error("renderer not ready"));
+            queued = { text: text, baseUrl: baseUrl, optionsJson: optionsJson, token: token };
+            return null;
         }
         return render(text, baseUrl, optionsJson);
     };
 
     /// C++ 에 렌더러 상태를 알린다. 사실만 올리고 문장은 C++ 이 만든다 —
     /// JS 에는 tr() 이 없어서 여기서 만든 문자열은 번역할 수 없다.
-    function reportReady(origin) {
+    ///
+    /// 코어가 브리지보다 먼저 준비되는 것이 보통이므로(번들이면 거의 항상) 이
+    /// 함수는 두 번 불릴 수 있다. 브리지가 없으면 조용히 지나가고,
+    /// mrr_preview.js 가 브리지를 받은 뒤 __mrrMarkdownBridgeReady 로 깨운다.
+    function reportReady() {
+        if (!coreReady) {
+            return;
+        }
         if (!window.__mrrBridge || typeof window.__mrrBridge.markdownRendererReady !== "function") {
             return;
         }
-        window.__mrrBridge.markdownRendererReady(origin, ensureParser() ? "markdown-it" : "");
+        if (reportedOrigin === coreOrigin) {
+            return;   // 이미 같은 사실을 올렸다
+        }
+        reportedOrigin = coreOrigin;
+        var version = coreFallbackReason
+            ? "markdown-it (" + coreFallbackReason + ")"
+            : "markdown-it " + shellOptions.markdownItVersion;
+        window.__mrrBridge.markdownRendererReady(coreOrigin, version);
     }
 
+    // mrr_preview.js 가 브리지를 받은 직후 부른다.
+    window.__mrrMarkdownBridgeReady = function () {
+        reportReady();
+        flushQueued();
+    };
+
+    /// 큐에 걸린 요청을 그린다. 그 요청의 회신도 여기서 한다 — 호출자는 null 을
+    /// 받고 회신을 미뤄 두었다.
     function flushQueued() {
         if (!queued || !ensureParser()) {
             return;
         }
         var request = queued;
         queued = null;
-        render(request.text, request.baseUrl, request.optionsJson);
+        render(request.text, request.baseUrl, request.optionsJson).then(function () {
+            invalidatePreviewCache();
+            if (window.__mrrBridge && typeof window.__mrrBridge.markdownRendered === "function") {
+                window.__mrrBridge.markdownRendered(request.token, true, "");
+            }
+        }, function (error) {
+            if (window.__mrrBridge && typeof window.__mrrBridge.markdownRendered === "function") {
+                window.__mrrBridge.markdownRendered(request.token, false, String(error));
+            }
+        });
+    }
+
+    /// 코어를 확보한다. 원격 우선일 때 실패하면 번들로 내려간다.
+    ///
+    /// 플러그인은 **어떤 경우에도 번들이다.** 개별로 받으면 실패 지점이 그만큼 늘고,
+    /// 부분 실패가 총 실패보다 나쁘다 — 문서는 그려지는데 각주만 조용히 사라지고
+    /// 사용자는 자기가 문법을 틀린 줄 안다. 원격화로 아끼는 것도 압축 후 4KB 다.
+    function bootCore() {
+        var haveCore = function () { return typeof window.markdownit === "function"; };
+        var localCore = VENDOR_BASE + "markdown-it.min.js";
+        var remoteCore = cdnUrl("markdown-it", shellOptions.markdownItVersion,
+                                "dist/browser/markdown-it.umd.min.js");
+
+        var chain;
+        if (shellOptions.coreSource === "remote" && shellOptions.allowRemote && remoteCore) {
+            chain = loadScript(remoteCore, haveCore, CORE_TIMEOUT_MS, shellOptions.coreSri)
+                .then(function () {
+                    coreOrigin = "cdn";
+                }, function (error) {
+                    // 오프라인·사내망·CDN 장애·SRI 불일치. 번들이 exe 안에 있는데
+                    // 쓰지 않으면 프리뷰가 백지가 된다.
+                    coreFallbackReason = String((error && error.message) || error);
+                    return loadScript(localCore, haveCore, 0).then(function () {
+                        coreOrigin = "bundled-fallback";
+                    });
+                });
+        } else {
+            chain = loadScript(localCore, haveCore, 0).then(function () {
+                coreOrigin = "bundled";
+            });
+        }
+
+        return chain.then(function () {
+            return loadScript(VENDOR_BASE + "markdown-it-footnote.min.js",
+                              function () { return typeof window.markdownitFootnote === "function"; },
+                              0);
+        });
     }
 
     function boot() {
-        ensureParser();
-        reportReady("bundled");
-        flushQueued();
+        bootCore().then(function () {
+            coreReady = true;
+            ensureParser();
+            reportReady();
+            flushQueued();
+        }, function (error) {
+            // 번들까지 실패하는 것은 있을 수 없다(exe 안의 리소스다). 그래도
+            // 조용히 죽지 않게 사실을 올린다.
+            reportAssetFailure("markdown-it", String((error && error.message) || error));
+        });
     }
 
     if (document.readyState === "loading") {
@@ -343,6 +743,8 @@
         renderToHtml: function (text) {
             var md = ensureParser();
             return md ? md.render(String(text), { mrrLineCount: String(text).split("\n").length }) : "";
-        }
+        },
+        coreOrigin: function () { return coreOrigin; },
+        assetState: function () { return { math: mathState, mermaid: mermaidState }; }
     };
 }());

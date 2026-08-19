@@ -20,18 +20,12 @@
   경로는 반드시 **절대 qrc URL** 로 쓴다. 렌더 시점에 <base> 를 문서 폴더로 세우므로
   (상대 이미지를 살리기 위해) 상대 경로로 두면 지연 로드되는 스크립트가 문서 폴더를
   뒤진다.
+
+  벤더 자산은 여기서 정적으로 읽지 않는다. 코어의 출처(원격/번들)가 설정에 따라
+  갈리므로 mrr_markdown.js 가 URL 쿼리를 보고 동적으로 로드한다. 어느 경우에도 UMD 를
+  쓴다 — `type="module"` 은 file:// 뿐 아니라 qrc: 에서도 불투명 출처 CORS 로 막힌다.
 -->
 <link rel="stylesheet" href="qrc:/preview/md/mrr_markdown.css">
-<!--
-  벤더 자산은 UMD 여야 한다. `type="module"` 은 file:// 뿐 아니라 qrc: 에서도
-  불투명 출처의 CORS 로 막힌다. markdown-it 15 는 dist/browser 아래에 UMD 를
-  따로 내므로 그것을 쓴다(전역 이름은 markdownit / markdownitFootnote).
-
-  지금은 번들만 정적으로 읽는다. 원격 우선 로드와 실패 시 번들 폴백은 mermaid·
-  KaTeX 를 붙이는 커밋에서 같은 기계로 함께 넣는다.
--->
-<script src="qrc:/preview/md/vendor/markdown-it.min.js"></script>
-<script src="qrc:/preview/md/vendor/markdown-it-footnote.min.js"></script>
 <script src="qrc:/preview/md/mrr_markdown.js"></script>
 </head>
 <body>

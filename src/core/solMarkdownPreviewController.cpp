@@ -3,6 +3,7 @@
 
 #include "solAppSettings.hpp"
 #include "solMarkdownAssets.hpp"
+#include "solThemeManager.hpp"
 
 #include <QCryptographicHash>
 #include <QFileInfo>
@@ -10,6 +11,7 @@
 #include <QJsonObject>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
 
 namespace mrst {
 namespace {
@@ -101,10 +103,28 @@ void MarkdownPreviewController::cancel()
 
 QUrl MarkdownPreviewController::shellUrl()
 {
-    // 출력이 고정 URL 이라 매번 같으므로, Sphinx 쪽과 같은 방식으로 쿼리에
-    // 일련번호를 실어 Chromium 캐시를 무효화한다.
+    AppSettings settings;
+
+    // 코어 로드에 필요한 것은 쿼리로 넘긴다. 렌더 요청의 optionsJson 을 기다릴 수
+    // 없다 — 코어 로드가 그보다 먼저 시작하고, 첫 렌더가 그것을 기다린다. 설정이
+    // 바뀌면 C++ 이 셸을 다시 읽으므로 이 값들도 함께 갱신된다.
+    QUrlQuery query;
+    // 출력이 고정 URL 이라 매번 같으므로, Sphinx 쪽과 같은 방식으로 일련번호를
+    // 실어 Chromium 캐시를 무효화한다.
+    query.addQueryItem( QStringLiteral( "v" ), QString::number( ++shellSerial_ ) );
+    query.addQueryItem( QStringLiteral( "remote" ),
+                        settings.value( QStringLiteral( "preview/allowRemoteContent" ), true ).toBool()
+                            ? QStringLiteral( "1" )
+                            : QStringLiteral( "0" ) );
+    query.addQueryItem( QStringLiteral( "core" ),
+                        settings.value( QStringLiteral( "preview/markdownCoreSource" ),
+                                       QString::fromLatin1( mdassets::kDefaultCoreSource ) ).toString() );
+    query.addQueryItem( QStringLiteral( "mi" ), QString::fromLatin1( mdassets::kMarkdownItVersion ) );
+    query.addQueryItem( QStringLiteral( "cdn" ), QString::fromLatin1( mdassets::kCdnBase ) );
+    query.addQueryItem( QStringLiteral( "sri" ), QString::fromLatin1( mdassets::kMarkdownItSri ) );
+
     QUrl url( QString::fromLatin1( mdassets::kShellResourcePath ) );
-    url.setQuery( QStringLiteral( "v=%1" ).arg( ++shellSerial_ ) );
+    url.setQuery( query );
     return url;
 }
 
@@ -138,6 +158,15 @@ QString MarkdownPreviewController::buildOptionsJson() const
           settings.value( QStringLiteral( "preview/allowRemoteContent" ), true ).toBool() },
         { QStringLiteral( "cdnBase" ), QString::fromLatin1( mdassets::kCdnBase ) },
         { QStringLiteral( "markdownItVersion" ), QString::fromLatin1( mdassets::kMarkdownItVersion ) },
+        // 지연 로드 대상. 문서에 해당 문법이 있을 때만 실제로 받는다.
+        { QStringLiteral( "katexVersion" ), QString::fromLatin1( mdassets::kKatexVersion ) },
+        { QStringLiteral( "mermaidVersion" ), QString::fromLatin1( mdassets::kMermaidVersion ) },
+        { QStringLiteral( "mathRenderer" ),
+          settings.value( QStringLiteral( "preview/mathRenderer" ),
+                         QString::fromLatin1( mdassets::kDefaultMathRenderer ) ).toString() },
+        // mermaid 는 초기화할 때 테마 이름을 받는다. 나중에 바꿀 수 없어서
+        // 로드 시점에 알려 줘야 한다.
+        { QStringLiteral( "dark" ), ThemeManager::instance().currentTheme() == ThemeManager::Dark },
     };
     return QString::fromUtf8( QJsonDocument( options ).toJson( QJsonDocument::Compact ) );
 }

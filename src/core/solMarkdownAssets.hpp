@@ -43,4 +43,15 @@ inline constexpr auto                   kMarkdownItSri =
 /// qrc 안의 셸 페이지. 문서마다 새로 만들지 않는다 — 본문은 브리지로 밀어 넣는다.
 inline constexpr auto                   kShellResourcePath       = "qrc:/preview/md/shell.html";
 
+/// markdown-it 코어를 어디서 가져오는가의 기본값 ("remote" | "bundled").
+///
+/// 원격 우선이다. 그러면 항상 최신 코어를 쓰지만, 그 경로는 네트워크가 있는 개발
+/// 환경에서 늘 성공하므로 **폴백이 도는 것을 일부러 확인해야 한다**(네트워크를 끊고
+/// .md 를 열어 로그에 "내장본을 사용합니다" 가 나오는지). 판단이 바뀌면 이 한 줄만
+/// "bundled" 로 고친다.
+inline constexpr auto                   kDefaultCoreSource       = "remote";
+
+/// 수식 렌더러의 기본값. 설정 preview/mathRenderer 가 덮는다.
+inline constexpr auto                   kDefaultMathRenderer     = "katex";
+
 }   // namespace mrst::mdassets

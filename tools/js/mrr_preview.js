@@ -326,7 +326,12 @@
                 bridge.markdownRendered(token, false, "no renderer");
                 return;
             }
-            var done = window.__mrrMarkdownRender(text, baseUrl, optionsJson);
+            var done = window.__mrrMarkdownRender(text, baseUrl, optionsJson, token);
+            if (done === null) {
+                // 렌더러가 아직 준비되지 않아 큐에 들어갔다. 준비되면 그쪽이 그리고
+                // 그쪽이 회신한다 — 여기서 실패로 보고하면 로그에 잡음만 남는다.
+                return;
+            }
             Promise.resolve(done).then(function () {
                 // 렌더가 끝나면 문서 높이가 달라진다. 좌표 캐시는 그 뒤에 버려야
                 // 의미가 있다 (핫스왑 경로와 같은 이유).
@@ -340,6 +345,12 @@
         // 셸 페이지의 렌더러가 C++ 에 사실을 올릴 통로. 이 파일은 markdown 을
         // 모르므로 브리지 객체만 넘겨 준다.
         window.__mrrBridge = bridge;
+        // 렌더러는 이 시점보다 **먼저** 준비될 수 있다(코어가 번들이면 거의 항상
+        // 그렇다). 그때 올린 보고는 브리지가 없어 사라지므로, 여기서 한 번 깨워
+        // 다시 올리게 한다.
+        if (typeof window.__mrrMarkdownBridgeReady === "function") {
+            window.__mrrMarkdownBridgeReady();
+        }
         bridge.ready(PROTOCOL_VERSION);
     }
 
@@ -415,6 +426,10 @@
             bridge.hotSwapResult(token, false, String(error));
         }
     }
+
+    // 셸 페이지의 렌더러가 나중에(폰트 도착, 다이어그램 완성) 좌표를 흔들 때
+    // 캐시를 버릴 통로. 이 파일은 무엇이 흔들었는지 알 필요가 없다.
+    window.__mrrInvalidatePreviewCache = invalidateCache;
 
     // 매핑 함수 검증용 훅. 스크롤 동기화 정확도는 눈으로 보기 어려워서
     // 왕복 변환(line -> Y -> line)이 일치하는지 자동으로 확인할 수 있게 한다.
