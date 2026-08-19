@@ -38,6 +38,7 @@ private slots:
     void emitsCurrentItemChangedOnceWhenRefilling();
     void keepsAnchorWhenGeometryRefreshed();
     void hidesWhenFilterMatchesNothing();
+    void wideningTheFilterRestoresTheFullList();
     void navigatesWithArrowKeysAndAcceptsWithEnter();
 
     void detailPanelDoesNotOverlapTheList();
@@ -137,6 +138,25 @@ void TestCompletionPopupUi::hidesWhenFilterMatchesNothing()
     popup.updateFilter( QStringLiteral( "zzz" ) );
     QCOMPARE( popup.visibleCount(), 0 );
     QVERIFY( !popup.isVisible() );
+}
+
+void TestCompletionPopupUi::wideningTheFilterRestoresTheFullList()
+{
+    CompletionPopupWidget popup;
+    popup.setItems( { item( QStringLiteral( "image" ) ), item( QStringLiteral( "figure" ) ),
+                     item( QStringLiteral( "note" ) ) } );
+
+    popup.updateFilter( QStringLiteral( "image" ) );
+    QCOMPARE( popup.visibleCount(), 1 );
+
+    // ".. image" 를 ".. " 로 지웠을 때 목록이 image 로 좁혀진 채 남으면 안 된다.
+    // rebuild() 가 언제나 allItems_ 에서 다시 거르기 때문에 성립하는 계약이다.
+    popup.updateFilter( QString{} );
+    QCOMPARE( popup.visibleCount(), 3 );
+
+    popup.updateFilter( QStringLiteral( "fig" ) );
+    QCOMPARE( popup.visibleCount(), 1 );
+    QCOMPARE( popup.currentItem().label, QStringLiteral( "figure" ) );
 }
 
 void TestCompletionPopupUi::navigatesWithArrowKeysAndAcceptsWithEnter()

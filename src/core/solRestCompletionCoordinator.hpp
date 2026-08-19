@@ -103,6 +103,13 @@ private:
     };
 
     void                                onCharAdded( int character );
+    /// 문서가 편집됐다 (삽입·삭제 둘 다).
+    ///
+    /// sigCharAdded 는 **넣은 글자**만 알려 준다. 지우는 것은 통지가 없어서
+    /// ".. image" 를 ".. " 로 지워도 목록이 image 로 좁혀진 채 남아 있었다.
+    void                                onTextEdited();
+    /// 캐럿 위치를 다시 보고 떠 있는 목록을 지금 내용에 맞춘다.
+    void                                refreshShownContext();
     void                                flushTrigger();
     /// 지금 캐럿 위치의 컨텍스트를 판정하고 오프라인 후보를 띄운 뒤 LSP 에 묻는다.
     void                                trigger( const QString& triggerCharacter, bool explicitInvoke );
@@ -173,6 +180,13 @@ private:
     bool                                pendingExplicit_ = false;
     /// hidePopup() 재진입 가드. 목록을 숨기면 popupHidden 이 다시 이리로 온다.
     bool                                hidingPopup_ = false;
+    /// 갱신 예약이 이미 걸려 있는가. 한 번의 편집이 통지를 여러 번 낼 수 있다.
+    bool                                refreshQueued_ = false;
+    /// 완성 세션이 살아 있는가. 목록이 잠깐 사라져도 같은 줄을 계속 고치는
+    /// 동안에는 다시 열 수 있게 둔다 (".. image:" 처럼 지우는 도중의 한
+    /// 순간은 아무 컨텍스트도 아니다).
+    bool                                sessionArmed_ = false;
+    int                                 sessionLine_ = 0;
 
     PendingRequest                      inFlight_;
     /// 팝업을 띄운 시점의 컨텍스트. 확정할 때 몇 글자를 지울지 여기서 온다.

@@ -145,6 +145,8 @@ void CompletionCoordinator::showPopupAtCaret()
 
     popup_->showAt( activeView_->caretGlobalPos() );
     qApp->installEventFilter( this );
+    sessionArmed_ = true;
+    sessionLine_ = activeView_->caretLine();
 
     // 목록이 자리를 잡은 뒤에 옆에 붙인다.
     refreshDetailPopup( popup_->currentItem() );
@@ -437,6 +439,10 @@ void CompletionCoordinator::attachEditor( QTextView* view )
 
     connect( view, &QTextView::sigCharAdded, this, &CompletionCoordinator::onCharAdded,
             Qt::UniqueConnection );
+    // 삽입만이 아니라 **삭제**도 받아야 한다. sigCharAdded 는 넣은 글자만
+    // 알려 주므로, 그것만 보면 지웠을 때 목록이 옛 접두에 좁혀진 채 남는다.
+    connect( view, &QTextView::sigTextEdited, this, &CompletionCoordinator::onTextEdited,
+            Qt::UniqueConnection );
     // 캐럿이 다른 곳으로 뛰면 지금 띄운 후보는 무의미하다.
     connect( view, &QTextView::sigViewportScrolled, this, &CompletionCoordinator::hidePopup,
             Qt::UniqueConnection );
@@ -495,6 +501,7 @@ void CompletionCoordinator::hidePopup()
     debounce_->stop();
     pendingTrigger_.clear();
     pendingExplicit_ = false;
+    sessionArmed_ = false;
     inFlight_ = {};
 
     if( previewLoader_ != nullptr )
@@ -524,29 +531,10 @@ void CompletionCoordinator::onCharAdded( const int character )
     if( activeView_.isNull() || sender() != activeView_ )
         return;
 
+    // 이미 떠 있으면 여기서는 아무것도 하지 않는다. 갱신은 onTextEdited 가
+    // 한 곳에서 맡는다 — 삭제도 그쪽으로 오므로 규칙이 하나로 남는다.
     if( isPopupVisible() )
-    {
-        // 이미 떠 있으면 다시 묻지 않고 필터만 좁힌다. 매 글자 LSP 왕복은 낭비다.
-        const rstcomplete::Context context = contextAtCaret();
-        if( context.kind == rstcomplete::ContextKind::None )
-        {
-            hidePopup();
-            return;
-        }
-        shownContext_ = context;
-
-        // 경로는 '/' 하나로 디렉터리가 바뀌어 후보 집합 자체가 달라진다.
-        // 필터만 좁히면 슬래시를 친 순간 목록이 통째로 죽는다.
-        // 디렉터리 나열은 값싸므로 글자마다 다시 만들어도 된다.
-        if( rstpath::slotFor( context ) != nullptr )
-        {
-            recollectPathItems();
-            return;
-        }
-
-        popup_->updateFilter( context.filterPrefix );
         return;
-    }
 
     if( !isTriggerCharacter( character ) && !shouldRearmForPath() )
         return;
@@ -578,6 +566,87 @@ bool CompletionCoordinator::shouldRearmForPath()
 
     dismissedPathPrefix_ = QString{};
     return true;
+}
+
+void CompletionCoordinator::onTextEdited()
+{
+    if( activeView_.isNull() || sender() != activeView_ )
+        return;
+    if( !isPopupVisible() && !sessionArmed_ )
+        return;
+    if( refreshQueued_ )
+        return;
+
+    // Scintilla 는 텍스트를 고친 통지를 캐럿이 옮겨지기 전에 낼 수 있다.
+    // 한 바퀴 돌린 뒤에 읽으면 삽입이든 삭제든 자리가 확정돼 있다.
+    refreshQueued_ = true;
+    QTimer::singleShot( 0, this, &CompletionCoordinator::refreshShownContext );
+}
+
+void CompletionCoordinator::refreshShownContext()
+{
+    refreshQueued_ = false;
+    if( popup_.isNull() || activeView_.isNull() )
+        return;
+
+    const bool visible = isPopupVisible();
+    if( !visible && !sessionArmed_ )
+        return;
+
+    const int line = activeView_->caretLine();
+    if( !visible && line != sessionLine_ )
+    {
+        sessionArmed_ = false;   // 다른 줄로 갔다. 이 완성 세션은 끝났다
+        return;
+    }
+
+    const rstcomplete::Context context = contextAtCaret();
+    if( context.kind == rstcomplete::ContextKind::None )
+    {
+        // ".. image:" 처럼 지우는 도중의 한 순간은 아무 컨텍스트도 아니다.
+        // 여기서 세션까지 끝내면 그다음 삭제로 ".. image" 가 돼도 다시
+        // 열리지 않는다 — 삽입만 통지를 내기 때문이다. 목록만 감추고
+        // 같은 줄을 고치는 동안에는 자리를 지킨다.
+        hidePopup();
+        sessionArmed_ = true;
+        sessionLine_ = line;
+        return;
+    }
+
+    // 같은 자리를 계속 치고 있는가. 종류나 소유 directive 가 바뀌었으면
+    // 후보 집합 자체가 다르므로 필터만 좁혀서는 안 된다.
+    const bool sameSlot = visible && context.kind == shownContext_.kind
+                       && context.pathSite == shownContext_.pathSite
+                       && context.directiveName == shownContext_.directiveName
+                       && context.optionName == shownContext_.optionName;
+    shownContext_ = context;
+
+    if( !visible )
+    {
+        // 잠깐 감춰 두었던 세션이 되살아났다. 후보를 새로 만들어 다시 띄운다.
+        trigger( QString{}, true );
+        return;
+    }
+
+    // 경로는 '/' 하나로 디렉터리가 바뀌어 후보 집합이 달라진다. 필터만
+    // 좁히면 슬래시를 친 순간 목록이 통째로 죽는다. 디렉터리 나열은
+    // 캐시를 타므로 글자마다 다시 만들어도 싸다.
+    if( rstpath::slotFor( context ) != nullptr )
+    {
+        recollectPathItems();
+        return;
+    }
+
+    if( !sameSlot )
+    {
+        // 예: ".. image:: " 를 ".. image" 로 지웠다. 경로 목록을 directive
+        // 목록으로 갈아야 한다. 종류가 바뀔 때만이므로 LSP 왕복도 한 번뿐이다.
+        trigger( QString{}, true );
+        return;
+    }
+
+    // 같은 자리. 매 글자 LSP 왕복은 낭비이므로 필터만 좁힌다.
+    popup_->updateFilter( context.filterPrefix );
 }
 
 void CompletionCoordinator::flushTrigger()
