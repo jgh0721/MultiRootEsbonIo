@@ -16,14 +16,15 @@
 /// 번역자가 한쪽만 다르게 옮겨도 같은 일이 벌어진다.
 namespace ThemeScopeIds
 {
-    inline constexpr auto                   kCommon          = "common";
-    inline constexpr auto                   kPdf             = "pdf";
-    inline constexpr auto                   kImage           = "image";
-    inline constexpr auto                   kMarkdown        = "markdown";
-    inline constexpr auto                   kText            = "text";
-    inline constexpr auto                   kTextLexer       = "text.lexer";
-    inline constexpr auto                   kTextLexerDetail = "text.lexer.detail";
-    inline constexpr auto                   kTextLexerRst    = "text.lexer.rst";
+    inline constexpr auto                   kCommon            = "common";
+    inline constexpr auto                   kPdf               = "pdf";
+    inline constexpr auto                   kImage             = "image";
+    inline constexpr auto                   kMarkdown          = "markdown";
+    inline constexpr auto                   kText              = "text";
+    inline constexpr auto                   kTextLexer         = "text.lexer";
+    inline constexpr auto                   kTextLexerDetail   = "text.lexer.detail";
+    inline constexpr auto                   kTextLexerRst      = "text.lexer.rst";
+    inline constexpr auto                   kTextLexerMarkdown = "text.lexer.markdown";
 }
 
 /// 전역 테마 관리자 (싱글톤)

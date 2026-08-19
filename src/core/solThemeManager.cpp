@@ -159,14 +159,15 @@ QString ThemeManager::scopeLabel( const QString& groupId )
     // 범위 이름을 만드는 곳은 여기 하나다. 항목 표에서 tr() 로 되풀이하면 같은
     // 원문이 94번 반복되고, 설정 대화상자가 만드는 상세 항목과 문자열이
     // 어긋나는 순간 그 범위가 통째로 걸러진다.
-    if( groupId == QLatin1String( ThemeScopeIds::kCommon ) )          return tr( "공통" );
-    if( groupId == QLatin1String( ThemeScopeIds::kPdf ) )             return tr( "PDF" );
-    if( groupId == QLatin1String( ThemeScopeIds::kImage ) )           return tr( "IMAGE" );
-    if( groupId == QLatin1String( ThemeScopeIds::kMarkdown ) )        return tr( "Markdown" );
-    if( groupId == QLatin1String( ThemeScopeIds::kText ) )            return tr( "TEXT" );
-    if( groupId == QLatin1String( ThemeScopeIds::kTextLexer ) )       return tr( "TEXT Lexer" );
-    if( groupId == QLatin1String( ThemeScopeIds::kTextLexerDetail ) ) return tr( "TEXT Lexer 상세" );
-    if( groupId == QLatin1String( ThemeScopeIds::kTextLexerRst ) )    return tr( "TEXT Lexer reST" );
+    if( groupId == QLatin1String( ThemeScopeIds::kCommon ) )            return tr( "공통" );
+    if( groupId == QLatin1String( ThemeScopeIds::kPdf ) )               return tr( "PDF" );
+    if( groupId == QLatin1String( ThemeScopeIds::kImage ) )             return tr( "IMAGE" );
+    if( groupId == QLatin1String( ThemeScopeIds::kMarkdown ) )          return tr( "Markdown" );
+    if( groupId == QLatin1String( ThemeScopeIds::kText ) )              return tr( "TEXT" );
+    if( groupId == QLatin1String( ThemeScopeIds::kTextLexer ) )         return tr( "TEXT Lexer" );
+    if( groupId == QLatin1String( ThemeScopeIds::kTextLexerDetail ) )   return tr( "TEXT Lexer 상세" );
+    if( groupId == QLatin1String( ThemeScopeIds::kTextLexerRst ) )      return tr( "TEXT Lexer reST" );
+    if( groupId == QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) ) return tr( "TEXT Lexer Markdown" );
     // 모르는 식별자는 그대로 보여 준다. 빈 칸보다는 낫고, 새 범위를 추가하고
     // 여기 넣는 것을 잊었다는 사실이 화면에 바로 드러난다.
     return groupId;
@@ -275,6 +276,22 @@ QList< ThemeManager::ColorEntry > ThemeManager::editableColorEntries()
         { QStringLiteral( "text.lexer.rst.hyperlink" ), tr( "reST 하이퍼링크" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
         { QStringLiteral( "text.lexer.rst.substitution" ), tr( "reST 치환(|..|)" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
         { QStringLiteral( "text.lexer.rst.fieldName" ), tr( "reST 필드명" ), QLatin1String( ThemeScopeIds::kTextLexerRst ) },
+        { QStringLiteral( "text.lexer.markdown.heading1" ), tr( "Markdown 제목 1" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.heading2" ), tr( "Markdown 제목 2" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.heading3" ), tr( "Markdown 제목 3" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.heading4" ), tr( "Markdown 제목 4" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.heading5" ), tr( "Markdown 제목 5" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.heading6" ), tr( "Markdown 제목 6" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.strong" ), tr( "Markdown 굵게(**)" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.emphasis" ), tr( "Markdown 기울임(*)" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.listMarker" ), tr( "Markdown 목록 마커" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.blockquote" ), tr( "Markdown 인용문(>)" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.strikeout" ), tr( "Markdown 취소선(~~)" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.hrule" ), tr( "Markdown 수평선" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.link" ), tr( "Markdown 링크" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.code" ), tr( "Markdown 인라인 코드" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.codeBlock" ), tr( "Markdown 코드 블록" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
+        { QStringLiteral( "text.lexer.markdown.codeBackground" ), tr( "Markdown 코드 배경" ), QLatin1String( ThemeScopeIds::kTextLexerMarkdown ) },
     };
 
     for( ColorEntry& entry : entries )
@@ -481,6 +498,55 @@ QHash< QString, QColor > ThemeManager::defaultColors( Theme theme )
         c.insert( QStringLiteral( "text.lexer.rst.hyperlink" ), QColor( QStringLiteral( "#0057B8" ) ) );
         c.insert( QStringLiteral( "text.lexer.rst.substitution" ), QColor( QStringLiteral( "#3B7D00" ) ) );
         c.insert( QStringLiteral( "text.lexer.rst.fieldName" ), QColor( QStringLiteral( "#D0005F" ) ) );
+    }
+
+    // Markdown: reStructuredText 와 같은 사정이다 — 제목 6단계, 굵게/기울임,
+    // 인용, 목록 마커처럼 프로그래밍 언어에 대응 토큰이 없는 축으로 되어 있어
+    // 일반 lexer 색(text.lexer.<token>)을 재활용할 수 없다.
+    //
+    // 접두어가 markdown.* 가 아니라 text.lexer.markdown.* 인 것이 중요하다.
+    // 앞의 것은 HTML 프리뷰가 쓰는 별개의 9개 키다(위 kMarkdown 범위). 같은
+    // 이름을 쓰면 프리뷰 색을 바꿨을 때 편집기가 따라 바뀐다.
+    //
+    // 제목 램프는 색상(hue)을 고정하고 채도만 낮춘다. 여섯 단계를 서로 다른
+    // 색으로 칠하면 문서가 무지개가 되고 깊이를 읽는 데 도움이 되지 않는다.
+    if( theme == Dark )
+    {
+        c.insert( QStringLiteral( "text.lexer.markdown.heading1" ), QColor( QStringLiteral( "#66D9EF" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.heading2" ), QColor( QStringLiteral( "#63C9DC" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.heading3" ), QColor( QStringLiteral( "#61B9C9" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.heading4" ), QColor( QStringLiteral( "#5EA9B6" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.heading5" ), QColor( QStringLiteral( "#5B99A3" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.heading6" ), QColor( QStringLiteral( "#598990" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.strong" ), QColor( QStringLiteral( "#FD971F" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.emphasis" ), QColor( QStringLiteral( "#D8CFA0" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.listMarker" ), QColor( QStringLiteral( "#A6E22E" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.blockquote" ), QColor( QStringLiteral( "#9A9581" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.strikeout" ), QColor( QStringLiteral( "#75715E" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.hrule" ), QColor( QStringLiteral( "#75715E" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.link" ), QColor( QStringLiteral( "#66D9EF" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.code" ), QColor( QStringLiteral( "#E6DB74" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.codeBlock" ), QColor( QStringLiteral( "#E6DB74" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.codeBackground" ), QColor( QStringLiteral( "#32332B" ) ) );
+    }
+    else
+    {
+        c.insert( QStringLiteral( "text.lexer.markdown.heading1" ), QColor( QStringLiteral( "#0078A8" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.heading2" ), QColor( QStringLiteral( "#146F98" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.heading3" ), QColor( QStringLiteral( "#226788" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.heading4" ), QColor( QStringLiteral( "#2D5F79" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.heading5" ), QColor( QStringLiteral( "#365769" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.heading6" ), QColor( QStringLiteral( "#3D505C" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.strong" ), QColor( QStringLiteral( "#B85C00" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.emphasis" ), QColor( QStringLiteral( "#6B5A00" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.listMarker" ), QColor( QStringLiteral( "#3B7D00" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.blockquote" ), QColor( QStringLiteral( "#8C8778" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.strikeout" ), QColor( QStringLiteral( "#8C8778" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.hrule" ), QColor( QStringLiteral( "#8C8778" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.link" ), QColor( QStringLiteral( "#0057B8" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.code" ), QColor( QStringLiteral( "#8A6D00" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.codeBlock" ), QColor( QStringLiteral( "#8A6D00" ) ) );
+        c.insert( QStringLiteral( "text.lexer.markdown.codeBackground" ), QColor( QStringLiteral( "#F4F4EE" ) ) );
     }
 
     return c;
