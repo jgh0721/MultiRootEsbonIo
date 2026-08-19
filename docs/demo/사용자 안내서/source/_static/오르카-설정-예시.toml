@@ -1,0 +1,10 @@
+# 안내서와 함께 배포하는 설정 예시입니다.
+[renderer]
+backend = "d3d12"
+frames_in_flight = 2
+vsync = true
+
+[trace]
+enabled = true
+path = "traces/%Y%m%d-%H%M%S.orcatrace"
+ring_bytes = 33_554_432

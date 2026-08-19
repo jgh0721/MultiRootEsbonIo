@@ -1,0 +1,5 @@
+.. note::
+
+   이 문단은 ``_snippets/지원-안내.rst`` 에 있고 ``include`` 지시어로 끌어옵니다.
+   포함되는 파일은 ``exclude_patterns`` 에 넣어 두어야 Sphinx 가 이 파일을
+   독립 문서로도 취급하지 않습니다.
