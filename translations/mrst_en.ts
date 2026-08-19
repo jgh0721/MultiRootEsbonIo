@@ -220,6 +220,10 @@
         <translation type="unfinished">Spaces %1</translation>
     </message>
     <message>
+        <source>그대로 두기</source>
+        <translation type="unfinished">Keep mine</translation>
+    </message>
+    <message>
         <source>나중에</source>
         <translation type="unfinished">Later</translation>
     </message>
@@ -230,6 +234,16 @@
     <message>
         <source>다른 이름으로 저장(&amp;A)...</source>
         <translation type="unfinished">Save &amp;as...</translation>
+    </message>
+    <message>
+        <source>다른 프로그램이 이 파일을 바꿨습니다.
+%1</source>
+        <translation type="unfinished">Another program changed this file.
+%1</translation>
+    </message>
+    <message>
+        <source>다시 불러오기</source>
+        <translation type="unfinished">Reload</translation>
     </message>
     <message>
         <source>단어 단위</source>
@@ -253,6 +267,10 @@
     <message>
         <source>디렉토리에 열 수 있는 직계 파일이 없습니다: %1</source>
         <translation type="unfinished">The directory has no files that can be opened directly: %1</translation>
+    </message>
+    <message>
+        <source>디스크의 내용으로 다시 불러올까요?</source>
+        <translation type="unfinished">Reload it from what is on disk?</translation>
     </message>
     <message>
         <source>로그</source>
@@ -317,6 +335,14 @@
     <message>
         <source>바꿀 내용</source>
         <translation type="unfinished">Replace with</translation>
+    </message>
+    <message>
+        <source>밖에서 바뀐 내용으로 다시 불러왔습니다: %1</source>
+        <translation type="unfinished">Reloaded with the changes made outside: %1</translation>
+    </message>
+    <message>
+        <source>밖에서 바뀐 파일</source>
+        <translation type="unfinished">File changed outside</translation>
     </message>
     <message>
         <source>변경사항이 있습니다. 저장하시겠습니까?</source>
@@ -443,6 +469,10 @@ You will be asked about any unsaved documents first. Continue?</translation>
     <message>
         <source>이 버전 건너뛰기</source>
         <translation type="unfinished">Skip this version</translation>
+    </message>
+    <message>
+        <source>이 탭에는 저장하지 않은 편집이 있습니다. 다시 불러오면 그 편집은 사라집니다.</source>
+        <translation type="unfinished">This tab has unsaved edits. Reloading discards them.</translation>
     </message>
     <message>
         <source>이 파일은 이진 데이터로 보입니다.</source>
@@ -619,6 +649,10 @@ Open it as text anyway?
 %1</source>
         <translation type="unfinished">The file could not be opened:
 %1</translation>
+    </message>
+    <message>
+        <source>파일이 밖에서 사라졌습니다. 편집 중인 내용은 그대로 두었습니다: %1</source>
+        <translation type="unfinished">The file is gone from disk. The text you were editing was left untouched: %1</translation>
     </message>
     <message>
         <source>패키지 설치 실패: %1</source>
@@ -823,6 +857,10 @@ Open it as text anyway?
         <translation type="unfinished"> days</translation>
     </message>
     <message>
+        <source> 초</source>
+        <translation type="unfinished"> s</translation>
+    </message>
+    <message>
         <source>%1 문자열</source>
         <translation type="unfinished">%1 string</translation>
     </message>
@@ -861,6 +899,14 @@ Open it as text anyway?
     <message>
         <source>%1 함수/클래스</source>
         <translation type="unfinished">%1 function/class</translation>
+    </message>
+    <message>
+        <source>&apos;파일 시스템 알림&apos; 은 운영체제가 변경을 통보해 주므로 기다리는 동안 비용이 없습니다.
+&apos;폴링&apos; 은 정해진 간격마다 파일을 확인합니다. 알림이 오지 않는 네트워크 드라이브나
+가상 파일 시스템에서 쓰십시오. 알림을 걸지 못한 파일은 자동으로 폴링으로 넘어갑니다.</source>
+        <translation type="unfinished">&apos;File system notifications&apos; costs nothing while you wait, because the operating system reports the change.
+&apos;Polling&apos; checks the file at a fixed interval. Use it on network drives or virtual
+file systems that never notify. Files that could not be registered for notifications fall back to polling on their own.</translation>
     </message>
     <message>
         <source>(없음)</source>
@@ -945,6 +991,10 @@ When off, the preview reads local files only. Nothing leaves the machine, but th
     <message>
         <source>가져오기...</source>
         <translation type="unfinished">Import...</translation>
+    </message>
+    <message>
+        <source>감지 방식:</source>
+        <translation type="unfinished">Detection method:</translation>
     </message>
     <message>
         <source>값</source>
@@ -1105,6 +1155,10 @@ Beyond that, the least recently used project&apos;s server is shut down.</transl
         <translation type="unfinished">All files</translation>
     </message>
     <message>
+        <source>무시</source>
+        <translation type="unfinished">Ignore</translation>
+    </message>
+    <message>
         <source>문자 단위</source>
         <translation type="unfinished">At any character</translation>
     </message>
@@ -1135,6 +1189,10 @@ Beyond that, the least recently used project&apos;s server is shut down.</transl
     <message>
         <source>사용</source>
         <translation type="unfinished">Enable</translation>
+    </message>
+    <message>
+        <source>사용자에게 묻기</source>
+        <translation type="unfinished">Ask me</translation>
     </message>
     <message>
         <source>새 파일</source>
@@ -1203,12 +1261,22 @@ When a new version is found you are only notified — the download starts only w
         <translation type="unfinished">Open</translation>
     </message>
     <message>
+        <source>열어 둔 파일을 다른 프로그램이 바꿨을 때 무엇을 할지 정합니다.
+저장하지 않은 편집이 있는 탭은 &apos;자동 불러오기&apos; 라도 먼저 묻습니다.</source>
+        <translation type="unfinished">Decides what to do when another program changes a file you have open.
+A tab with unsaved edits is always asked first, even under &apos;Reload automatically&apos;.</translation>
+    </message>
+    <message>
         <source>외부 UV를 사용하여 환경 구성</source>
         <translation type="unfinished">Use an external UV to set up the environment</translation>
     </message>
     <message>
         <source>외부 리소스</source>
         <translation type="unfinished">External resources</translation>
+    </message>
+    <message>
+        <source>외부 편집 인식:</source>
+        <translation type="unfinished">External edit detection:</translation>
     </message>
     <message>
         <source>원래 들여쓰기 유지</source>
@@ -1237,6 +1305,10 @@ When a new version is found you are only notified — the download starts only w
     <message>
         <source>자동</source>
         <translation type="unfinished">Automatic</translation>
+    </message>
+    <message>
+        <source>자동 불러오기</source>
+        <translation type="unfinished">Reload automatically</translation>
     </message>
     <message>
         <source>자동 업데이트</source>
@@ -1429,8 +1501,20 @@ Enable the last option to have edits reflected in those documents too. While you
         <translation type="unfinished">Text viewer</translation>
     </message>
     <message>
+        <source>파일 시스템 알림 (권장)</source>
+        <translation type="unfinished">File system notifications (recommended)</translation>
+    </message>
+    <message>
         <source>편집 범위:</source>
         <translation type="unfinished">Edit scope:</translation>
+    </message>
+    <message>
+        <source>폴링</source>
+        <translation type="unfinished">Polling</translation>
+    </message>
+    <message>
+        <source>폴링 간격:</source>
+        <translation type="unfinished">Polling interval:</translation>
     </message>
     <message>
         <source>표시</source>
@@ -1530,6 +1614,10 @@ The converter that draws Markdown body text is built into the program, so it alw
     <message>
         <source>문자 단위</source>
         <translation type="unfinished">At any character</translation>
+    </message>
+    <message>
+        <source>밖에서 바뀐 파일 다시 읽는 중...</source>
+        <translation type="unfinished">Reading the externally changed file...</translation>
     </message>
     <message>
         <source>새 텍스트 파일.txt</source>

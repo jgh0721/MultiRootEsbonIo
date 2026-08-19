@@ -126,3 +126,13 @@ BOM 포함	With BOM	BOM あり
 지금 확인	Check now	今すぐ確認
 없음	None	なし
 전체	All	すべて
+# ── 외부 편집 인식 ────────────────────────────────────────
+외부 편집 인식	External edit detection	外部編集の検知	밖에서 파일이 바뀐 것을 알아채는 기능
+감지 방식	Detection method	検知方式
+파일 시스템 알림	File system notifications	ファイルシステム通知	OS 의 디렉터리 변경 통보
+폴링	Polling	ポーリング
+폴링 간격	Polling interval	ポーリング間隔
+자동 불러오기	Reload automatically	自動で読み込む
+사용자에게 묻기	Ask me	確認する
+다시 불러오기	Reload	再読み込み	대화상자 단추
+그대로 두기	Keep mine	このまま	다시 불러오지 않는 쪽 단추
