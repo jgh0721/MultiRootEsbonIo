@@ -60,6 +60,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace
 {
@@ -2260,6 +2261,8 @@ void MainWindow::onSettings()
         QSettingsDialog::ApplyShortcutsToActions( shortcuts, this );
         // 열려있는 뷰어에 변경된 설정 적용
         applySettingsToAllViews();
+        // 개요 트리 깊이는 컨트롤러에 다시 묻지 않고 캐시한 개요로 다시 그린다.
+        reloadOutlineDepth();
         // 스캐너 제외 목록 / 최대 Esbonio 프로세스 수 등도 즉시 반영한다.
         if( controller_ != nullptr )
             controller_->reloadSettings();
@@ -3067,9 +3070,35 @@ QString outlineItemLabel( const mrst::OutlineSymbol& symbol )
                : QStringLiteral( "%1 — %2  (%3)" ).arg( symbol.name, symbol.detail ).arg( symbol.line );
 }
 
-void addOutlineSymbols( QTreeWidgetItem* parent, QTreeWidget* tree,
-                        const QVector< mrst::OutlineSymbol >& symbols )
+/// 이 심볼들과 그 후손을 모두 센다. 깊이 제한으로 트리에서 빠진 개수를 알릴 때 쓴다.
+int countOutlineSymbols( const QVector< mrst::OutlineSymbol >& symbols )
 {
+    int count = 0;
+    for( const mrst::OutlineSymbol& symbol : symbols )
+        count += 1 + countOutlineSymbols( symbol.children );
+    return count;
+}
+
+/// remainingDepth 는 여기서 더 내려갈 수 있는 단계 수다. 0 이면 심볼을 올리지
+/// 않고, 대신 부모 줄에 말줄임표와 툴팁을 남긴다 — 표시 없이 자르면 그 자리가
+/// 문서의 마지막 단계인 것처럼 읽힌다(프로젝트 개요의 "… n개 문서 생략" 과
+/// 같은 이유다).
+void addOutlineSymbols( QTreeWidgetItem* parent, QTreeWidget* tree,
+                        const QVector< mrst::OutlineSymbol >& symbols, int remainingDepth )
+{
+    if( symbols.isEmpty() )
+        return;
+    if( remainingDepth <= 0 )
+    {
+        if( parent == nullptr )
+            return;                     // 최상위 호출은 언제나 1 이상을 받는다
+        parent->setText( 0, parent->text( 0 ) + QStringLiteral( " …" ) );
+        parent->setToolTip(
+            0, MainWindow::tr( "하위 %n개 항목이 개요 깊이 설정에 걸려 빠졌습니다.", nullptr,
+                               countOutlineSymbols( symbols ) ) );
+        return;
+    }
+
     for( const mrst::OutlineSymbol& symbol : symbols )
     {
         auto* item = new QTreeWidgetItem( QStringList{ outlineItemLabel( symbol ) } );
@@ -3083,7 +3112,7 @@ void addOutlineSymbols( QTreeWidgetItem* parent, QTreeWidget* tree,
         else
             tree->addTopLevelItem( item );
 
-        addOutlineSymbols( item, tree, symbol.children );
+        addOutlineSymbols( item, tree, symbol.children, remainingDepth - 1 );
     }
 }
 
@@ -3098,6 +3127,22 @@ void setOutlinePlaceholder( QTreeWidget* tree, const QString& text, const char* 
     if( id != nullptr )
         item->setData( 0, kOutlinePlaceholderRole, QString::fromLatin1( id ) );
     tree->addTopLevelItem( item );
+}
+
+/// 설정에 적힌 개요 깊이. 0 은 "제한하지 않음" 이다
+/// (preview/unsavedEditMaxReadMs 의 관례와 같다). 음수는 ini 를 손으로 고친
+/// 경우이므로 기본값으로 본다.
+int outlineDepthSetting()
+{
+    const int depth =
+        AppSettings().value( QStringLiteral( "preview/outlineMaxDepth" ), 3 ).toInt();
+    return depth >= 0 ? depth : 3;
+}
+
+/// addOutlineSymbols 에 넘길 예산. "제한하지 않음" 을 사실상 무한으로 바꾼다.
+int outlineDepthBudget( const int maxDepth )
+{
+    return maxDepth > 0 ? maxDepth : std::numeric_limits< int >::max();
 }
 
 }  // namespace
@@ -3116,61 +3161,95 @@ void MainWindow::setupOutlineTrees()
         connect( tree, &QTreeWidget::itemActivated, this, &MainWindow::onOutlineItemActivated );
         connect( tree, &QTreeWidget::itemDoubleClicked, this, &MainWindow::onOutlineItemActivated );
     }
+    outlineMaxDepth_ = outlineDepthSetting();
     setOutlinePlaceholder( Ui.treOutlineDocument, tr( "열린 문서가 없습니다." ), "noDocument" );
     setOutlinePlaceholder( Ui.treOutlineProject, tr( "활성 Sphinx 프로젝트가 없습니다." ), "noProject" );
 
+    // 받은 개요는 그대로 쥐고 있는다. 깊이 설정이 바뀌면 이것으로 다시 그린다.
     connect( controller_, &mrst::WorkspaceController::documentOutlineReady, this,
             [this]( const QString&, const QVector< mrst::OutlineSymbol >& symbols ) {
-                QTreeWidget* tree = Ui.treOutlineDocument;
-                if( tree == nullptr )
-                    return;
+                outlineDocumentSymbols_ = symbols;
                 if( symbols.isEmpty() )
                 {
-                    setOutlinePlaceholder( tree, tr( "문서 심볼이 없습니다." ), "noSymbols" );
+                    setOutlinePlaceholder( Ui.treOutlineDocument, tr( "문서 심볼이 없습니다." ),
+                                          "noSymbols" );
                     return;
                 }
-                tree->clear();
-                addOutlineSymbols( nullptr, tree, symbols );
-                tree->expandToDepth( 1 );
+                redrawDocumentOutlineTree();
             } );
 
     connect( controller_, &mrst::WorkspaceController::projectOutlineReady, this,
             [this]( const QString&, const QVector< mrst::OutlineDocumentEntry >& documents,
                     const int truncated ) {
-                QTreeWidget* tree = Ui.treOutlineProject;
-                if( tree == nullptr )
-                    return;
+                outlineProjectDocuments_ = documents;
+                outlineProjectTruncated_ = truncated;
                 if( documents.isEmpty() )
                 {
-                    setOutlinePlaceholder( tree, tr( "활성 프로젝트에 문서가 없습니다." ), "noProjectDocs" );
+                    setOutlinePlaceholder( Ui.treOutlineProject,
+                                          tr( "활성 프로젝트에 문서가 없습니다." ), "noProjectDocs" );
                     return;
                 }
-
-                tree->clear();
-                for( const mrst::OutlineDocumentEntry& document : documents )
-                {
-                    auto* item = new QTreeWidgetItem( QStringList{ document.label } );
-                    item->setData( 0, kOutlinePathRole, document.path );
-                    item->setData( 0, kOutlineLineRole, 1 );
-                    tree->addTopLevelItem( item );
-
-                    if( document.symbols.isEmpty() )
-                        item->addChild( new QTreeWidgetItem( QStringList{ tr( "심볼 없음" ) } ) );
-                    else
-                        addOutlineSymbols( item, tree, document.symbols );
-                }
-                if( truncated > 0 )
-                {
-                    tree->addTopLevelItem( new QTreeWidgetItem(
-                        QStringList{ tr( "… %n개 문서 생략", nullptr, truncated ) } ) );
-                }
-                tree->expandToDepth( 0 );
+                redrawProjectOutlineTree();
             } );
 
     connect( controller_, &mrst::WorkspaceController::outlineCleared, this,
             [this]( const QString& reason ) {
+                outlineDocumentSymbols_.clear();
                 setOutlinePlaceholder( Ui.treOutlineDocument, reason );
             } );
+}
+
+void MainWindow::redrawDocumentOutlineTree()
+{
+    QTreeWidget* tree = Ui.treOutlineDocument;
+    if( tree == nullptr || outlineDocumentSymbols_.isEmpty() )
+        return;                         // 비면 안내 문구가 떠 있는 중이다
+
+    tree->clear();
+    addOutlineSymbols( nullptr, tree, outlineDocumentSymbols_,
+                      outlineDepthBudget( outlineMaxDepth_ ) );
+    tree->expandToDepth( 1 );
+}
+
+void MainWindow::redrawProjectOutlineTree()
+{
+    QTreeWidget* tree = Ui.treOutlineProject;
+    if( tree == nullptr || outlineProjectDocuments_.isEmpty() )
+        return;
+
+    const int budget = outlineDepthBudget( outlineMaxDepth_ );
+    tree->clear();
+    for( const mrst::OutlineDocumentEntry& document : outlineProjectDocuments_ )
+    {
+        auto* item = new QTreeWidgetItem( QStringList{ document.label } );
+        item->setData( 0, kOutlinePathRole, document.path );
+        item->setData( 0, kOutlineLineRole, 1 );
+        tree->addTopLevelItem( item );
+
+        // 문서 줄은 단계로 세지 않는다. 그래야 두 탭의 "3단계" 가 같은 것을 뜻한다 —
+        // 문서 줄까지 세면 프로젝트 탭은 섹션을 한 단계 덜 보여 준다.
+        if( document.symbols.isEmpty() )
+            item->addChild( new QTreeWidgetItem( QStringList{ tr( "심볼 없음" ) } ) );
+        else
+            addOutlineSymbols( item, tree, document.symbols, budget );
+    }
+    if( outlineProjectTruncated_ > 0 )
+    {
+        tree->addTopLevelItem( new QTreeWidgetItem(
+            QStringList{ tr( "… %n개 문서 생략", nullptr, outlineProjectTruncated_ ) } ) );
+    }
+    tree->expandToDepth( 0 );
+}
+
+void MainWindow::reloadOutlineDepth()
+{
+    const int depth = outlineDepthSetting();
+    if( depth == outlineMaxDepth_ )
+        return;
+
+    outlineMaxDepth_ = depth;
+    redrawDocumentOutlineTree();
+    redrawProjectOutlineTree();
 }
 
 void MainWindow::retranslateOutlinePlaceholders()

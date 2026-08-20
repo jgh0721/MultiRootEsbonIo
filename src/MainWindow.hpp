@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "core/solBaseView.hpp"
+#include "core/solRestOutlineService.hpp"
 
 #include "ui_mainWindow.h"
 
@@ -328,6 +329,13 @@ private:
     void                                refreshDiagnosticsTable();
     /// 문서/프로젝트 개요 트리. 컨트롤러가 주는 항목을 그리고 클릭 시 이동한다.
     void                                setupOutlineTrees();
+    /// 캐시한 개요를 지금 설정의 깊이로 다시 그린다. 컨트롤러에 다시 묻지
+    /// 않는다 — 프로젝트 개요는 문서 수백 개를 디스크에서 읽는 작업이라,
+    /// 설정 대화상자에서 스핀박스를 한 칸 돌릴 때 할 일이 아니다.
+    void                                redrawDocumentOutlineTree();
+    void                                redrawProjectOutlineTree();
+    /// 설정에서 개요 깊이를 다시 읽는다. 값이 달라졌으면 두 트리를 다시 그린다.
+    void                                reloadOutlineDepth();
     void                                onOutlineItemActivated( QTreeWidgetItem* item, int column );
     /// 누락된 Sphinx 확장/테마를 알리는 비모달 바.
     /// 프리뷰 빌드는 디바운스 타이머로 발화하므로 모달을 띄우면 쓸 수 없게 된다.
@@ -377,6 +385,17 @@ private:
     /// 종료 경로 끝에서 업데이터를 띄울지. closeEvent 가 저장 확인에서 되돌아가면
     /// 반드시 다시 false 로 만든다 — 아니면 다음 종료 때 설치가 시작된다.
     bool                                pendingInstall_ = false;
+
+
+    // ── 개요 트리 ──
+    /// 트리에 나타낼 섹션 단계. 0 은 제한하지 않음
+    /// (설정의 preview/outlineMaxDepth, 기본 3단계).
+    int                                 outlineMaxDepth_ = 3;
+    /// 마지막으로 컨트롤러가 준 개요. 깊이 설정이 바뀌면 이것으로 다시 그린다.
+    /// 비어 있으면 트리가 안내 문구를 보여 주는 중이라 손대지 않는다.
+    QVector< mrst::OutlineSymbol >      outlineDocumentSymbols_;
+    QVector< mrst::OutlineDocumentEntry > outlineProjectDocuments_;
+    int                                 outlineProjectTruncated_ = 0;
 
     QString                             workspaceRoot_;
 
