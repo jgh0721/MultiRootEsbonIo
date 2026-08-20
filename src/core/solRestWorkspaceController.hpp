@@ -167,6 +167,15 @@ private:
     [[nodiscard]] const SphinxProject*  lookupProject( const QString& projectId ) const;
     /// 이 문서의 프리뷰를 Sphinx 가 만드는가, 내장 Markdown 렌더러가 만드는가.
     [[nodiscard]] PreviewRoute          routeFor( const DocumentContext& context ) const;
+    /// 가상 프로젝트의 합성 conf.py 가 쓸 `html_theme`.
+    ///
+    /// 설정이 비어 있으면("다른 프로젝트와 동일") 워크스페이스의 실제 프로젝트
+    /// conf.py 에서 찾아 온다. 아무것도 못 찾으면 빈 문자열 —
+    /// VirtualProjectManager 가 alabaster 로 물러선다.
+    [[nodiscard]] QString               resolveVirtualProjectTheme() const;
+    /// 위 값을 VirtualProjectManager 에 밀어 넣는다. 값이 바뀌었으면 가상
+    /// 프로젝트로 렌더 중이던 문서를 새 conf.py 로 다시 잡는다.
+    void                                applyVirtualProjectTheme();
     void                                logProjectList();
     void                                onPreviewFinished( const PreviewBuildResult& result );
     [[nodiscard]] QString               writeShadowCopy( QTextView* view, const QString& path ) const;

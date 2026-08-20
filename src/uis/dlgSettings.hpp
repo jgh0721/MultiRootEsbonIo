@@ -135,6 +135,7 @@ private:
     QCheckBox*                          m_previewAllowRemoteCheck = nullptr;
     QCheckBox*                          m_previewUnsavedCheck = nullptr;
     QSpinBox*                           m_previewUnsavedMaxReadSpin = nullptr;
+    QComboBox*                          m_previewVirtualThemeCombo = nullptr;
     QCheckBox*                          m_previewStubDoxygenCheck = nullptr;
     class QComboBox*                    m_previewMathRendererCombo = nullptr;
 

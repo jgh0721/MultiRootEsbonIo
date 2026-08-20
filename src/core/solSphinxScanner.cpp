@@ -217,6 +217,26 @@ bool confDeclaresMystMarkdown(const fs::path& confPath) {
     return false;
 }
 
+std::string readHtmlTheme(const fs::path& confPath) {
+    std::ifstream file(confPath, std::ios::binary);
+    if (!file) {
+        return {};
+    }
+    std::ostringstream stream;
+    stream << file.rdbuf();
+    const std::string text = stream.str();
+
+    // 마지막 대입이 이긴다 (readRootDoc 과 같은 방식). 줄머리에 못 박았으므로
+    // `# html_theme = "furo"` 처럼 주석으로 남긴 흔적은 걸리지 않는다 —
+    // conf.py 에는 테마를 바꿔 보다 주석 처리한 줄이 흔하다.
+    static const std::regex assignment(R"((?:^|\n)[ \t]*html_theme[ \t]*(?::[^=\n]*)?=[ \t]*['\"]([^'\"]+)['\"])");
+    std::string theme;
+    for (std::sregex_iterator it(text.begin(), text.end(), assignment), end; it != end; ++it) {
+        theme = trim((*it)[1].str());
+    }
+    return theme;
+}
+
 fs::path inferSourcePath(const fs::path& rootPath, const std::string& rootDoc) {
     const fs::path rootDocPath(rootDoc);
     if (!rootDocPath.has_parent_path()) {

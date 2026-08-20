@@ -222,6 +222,23 @@ QList< ShortcutItem > QSettingsDialog::DefaultShortcuts()
             QKeySequence( Qt::CTRL | Qt::Key_I )
         },
         {
+            tr( "공통" ), QStringLiteral( "tab.next" ), tr( "다음 탭 (탭 목록)" ),
+            QKeySequence( Qt::CTRL | Qt::Key_Tab ), QKeySequence( Qt::CTRL | Qt::Key_Tab )
+        },
+        {
+            tr( "공통" ), QStringLiteral( "tab.previous" ), tr( "이전 탭 (탭 목록)" ),
+            QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_Tab ),
+            QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_Tab )
+        },
+        {
+            tr( "프리뷰" ), QStringLiteral( "preview.rebuild" ), tr( "프리뷰 다시 빌드" ),
+            QKeySequence( Qt::Key_F5 ), QKeySequence( Qt::Key_F5 )
+        },
+        {
+            tr( "프리뷰" ), QStringLiteral( "preview.fullScreen" ), tr( "프리뷰 전체 화면" ),
+            QKeySequence( Qt::Key_F11 ), QKeySequence( Qt::Key_F11 )
+        },
+        {
             tr( "텍스트" ), QStringLiteral( "text.find" ), tr( "찾기" ), QKeySequence( Qt::CTRL | Qt::Key_F ),
             QKeySequence( Qt::CTRL | Qt::Key_F )
         },
@@ -1001,6 +1018,55 @@ QWidget* QSettingsDialog::createPreviewPage()
     unsavedLayout->addWidget( unsavedHint );
 
     layout->addWidget( unsavedGroup );
+
+    auto* virtualGroup  = new QGroupBox( tr( "가상 프로젝트 (reStructuredText)" ), page );
+    auto* virtualLayout = new QVBoxLayout( virtualGroup );
+    auto* virtualForm   = new QFormLayout;
+
+    m_previewVirtualThemeCombo = new QComboBox( virtualGroup );
+    // 저장값은 인덱스가 아니라 테마 이름이다 (수식 렌더러와 같은 규칙). 빈
+    // 문자열이 "다른 프로젝트와 동일" 이고, 그것이 기본값이다.
+    m_previewVirtualThemeCombo->addItem( tr( "다른 프로젝트와 동일" ), QString{} );
+    m_previewVirtualThemeCombo->insertSeparator( m_previewVirtualThemeCombo->count() );
+    //: 콤보박스 항목. "alabaster" 는 Sphinx 테마 이름이므로 옮기지 않는다.
+    m_previewVirtualThemeCombo->addItem( tr( "alabaster (Sphinx 기본값)" ),
+                                        QStringLiteral( "alabaster" ) );
+    // Sphinx 에 내장된 테마. 추가 설치가 필요 없다.
+    for( const char* builtin : { "classic", "sphinxdoc", "scrolls", "agogo", "nature",
+                                 "haiku", "pyramid", "bizstyle", "traditional" } )
+    {
+        m_previewVirtualThemeCombo->addItem( QString::fromLatin1( builtin ),
+                                            QString::fromLatin1( builtin ) );
+    }
+    m_previewVirtualThemeCombo->insertSeparator( m_previewVirtualThemeCombo->count() );
+    // 내장 파이썬 환경이 함께 받아 두는 테마 (tools/pyproject.toml 의 themes 그룹).
+    // 그 그룹을 끄고 환경을 만들었다면 없을 수 있고, 그때는 프리뷰 위에 설치
+    // 안내 바가 뜬다.
+    for( const char* bundled : { "furo", "sphinx_rtd_theme", "pydata_sphinx_theme",
+                                 "sphinx_book_theme", "shibuya", "piccolo_theme",
+                                 "sphinxawesome_theme" } )
+    {
+        m_previewVirtualThemeCombo->addItem( QString::fromLatin1( bundled ),
+                                            QString::fromLatin1( bundled ) );
+    }
+    virtualForm->addRow( tr( "테마:" ), m_previewVirtualThemeCombo );
+    virtualLayout->addLayout( virtualForm );
+
+    auto* virtualHint = new QLabel(
+        tr( "conf.py 가 없는 단독 문서는 임시 Sphinx 프로젝트를 만들어 미리보기합니다. "
+            "그 임시 프로젝트가 쓸 테마를 여기서 정합니다. 실제 프로젝트에 속한 문서는 "
+            "언제나 그 프로젝트의 conf.py 를 따르므로 이 설정과 무관합니다.\n\n"
+            "\"다른 프로젝트와 동일\" 은 워크스페이스의 실제 프로젝트 conf.py 에 적힌 "
+            "html_theme 를 그대로 씁니다. 여러 프로젝트가 서로 다른 테마를 쓰면 먼저 "
+            "발견한 것을 쓰고, 실제 프로젝트가 없거나 어느 conf.py 도 테마를 선언하지 "
+            "않으면 alabaster 를 씁니다.\n\n"
+            "목록의 첫 묶음은 Sphinx 에 내장된 테마이고, 그 아래는 이 프로그램이 함께 "
+            "설치하는 테마입니다. 없는 테마를 고르면 프리뷰 위에 설치 안내가 뜹니다." ),
+        virtualGroup );
+    virtualHint->setWordWrap( true );
+    virtualLayout->addWidget( virtualHint );
+
+    layout->addWidget( virtualGroup );
     layout->addStretch( 1 );
 
     loadPreviewSettings();
@@ -1014,6 +1080,13 @@ QWidget* QSettingsDialog::createPreviewPage()
     connect( m_previewMathRendererCombo, &QComboBox::currentIndexChanged, this, [this]( int ) {
         AppSettings().setValue( QStringLiteral( "preview/mathRenderer" ),
                                 m_previewMathRendererCombo->currentData().toString() );
+        emit settingsApplied();
+    } );
+    connect( m_previewVirtualThemeCombo, &QComboBox::currentIndexChanged, this, [this]( int ) {
+        // 구분선 항목은 데이터가 없어 빈 문자열이 되는데, 그것이 마침
+        // "다른 프로젝트와 동일" 과 같은 값이라 따로 걸러 낼 필요가 없다.
+        AppSettings().setValue( QStringLiteral( "preview/virtualProjectTheme" ),
+                                m_previewVirtualThemeCombo->currentData().toString() );
         emit settingsApplied();
     } );
     connect( m_previewUnsavedCheck, &QCheckBox::toggled, this, [this, limitRow]( const bool checked ) {
@@ -1079,6 +1152,23 @@ void QSettingsDialog::loadPreviewSettings()
         const int index = m_previewMathRendererCombo->findData( renderer );
         m_previewMathRendererCombo->setCurrentIndex( index >= 0 ? index : 0 );
     }
+    if( m_previewVirtualThemeCombo != nullptr )
+    {
+        const QSignalBlocker blocker( m_previewVirtualThemeCombo );
+        const QString theme =
+            settings.value( QStringLiteral( "preview/virtualProjectTheme" ) ).toString();
+        // 목록에 없는 테마가 설정에 적혀 있을 수 있다 (ini 를 손으로 고쳤거나,
+        // 목록에서 뺀 테마를 쓰던 설정이 남았거나). 지우지 않고 항목으로 살려
+        // 둔다 — 여기서 0번으로 물러서면 대화상자를 열기만 해도 사용자의 테마가
+        // 조용히 사라진다.
+        int index = m_previewVirtualThemeCombo->findData( theme );
+        if( index < 0 && !theme.isEmpty() )
+        {
+            m_previewVirtualThemeCombo->addItem( theme, theme );
+            index = m_previewVirtualThemeCombo->count() - 1;
+        }
+        m_previewVirtualThemeCombo->setCurrentIndex( index >= 0 ? index : 0 );
+    }
 }
 
 void QSettingsDialog::savePreviewSettings()
@@ -1108,6 +1198,11 @@ void QSettingsDialog::savePreviewSettings()
     {
         settings.setValue( QStringLiteral( "preview/mathRenderer" ),
                            m_previewMathRendererCombo->currentData().toString() );
+    }
+    if( m_previewVirtualThemeCombo != nullptr )
+    {
+        settings.setValue( QStringLiteral( "preview/virtualProjectTheme" ),
+                           m_previewVirtualThemeCombo->currentData().toString() );
     }
 }
 

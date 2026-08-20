@@ -36,6 +36,14 @@ public:
     [[nodiscard]] const SphinxProject* projectFor( const QString& filePath );
     [[nodiscard]] const SphinxProject* findById( const QString& projectId ) const;
 
+    /// 합성 conf.py 가 쓸 `html_theme`. 빈 문자열이면 alabaster 로 물러선다.
+    ///
+    /// 값이 바뀌면 **이미 만들어 둔 핸들을 전부 버린다** — conf.py 는 만들 때
+    /// 한 번 쓰고 다시 읽지 않으므로, 남겨 두면 그 세션 동안 열려 있던 문서만
+    /// 옛 테마로 렌더되어 "설정이 먹지 않는다" 로 보인다.
+    void                                setHtmlTheme( const QString& theme );
+    [[nodiscard]] QString               htmlTheme() const { return htmlTheme_; }
+
     /// 이 확장자를 가상 프로젝트로 다룰 것인가.
     [[nodiscard]] static bool           isSupported( const QString& filePath );
     [[nodiscard]] static QString        projectIdFor( const QString& filePath );
@@ -55,6 +63,7 @@ private:
     // QHash 는 복사 가능한 값을 요구하는데 Handle 은 unique_ptr 을 들고 있어
     // move-only 다. shared_ptr 로 감싼다.
     QHash< QString, std::shared_ptr< Handle > > handles_;   ///< projectId -> 핸들
+    QString                             htmlTheme_;         ///< 빈 문자열 = alabaster
 };
 
 }  // namespace mrst
