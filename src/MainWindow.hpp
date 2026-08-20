@@ -31,6 +31,7 @@ class QVBoxLayout;
 namespace mrst {
 class ExternalChangeWatcher;
 class PythonEnvManager;
+class TabSwitcherPopup;
 class UpdateService;
 class WorkspaceController;
 struct UpdateInfo;
@@ -76,6 +77,8 @@ public slots:
     void                                onCloseTab( int index );
     void                                onTabChanged( int index );
     void                                onThemeToggle();
+    /// F11. 프리뷰만 남기고 화면을 채운다. 다시 누르면 되돌린다.
+    void                                togglePreviewFullScreen();
 
     void                                appendLog( const QString& text );
 
@@ -255,6 +258,56 @@ private:
     void                                ensureVisiblePreviewSplit();
     /// hot-exit 스냅샷 복원. 생성자에서 하면 첫 프레임 앞을 막는다.
     void                                restoreHotExitSnapshots();
+
+    // ── 프리뷰 전체 화면 (F11) ──
+    /// 전체 화면에 들어가기 전의 화면 배치.
+    ///
+    /// **프리뷰를 별도 창으로 떼어내지 않는다.** QWebEngineView 는 자기 합성
+    /// 표면을 갖고 있어 부모를 갈아 끼우면 페이지가 다시 붙는 동안 화면이 비고,
+    /// 무엇보다 탭 목록(Ctrl+Tab)이 어느 창에 떠야 하는지가 애매해진다. 그래서
+    /// **같은 창에서 프리뷰 말고 전부 감춘다** — 탭 위젯은 숨겨진 채로 살아
+    /// 있으므로 탭 전환과 그에 딸린 프리뷰 빌드가 평소 경로대로 돈다.
+    struct PreviewFullScreenState
+    {
+        bool                            active = false;
+        Qt::WindowStates                windowStates = Qt::WindowNoState;
+        QList< int >                    previewSplitSizes;
+        QList< int >                    contentSplitSizes;
+        QList< int >                    sideSplitSizes;
+        bool                            sidePanelVisible = true;
+        bool                            bottomVisible = true;
+        bool                            editorVisible = true;
+        bool                            menuBarVisible = true;
+        bool                            statusBarVisible = true;
+        /// 전체 화면 동안 창에 함께 걸어 둔 메뉴 액션들.
+        ///
+        /// 메뉴 바를 감추면 그 안의 액션 단축키가 **함께 죽는다**. Qt 는 메뉴
+        /// 항목의 단축키를 판정할 때 그 메뉴를 물고 있는 위젯(여기서는 메뉴
+        /// 바)이 보이는지부터 보기 때문이다. 그래서 같은 QAction 을 창에도
+        /// 걸어 둔다 — 액션 하나를 두 위젯에 거는 것은 모호한 단축키가 되지
+        /// 않는다(연결된 위젯 중 **하나라도** 맞으면 발동한다).
+        QList< QPointer< QAction > >    borrowedActions;
+    };
+    PreviewFullScreenState              previewFullScreen_;
+    QAction*                            previewFullScreenAction_ = nullptr;
+    /// 전체 화면에서만 살아 있는 Esc. 평소에 켜 두면 찾기 상자의 Esc 를 훔친다.
+    QAction*                            previewExitFullScreenAction_ = nullptr;
+
+    void                                setPreviewFullScreen( bool enabled );
+
+    // ── 탭 목록 (Ctrl+Tab) ──
+    /// 최근 사용 순서. 앞이 가장 최근이다.
+    ///
+    /// Visual Studio 의 Ctrl+Tab 목록이 이 순서로 나오고, 그래서 한 번 누르고
+    /// 떼면 **직전 문서**로 간다 — 두 문서를 번갈아 보는 동작이 한 손동작이 된다.
+    /// 탭 순서로 나열하면 그 동작이 사라진다.
+    QList< QPointer< QBaseView > >      tabMruOrder_;
+    QPointer< mrst::TabSwitcherPopup >  tabSwitcher_;
+
+    /// 이 뷰를 최근 사용 목록 맨 앞으로 올린다. 죽은 항목도 여기서 걷어낸다.
+    void                                noteTabActivated( QBaseView* view );
+    /// 탭 목록 팝업을 띄운다. forward=false 면 가장 오래된 항목부터 강조한다.
+    void                                showTabSwitcher( bool forward );
 
 private:
 

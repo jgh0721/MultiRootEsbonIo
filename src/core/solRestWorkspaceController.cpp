@@ -312,6 +312,11 @@ WorkspaceController::WorkspaceController( QObject* parent )
         logProjectList();
         emit projectsChanged( count );
 
+        // "다른 프로젝트와 동일" 의 답이 방금 생겼거나 바뀌었다. 아래 재배정보다
+        // 먼저 해야 한다 — 순서가 뒤집히면 승격되지 못한 문서가 옛 테마의
+        // 가상 프로젝트를 한 번 더 만든다.
+        applyVirtualProjectTheme();
+
         // 스캔 완료 시점에 이미 열려 있던 문서들의 프로젝트를 뒤늦게 확정한다.
         //
         // 가상 프로젝트로 잡혀 있던 문서도 반드시 다시 확인해야 한다. 워크스페이스를
@@ -1347,6 +1352,10 @@ void WorkspaceController::reloadSettings()
         }
     }
 
+    // 테마는 마지막에 본다. 위에서 프리뷰 설정을 다 반영한 뒤여야, 여기서
+    // 일어나는 재빌드가 새 설정으로 나간다.
+    applyVirtualProjectTheme();
+
     applyPreviewWebSettings();
 }
 
@@ -1707,6 +1716,80 @@ void WorkspaceController::resolveProject( DocumentContext& context )
         context.projectId = QString::fromStdWString( virtualProject->projectId );
         context.isVirtual = true;
     }
+}
+
+QString WorkspaceController::resolveVirtualProjectTheme() const
+{
+    const QString configured =
+        AppSettings().value( QStringLiteral( "preview/virtualProjectTheme" ) ).toString().trimmed();
+    if( !configured.isEmpty() )
+        return configured;
+
+    // "다른 프로젝트와 동일". 워크스페이스의 실제 프로젝트가 선언한 테마를 쓴다.
+    //
+    // 서로 다른 테마를 쓰는 프로젝트가 섞여 있으면 스캔 순서로 처음 만난 것을
+    // 쓴다. 다수결은 쓰지 않는다 — 문서 하나뿐인 프로젝트가 본 문서 수백 개인
+    // 프로젝트와 같은 한 표를 갖는다.
+    for( const SphinxProject& project : registry_->projects() )
+    {
+        const std::string theme = readHtmlTheme( project.confPath );
+        if( !theme.empty() )
+            return QString::fromStdString( theme );
+    }
+    return {};
+}
+
+void WorkspaceController::applyVirtualProjectTheme()
+{
+    if( virtualProjects_ == nullptr || shuttingDown_ )
+        return;
+
+    const QString theme = resolveVirtualProjectTheme();
+    if( virtualProjects_->htmlTheme() == theme )
+        return;
+
+    // 활성 문서가 가상인지 **먼저** 본다. 아니라면 임시 디렉터리를 지워도 화면에
+    // 보이는 것은 없으므로, 실제 프로젝트의 진행 중인 빌드를 괜히 끊지 않는다
+    // (설정을 적용하는 순간에 그것이 돌고 있을 수 있다).
+    bool activeIsVirtual = false;
+    for( const DocumentContext& context : documents_ )
+    {
+        if( context.isVirtual && context.view == activeView_ )
+        {
+            activeIsVirtual = true;
+            break;
+        }
+    }
+
+    // 진행 중인 빌드는 곧 지워질 임시 디렉터리를 confdir 로 쓰고 있다.
+    if( activeIsVirtual && previewController_ != nullptr )
+        previewController_->cancel();
+
+    virtualProjects_->setHtmlTheme( theme );
+
+    // 가상 프로젝트 핸들이 방금 통째로 버려졌다. 그것에 배정돼 있던 문서의
+    // 배정을 풀어 두면 아래 setActiveDocument() 가 새 conf.py 로 다시 만든다.
+    // (scanFinished 의 프로젝트 재배정과 같은 절차다.)
+    for( DocumentContext& context : documents_ )
+    {
+        if( !context.isVirtual )
+            continue;
+
+        if( !context.projectId.isEmpty() && lspPool_ != nullptr )
+            lspPool_->stopProject( context.projectId );
+        context.projectId.clear();
+        context.isVirtual = false;
+        context.syncedToServer = false;
+        context.nudgedInitialBuild = false;
+    }
+
+    if( !activeIsVirtual )
+        return;
+
+    // activeProjectId_ 를 비워야 setActiveDocument() 가 "프로젝트가 바뀌었다" 로
+    // 보고 프리뷰를 다시 만든다. 그러지 않으면 화면은 옛 테마로 남는다.
+    activeProjectId_.clear();
+    setActiveDocument( activeView_ );
 }
 
 const SphinxProject* WorkspaceController::lookupProject( const QString& projectId ) const

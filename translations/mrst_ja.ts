@@ -243,6 +243,10 @@
         <translation type="unfinished">再読み込み</translation>
     </message>
     <message>
+        <source>다음 탭(&amp;N)</source>
+        <translation type="unfinished">次のタブ(&amp;N)</translation>
+    </message>
+    <message>
         <source>단어 단위</source>
         <translation type="unfinished">単語単位</translation>
     </message>
@@ -475,6 +479,10 @@
         <translation type="unfinished">このファイルはバイナリデータのようです。</translation>
     </message>
     <message>
+        <source>이전 탭(&amp;P)</source>
+        <translation type="unfinished">前のタブ(&amp;P)</translation>
+    </message>
+    <message>
         <source>이진 파일 열기 확인</source>
         <translation type="unfinished">バイナリファイルを開く確認</translation>
     </message>
@@ -671,6 +679,10 @@
     <message>
         <source>프리뷰 다시 빌드(&amp;R)</source>
         <translation type="unfinished">プレビューを再ビルド(&amp;R)</translation>
+    </message>
+    <message>
+        <source>프리뷰 전체 화면(&amp;L)</source>
+        <translation type="unfinished">プレビューを全画面表示(&amp;L)</translation>
     </message>
     <message>
         <source>현재 탭</source>
@@ -971,6 +983,23 @@
         <translation type="unfinished">UV 環境構成</translation>
     </message>
     <message>
+        <source>alabaster (Sphinx 기본값)</source>
+        <extracomment>콤보박스 항목. &quot;alabaster&quot; 는 Sphinx 테마 이름이므로 옮기지 않는다.</extracomment>
+        <translation type="unfinished">alabaster (Sphinx の既定値)</translation>
+    </message>
+    <message>
+        <source>conf.py 가 없는 단독 문서는 임시 Sphinx 프로젝트를 만들어 미리보기합니다. 그 임시 프로젝트가 쓸 테마를 여기서 정합니다. 실제 프로젝트에 속한 문서는 언제나 그 프로젝트의 conf.py 를 따르므로 이 설정과 무관합니다.
+
+&quot;다른 프로젝트와 동일&quot; 은 워크스페이스의 실제 프로젝트 conf.py 에 적힌 html_theme 를 그대로 씁니다. 여러 프로젝트가 서로 다른 테마를 쓰면 먼저 발견한 것을 쓰고, 실제 프로젝트가 없거나 어느 conf.py 도 테마를 선언하지 않으면 alabaster 를 씁니다.
+
+목록의 첫 묶음은 Sphinx 에 내장된 테마이고, 그 아래는 이 프로그램이 함께 설치하는 테마입니다. 없는 테마를 고르면 프리뷰 위에 설치 안내가 뜹니다.</source>
+        <translation type="unfinished">conf.py のない単独の文書は、一時的な Sphinx プロジェクトを作ってプレビューします。その一時プロジェクトが使うテーマをここで決めます。実際のプロジェクトに属する文書は常にそのプロジェクトの conf.py に従うため、この設定とは無関係です。
+
+「他のプロジェクトと同じ」は、ワークスペース内の実際のプロジェクトの conf.py に書かれた html_theme をそのまま使います。複数のプロジェクトが異なるテーマを使っている場合は最初に見つかったものを使い、実際のプロジェクトがない場合やどの conf.py もテーマを宣言していない場合は alabaster を使います。
+
+一覧の最初のまとまりは Sphinx に内蔵されたテーマで、その下はこのプログラムが併せてインストールするテーマです。入っていないテーマを選ぶと、プレビューの上にインストールの案内が出ます。</translation>
+    </message>
+    <message>
         <source>mermaid 다이어그램처럼 CDN 스크립트가 그려 주는 요소는 이 항목이 켜져 있어야 렌더링됩니다. 프리뷰 HTML 은 로컬 파일로 열리는데, 브라우저 엔진은 로컬 문서가 외부 주소를 여는 것을 기본적으로 막기 때문입니다.
 
 끄면 프리뷰는 로컬 파일만 읽습니다. 외부로 요청이 나가지 않는 대신 그런 요소는 원본 텍스트 블록으로 남습니다 — 폐쇄망에서는 어차피 받아올 수 없으므로 꺼 두는 편이 낫습니다.</source>
@@ -981,6 +1010,10 @@
     <message>
         <source>uv.exe 경로</source>
         <translation type="unfinished">uv.exe のパス</translation>
+    </message>
+    <message>
+        <source>가상 프로젝트 (reStructuredText)</source>
+        <translation type="unfinished">仮想プロジェクト (reStructuredText)</translation>
     </message>
     <message>
         <source>가져오기...</source>
@@ -1087,12 +1120,20 @@
         <translation type="unfinished">名前を付けて保存</translation>
     </message>
     <message>
+        <source>다른 프로젝트와 동일</source>
+        <translation type="unfinished">他のプロジェクトと同じ</translation>
+    </message>
+    <message>
         <source>다음 들여쓰기까지</source>
         <translation type="unfinished">次のインデントまで</translation>
     </message>
     <message>
         <source>다음 찾기</source>
         <translation type="unfinished">次を検索</translation>
+    </message>
+    <message>
+        <source>다음 탭 (탭 목록)</source>
+        <translation type="unfinished">次のタブ (タブ一覧)</translation>
     </message>
     <message>
         <source>다크</source>
@@ -1279,6 +1320,10 @@
     <message>
         <source>이전 찾기</source>
         <translation type="unfinished">前を検索</translation>
+    </message>
+    <message>
+        <source>이전 탭 (탭 목록)</source>
+        <translation type="unfinished">前のタブ (タブ一覧)</translation>
     </message>
     <message>
         <source>인디케이터</source>
@@ -1487,6 +1532,10 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
         <translation type="unfinished">テーマ色の選択</translation>
     </message>
     <message>
+        <source>테마:</source>
+        <translation type="unfinished">テーマ:</translation>
+    </message>
+    <message>
         <source>텍스트</source>
         <translation type="unfinished">テキスト</translation>
     </message>
@@ -1521,6 +1570,14 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
     <message>
         <source>프리뷰</source>
         <translation type="unfinished">プレビュー</translation>
+    </message>
+    <message>
+        <source>프리뷰 다시 빌드</source>
+        <translation type="unfinished">プレビューを再ビルド</translation>
+    </message>
+    <message>
+        <source>프리뷰 전체 화면</source>
+        <translation type="unfinished">プレビューを全画面表示</translation>
     </message>
     <message>
         <source>프리뷰는 로컬 문서로 열리는데, 브라우저 엔진은 로컬 문서가 외부 주소를 여는 것을 기본적으로 막습니다. 그래서 다음 요소는 이 항목이 켜져 있어야 렌더링됩니다.
@@ -2915,6 +2972,19 @@ Markdown の本文を描く変換器はプログラムに内蔵されている�
     <message>
         <source>프리뷰 빌드 완료</source>
         <translation type="unfinished">プレビューのビルドが完了</translation>
+    </message>
+</context>
+<context>
+    <name>mrst::TabSwitcherPopup</name>
+    <message>
+        <source>열린 문서</source>
+        <extracomment>Ctrl+Tab 팝업의 제목. Visual Studio 의 &quot;Active Files&quot; 자리다.</extracomment>
+        <translation type="unfinished">開いている文書</translation>
+    </message>
+    <message>
+        <source>저장되지 않은 문서</source>
+        <extracomment>Ctrl+Tab 팝업 아래쪽. 이름 없는 버퍼라 보여 줄 경로가 없다는 뜻이다.</extracomment>
+        <translation type="unfinished">保存されていない文書</translation>
     </message>
 </context>
 <context>

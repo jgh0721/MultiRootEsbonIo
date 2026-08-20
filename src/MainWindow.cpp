@@ -16,6 +16,7 @@
 #include "editor/QBaseEditor.hpp"
 #include "uis/dlgAbout.hpp"
 #include "uis/dlgSettings.hpp"
+#include "uis/TabSwitcherPopup.hpp"
 #include "utils/DwmTitleBar.hpp"
 #include "utils/solBackgroundWork.hpp"
 #include "utils/solPhaseTrace.hpp"
@@ -424,13 +425,17 @@ MainWindow::MainWindow( QWidget* parent )
     // 자식 하나가 QWebEngineView(별도 합성 표면)라 핸들을 끌면 노출 영역이
     // 실시간으로 바뀐다. 두 프레임이 스스로 배경을 칠하게 해야 그 틈이
     // 이전 픽셀(검은 띠)로 남지 않는다.
-    Ui.splitter_2->setChildrenCollapsible( false );
+    // 양쪽 다 핸들을 끝까지 끌어 완전히 접을 수 있다.
+    //
+    // 예전에는 setChildrenCollapsible(false) 였다. 그 값의 본래 목적은 프리뷰가
+    // 0 폭으로 **시작**하는 것을 막는 것이었는데, 그 일은 지금
+    // ensureVisiblePreviewSplit() 이 하고 있어서 접기를 막을 이유가 남지 않았다.
+    // 반대로 대가는 컸다 — 프리뷰만 보고 싶을 때 편집기를 치울 수 없었다.
+    Ui.splitter_2->setChildrenCollapsible( true );
     Ui.splitter_2->setStretchFactor( 0, 1 );
     Ui.splitter_2->setStretchFactor( 1, 1 );
-    // 최소 폭을 양쪽에 준다.
-    //
-    // setChildrenCollapsible(false) 는 "핸들을 끌어 접을 수 없다" 는 뜻일 뿐이고
-    // 최소 폭이 0 이면 레이아웃 계산에서 0 이 될 수 있다.
+    // 최소 폭을 양쪽에 준다. 접기와 어긋나지 않는다 — QSplitter 는 접을 수 있는
+    // 자식을 이 하한 **아래로 끌면 0 으로 스냅**하고, 그 사이 값에는 두지 않는다.
     //
     // 편집기 쪽이 더 중요하다. Scintilla 위젯과 열 눈금자가 minimumSizeHint 로
     // 큰 값을 요구해서(실측: 스플리터 폭 864 에서 편집기 743 / 프리뷰 120), 그것을
@@ -779,6 +784,41 @@ void MainWindow::createMenus()
     rebuildPreviewAction->setShortcut( QKeySequence( Qt::Key_F5 ) );
     rebuildPreviewAction->setShortcutContext( Qt::ApplicationShortcut );
 
+    previewFullScreenAction_ = viewMenu->addAction( QString(), this,
+                                                   &MainWindow::togglePreviewFullScreen );
+    previewFullScreenAction_->setObjectName( QStringLiteral( "preview.fullScreen" ) );
+    previewFullScreenAction_->setProperty( "mv.shortcutId", QStringLiteral( "preview.fullScreen" ) );
+    previewFullScreenAction_->setShortcut( QKeySequence( Qt::Key_F11 ) );
+    previewFullScreenAction_->setShortcutContext( Qt::ApplicationShortcut );
+    // 체크 상태로 둔다. 전체 화면에서는 메뉴 바가 숨으므로 이 표시를 볼 수
+    // 있는 것은 되돌아온 뒤뿐이지만, 그 한 번이 "F11 이 그 토글이었다" 를 알려 준다.
+    previewFullScreenAction_->setCheckable( true );
+
+    // 전체 화면에서만 듣는 Esc. 메뉴에 넣지 않는다 — 메뉴 항목으로 보이면
+    // 단축키 설정 표에 없는 Id 를 재정의할 수 있다는 착각을 준다.
+    previewExitFullScreenAction_ = new QAction( this );
+    previewExitFullScreenAction_->setShortcut( QKeySequence( Qt::Key_Escape ) );
+    previewExitFullScreenAction_->setShortcutContext( Qt::WindowShortcut );
+    previewExitFullScreenAction_->setEnabled( false );
+    connect( previewExitFullScreenAction_, &QAction::triggered, this,
+            [this] { setPreviewFullScreen( false ); } );
+    addAction( previewExitFullScreenAction_ );
+
+    // 탭 목록. 전체 화면에서는 탭 바가 보이지 않으므로 이것이 문서를 옮기는
+    // 유일한 수단이 되고, 평소에도 Visual Studio 처럼 직전 문서로 한 번에 간다.
+    viewMenu->addSeparator();
+    auto* nextTabAction = viewMenu->addAction( QString(), this, [this] { showTabSwitcher( true ); } );
+    nextTabAction->setObjectName( QStringLiteral( "tab.next" ) );
+    nextTabAction->setProperty( "mv.shortcutId", QStringLiteral( "tab.next" ) );
+    nextTabAction->setShortcut( QKeySequence( Qt::CTRL | Qt::Key_Tab ) );
+    nextTabAction->setShortcutContext( Qt::ApplicationShortcut );
+
+    auto* previousTabAction = viewMenu->addAction( QString(), this, [this] { showTabSwitcher( false ); } );
+    previousTabAction->setObjectName( QStringLiteral( "tab.previous" ) );
+    previousTabAction->setProperty( "mv.shortcutId", QStringLiteral( "tab.previous" ) );
+    previousTabAction->setShortcut( QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_Tab ) );
+    previousTabAction->setShortcutContext( Qt::ApplicationShortcut );
+
     auto* settingsMenu = menuBar()->addMenu( QString() );
     settingsMenu->setObjectName( QStringLiteral( "menu.settings" ) );
     auto* settingsAction = settingsMenu->addAction( QString(), this, &MainWindow::onSettings );
@@ -966,6 +1006,9 @@ void MainWindow::retranslateMenus()
     actionText( "editor.foldAll",     tr( "모두 접기(&F)" ) );
     actionText( "editor.unfoldAll",   tr( "모두 펼치기(&U)" ) );
     actionText( "preview.rebuild",    tr( "프리뷰 다시 빌드(&R)" ) );
+    actionText( "preview.fullScreen", tr( "프리뷰 전체 화면(&L)" ) );
+    actionText( "tab.next",           tr( "다음 탭(&N)" ) );
+    actionText( "tab.previous",       tr( "이전 탭(&P)" ) );
 
     menuTitle ( "menu.settings",      tr( "설정(&S)" ) );
     actionText( "app.settings",       tr( "설정(&I)..." ) );
@@ -1064,8 +1107,11 @@ void MainWindow::updateViewerToolBar()
             m_viewerToolBarLayout->addWidget( m_viewerToolBar );
 
         purgeStaleViewerToolBars( m_viewerToolBarHost, m_viewerToolBar );
+        // 프리뷰 전체 화면에서는 도구모음 자리를 되살리지 않는다. 이 함수는 탭이
+        // 바뀔 때마다 도는데(Ctrl+Tab 도 그렇다), 그러면 감춰 둔 도구모음이
+        // 전체 화면 위로 매번 다시 튀어 오른다.
         if( m_viewerToolBarHost )
-            m_viewerToolBarHost->setVisible( true );
+            m_viewerToolBarHost->setVisible( !previewFullScreen_.active );
 
         m_viewerToolBar->show();
 
@@ -1978,6 +2024,8 @@ void MainWindow::closeEvent( QCloseEvent* event )
 
 void MainWindow::onTabChanged( int /*index*/ )
 {
+    noteTabActivated( currentView() );
+
     if( controller_ )
         controller_->setActiveDocument( textViewOf( currentView() ) );
 
@@ -1995,6 +2043,185 @@ void MainWindow::onThemeToggle()
     auto& mgr = ThemeManager::instance();
     mgr.setTheme( mgr.currentTheme() == ThemeManager::Light
                      ? ThemeManager::Dark : ThemeManager::Light );
+}
+
+void MainWindow::togglePreviewFullScreen()
+{
+    setPreviewFullScreen( !previewFullScreen_.active );
+}
+
+void MainWindow::setPreviewFullScreen( const bool enabled )
+{
+    if( previewFullScreen_.active == enabled )
+        return;
+
+    // 기동 직후라면 프리뷰가 아직 붙지 않았다. 그 상태로 들어가면 빈 화면만
+    // 남고 되돌아올 단서(메뉴)도 사라진다. 파일 열기와 같은 처리를 한다 —
+    // 사용자 조작이 기동 단계를 앞당긴다.
+    if( enabled )
+    {
+        initialisePreview();
+        if( Ui.webEngineView == nullptr )
+            return;
+    }
+
+    previewFullScreen_.active = enabled;
+    if( previewFullScreenAction_ != nullptr )
+        previewFullScreenAction_->setChecked( enabled );
+    if( previewExitFullScreenAction_ != nullptr )
+        previewExitFullScreenAction_->setEnabled( enabled );
+
+    if( enabled )
+    {
+        previewFullScreen_.windowStates = windowState();
+        previewFullScreen_.previewSplitSizes = Ui.splitter_2->sizes();
+        previewFullScreen_.contentSplitSizes = Ui.splEditWithStatisticsOnContent->sizes();
+        previewFullScreen_.sideSplitSizes = Ui.splSideWithContent->sizes();
+        previewFullScreen_.sidePanelVisible = Ui.splFolderWithOutlineOnSide->isVisible();
+        previewFullScreen_.bottomVisible = Ui.frmBottom->isVisible();
+        previewFullScreen_.editorVisible = Ui.frmEditor->isVisible();
+        previewFullScreen_.menuBarVisible = menuBar()->isVisible();
+        previewFullScreen_.statusBarVisible = statusBar()->isVisible();
+
+        // 알림 바(missingDepBar_ / updateBar_)는 건드리지 않는다. 전체 화면
+        // 도중에 새로 뜰 수 있어서, 감췄다가 되돌리면 그 사이에 생긴 알림을
+        // 조용히 지우게 된다. 둘 다 한 줄짜리이고 사용자가 닫을 수 있다.
+
+        // 메뉴 바를 감추기 **전에** 그 안의 단축키를 창으로 빌려 온다
+        // (borrowedActions 옆 주석 참고). 이 줄이 없으면 전체 화면에서
+        // Ctrl+S 도 Ctrl+W 도 F11 도 듣지 않는다 — 되돌아올 수단이 사라진다.
+        previewFullScreen_.borrowedActions.clear();
+        const QList< QAction* > menuActions = menuBar()->findChildren< QAction* >();
+        for( QAction* action : menuActions )
+        {
+            if( action == nullptr || action->shortcut().isEmpty() )
+                continue;
+            previewFullScreen_.borrowedActions.push_back( action );
+            addAction( action );
+        }
+
+        Ui.splFolderWithOutlineOnSide->hide();
+        Ui.frmBottom->hide();
+        Ui.frmEditor->hide();
+        menuBar()->hide();
+        statusBar()->hide();
+        if( m_viewerToolBarHost != nullptr )
+            m_viewerToolBarHost->hide();
+
+        showFullScreen();
+        // 프리뷰에 포커스를 준다. PageDown 으로 곧바로 읽어 내려갈 수 있어야
+        // 전체 화면이 제 일을 한다. F11 은 ApplicationShortcut 이라 Chromium 이
+        // 포커스를 쥐고 있어도 계속 듣는다.
+        Ui.webEngineView->setFocus();
+        return;
+    }
+
+    for( const QPointer< QAction >& action : previewFullScreen_.borrowedActions )
+    {
+        if( !action.isNull() )
+            removeAction( action );
+    }
+    previewFullScreen_.borrowedActions.clear();
+
+    Ui.splFolderWithOutlineOnSide->setVisible( previewFullScreen_.sidePanelVisible );
+    Ui.frmBottom->setVisible( previewFullScreen_.bottomVisible );
+    Ui.frmEditor->setVisible( previewFullScreen_.editorVisible );
+    menuBar()->setVisible( previewFullScreen_.menuBarVisible );
+    statusBar()->setVisible( previewFullScreen_.statusBarVisible );
+    // 전체 화면 동안 탭이 바뀌었을 수 있다(Ctrl+Tab). 그러면 기억해 둔 표시
+    // 여부는 이미 옛 문서 것이므로 도구모음은 지금 문서로 다시 계산한다.
+    updateViewerToolBar();
+
+    if( ( previewFullScreen_.windowStates & Qt::WindowMaximized ) != 0 )
+        showMaximized();
+    else
+        showNormal();
+
+    // 배치 복원은 창이 원래 크기로 돌아온 **뒤에** 해야 한다. QSplitter 는
+    // setSizes() 로 준 값의 합과 실제 폭이 다르면 남는 폭을 스트레치 비율로
+    // 나눠 주므로, 전체 화면 폭에서 넣은 값은 그 자리에서 뭉개진다.
+    QTimer::singleShot( 0, this, [this] {
+        if( previewFullScreen_.active )
+            return;   // 그 사이 다시 들어갔다
+
+        const auto restoreSizes = []( QSplitter* splitter, const QList< int >& sizes ) {
+            if( splitter != nullptr && sizes.size() == splitter->count() )
+                splitter->setSizes( sizes );
+        };
+        restoreSizes( Ui.splSideWithContent, previewFullScreen_.sideSplitSizes );
+        restoreSizes( Ui.splEditWithStatisticsOnContent, previewFullScreen_.contentSplitSizes );
+        restoreSizes( Ui.splitter_2, previewFullScreen_.previewSplitSizes );
+    } );
+
+    if( QBaseView* view = currentView() )
+        view->setFocus();
+}
+
+void MainWindow::noteTabActivated( QBaseView* view )
+{
+    // 죽은 항목을 여기서 걷어낸다. 탭이 사라지는 경로가 여럿이라(닫기 버튼,
+    // 종료, 뷰 교체) 각 자리에서 지우는 대신 목록을 만질 때마다 정리한다.
+    tabMruOrder_.removeIf( []( const QPointer< QBaseView >& entry ) { return entry.isNull(); } );
+    if( view == nullptr )
+        return;
+
+    tabMruOrder_.removeAll( QPointer< QBaseView >( view ) );
+    tabMruOrder_.prepend( view );
+}
+
+void MainWindow::showTabSwitcher( const bool forward )
+{
+    if( m_tabWidget == nullptr || m_tabWidget->count() < 2 )
+        return;
+
+    // 최근 사용 순서로 세운다. 목록에 없는 탭(막 열려 아직 활성화된 적이 없는
+    // 것)은 뒤에 탭 순서로 붙인다 — 빠뜨리면 그 탭으로는 갈 수 없다.
+    tabMruOrder_.removeIf( []( const QPointer< QBaseView >& entry ) { return entry.isNull(); } );
+    QList< QBaseView* > ordered;
+    for( const QPointer< QBaseView >& entry : tabMruOrder_ )
+    {
+        QBaseView* view = entry.data();
+        if( view != nullptr && m_tabWidget->indexOf( view ) >= 0 && !ordered.contains( view ) )
+            ordered.push_back( view );
+    }
+    for( int index = 0; index < m_tabWidget->count(); ++index )
+    {
+        auto* view = qobject_cast< QBaseView* >( m_tabWidget->widget( index ) );
+        if( view != nullptr && !ordered.contains( view ) )
+            ordered.push_back( view );
+    }
+    if( ordered.size() < 2 )
+        return;
+
+    QList< mrst::TabSwitcherEntry > entries;
+    entries.reserve( ordered.size() );
+    for( QBaseView* view : ordered )
+    {
+        const int index = m_tabWidget->indexOf( view );
+        mrst::TabSwitcherEntry entry;
+        // 탭 바에 보이는 문자열을 그대로 쓴다. 수정 표시(●)까지 같아야 목록과
+        // 탭 바가 같은 것을 가리킨다고 읽힌다.
+        entry.title = m_tabWidget->tabText( index );
+        entry.detail = view->currentFilePath();
+        entry.icon = m_tabWidget->tabIcon( index );
+        entry.tabIndex = index;
+        entries.push_back( entry );
+    }
+
+    if( tabSwitcher_.isNull() )
+    {
+        tabSwitcher_ = new mrst::TabSwitcherPopup( this );
+        connect( tabSwitcher_, &mrst::TabSwitcherPopup::tabChosen, this, [this]( const int tabIndex ) {
+            // 탭을 옮기면 onTabChanged 가 컨트롤러에 활성 문서를 알리고, 그것이
+            // 프리뷰 빌드까지 끌고 간다. 전체 화면에서도 같은 경로다.
+            if( m_tabWidget != nullptr && tabIndex >= 0 && tabIndex < m_tabWidget->count() )
+                m_tabWidget->setCurrentIndex( tabIndex );
+        } );
+    }
+
+    // 앞으로는 1번(= 직전 문서), 뒤로는 마지막(= 가장 오래 안 본 문서)부터
+    // 강조한다. 0번은 지금 보고 있는 문서라 첫 강조 자리로는 의미가 없다.
+    tabSwitcher_->showEntries( entries, forward ? 1 : entries.size() - 1 );
 }
 
 void MainWindow::appendLog( const QString& text )
@@ -3195,12 +3422,24 @@ void MainWindow::saveWorkspaceSessionNow()
         session.documents.push_back( document );
     }
 
-    if( QSplitter* splitter = Ui.splSideWithContent )
-        session.sideSplitterSizes = splitter->sizes();
-    if( QSplitter* splitter = Ui.splEditWithStatisticsOnContent )
-        session.contentSplitterSizes = splitter->sizes();
-    if( QSplitter* splitter = Ui.splitter_2 )
-        session.previewSplitterSizes = splitter->sizes();
+    // 전체 화면 도중에는 화면의 배치를 저장하지 않는다. 지금 스플리터가 들고
+    // 있는 값은 "편집기와 좌측·하단이 0" 이라서, 그대로 저장하면 다음 실행이
+    // **아무것도 없는 창**으로 열린다. 들어올 때 기억해 둔 값을 쓴다.
+    if( previewFullScreen_.active )
+    {
+        session.sideSplitterSizes = previewFullScreen_.sideSplitSizes;
+        session.contentSplitterSizes = previewFullScreen_.contentSplitSizes;
+        session.previewSplitterSizes = previewFullScreen_.previewSplitSizes;
+    }
+    else
+    {
+        if( QSplitter* splitter = Ui.splSideWithContent )
+            session.sideSplitterSizes = splitter->sizes();
+        if( QSplitter* splitter = Ui.splEditWithStatisticsOnContent )
+            session.contentSplitterSizes = splitter->sizes();
+        if( QSplitter* splitter = Ui.splitter_2 )
+            session.previewSplitterSizes = splitter->sizes();
+    }
 
     mrst::saveWorkspaceSession( session );
 }

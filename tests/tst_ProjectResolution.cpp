@@ -47,6 +47,8 @@ private slots:
     /// `.md` 를 Sphinx 로 보낼지 내장 렌더러로 보낼지 가르는 1차 판정이다.
     /// 거짓양성은 빌더 리포트가 정정하지만 거짓음성은 정정할 수단이 없다.
     void detectsMystMarkdown();
+    /// 가상 프로젝트의 "다른 프로젝트와 동일" 테마가 이 판정 하나에 걸려 있다.
+    void readsHtmlTheme();
 };
 
 void TestProjectResolution::resolvesFileInSameDirectory()
@@ -183,6 +185,40 @@ void TestProjectResolution::detectsMystMarkdown()
     // 파일이 없으면 거짓이다(스캔 중 지워진 경우).
     QVERIFY( !confDeclaresMystMarkdown( toPath( QDir( temp.path() ).filePath(
         QStringLiteral( "없는파일.py" ) ) ) ) );
+}
+
+void TestProjectResolution::readsHtmlTheme()
+{
+    QTemporaryDir temp;
+    QVERIFY( temp.isValid() );
+
+    const QString path = QDir( temp.path() ).filePath( QStringLiteral( "conf.py" ) );
+    const auto theme = [ &path ]( const char* body ) {
+        writeFile( path, body );
+        return QString::fromStdString( readHtmlTheme( toPath( path ) ) );
+    };
+
+    QCOMPARE( theme( "html_theme = 'furo'\n" ), QStringLiteral( "furo" ) );
+    QCOMPARE( theme( "project = 'x'\nhtml_theme = \"sphinx_rtd_theme\"\n" ),
+             QStringLiteral( "sphinx_rtd_theme" ) );
+    // 타입 힌트가 붙어 있어도 잡는다 (html_style 판정과 같은 문법을 받는다).
+    QCOMPARE( theme( "html_theme: str = 'alabaster'\n" ), QStringLiteral( "alabaster" ) );
+
+    // 마지막 대입이 이긴다.
+    QCOMPARE( theme( "html_theme = 'alabaster'\nhtml_theme = 'furo'\n" ), QStringLiteral( "furo" ) );
+
+    // 주석은 세지 않는다. 테마를 바꿔 보다 주석으로 남긴 줄이 흔하다.
+    QVERIFY( theme( "# html_theme = 'furo'\n" ).isEmpty() );
+
+    // 선언이 없으면 빈 문자열. 호출 측이 alabaster 로 물러선다.
+    QVERIFY( theme( "project = 'x'\n" ).isEmpty() );
+
+    // 변수 대입은 잡지 못한다 — 정규식 폴백의 알려진 한계다.
+    QVERIFY( theme( "THEME = 'furo'\nhtml_theme = THEME\n" ).isEmpty() );
+
+    // 파일이 없으면 빈 문자열(스캔 중 지워진 경우).
+    QVERIFY( readHtmlTheme( toPath( QDir( temp.path() ).filePath(
+        QStringLiteral( "없는파일.py" ) ) ) ).empty() );
 }
 
 MRST_REGISTER_TEST( TestProjectResolution );

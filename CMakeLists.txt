@@ -186,6 +186,8 @@ add_executable(${PROJECT_NAME}
         src/uis/dlgSettings.cpp
         src/uis/dlgSettings.hpp
         src/uis/dlgSettings.ui
+        src/uis/TabSwitcherPopup.cpp
+        src/uis/TabSwitcherPopup.hpp
         src/editor/ScintillaEditorSettings.cpp
         src/editor/ScintillaEditorSettings.hpp
         src/editor/ScintillaQtDirectBackend.cpp
@@ -427,6 +429,7 @@ if(MRST_BUILD_TESTS)
             tests/ui/tst_CompletionPopupUi.cpp
             tests/ui/tst_ThemeColorKeys.cpp
             tests/ui/tst_ScintillaTextMetrics.cpp
+            tests/ui/tst_ScintillaDocumentLoad.cpp
 
             src/editor/CompletionPopupWidget.cpp
             src/editor/CompletionPopupWidget.hpp

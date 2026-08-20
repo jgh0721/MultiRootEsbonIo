@@ -17,7 +17,7 @@ namespace {
 /// 가상 프로젝트용 최소 conf.py.
 ///
 /// %1 = 프로젝트 표시 이름, %2 = root_doc(확장자 없는 파일명),
-/// %3 = include_patterns 에 넣을 파일명
+/// %3 = include_patterns 에 넣을 파일명, %4 = html_theme
 ///
 /// myst_parser 는 있을 때만 켠다. 없는데 extensions 에 넣으면 빌드가 통째로
 /// 실패한다.
@@ -59,7 +59,7 @@ if "myst_parser" in extensions:
 include_patterns = ["%3"]
 exclude_patterns = ["**/_build/**", "**/.git/**", "**/.venv/**"]
 
-html_theme = "alabaster"
+html_theme = "%4"
 )PY";
 
 /// ⚠ **번역 금지.** 이 값은 위 kConfTemplate 의 `project = "%1"` 자리에 그대로
@@ -69,6 +69,16 @@ html_theme = "alabaster"
 QString sanitizedProjectName( const QString& baseName )
 {
     return baseName.isEmpty() ? QStringLiteral( "문서" ) : baseName;
+}
+
+/// 같은 이유로 테마 이름도 걸러 낸다. 이 값은 설정 파일에서 오고, 사용자가
+/// ini 를 직접 고칠 수 있다. `alabaster"; import os` 한 줄이면 우리가 만든
+/// conf.py 가 임의 코드를 실행한다 — Sphinx 는 conf.py 를 exec 한다.
+QString sanitizedThemeName( const QString& theme )
+{
+    static const QRegularExpression allowed( QStringLiteral( "^[A-Za-z0-9._-]+$" ) );
+    const QString trimmed = theme.trimmed();
+    return allowed.match( trimmed ).hasMatch() ? trimmed : QStringLiteral( "alabaster" );
 }
 
 /// 임시 디렉터리 이름에 PID 를 넣는다. 크래시나 강제 종료로 남은 것을
@@ -177,7 +187,8 @@ const SphinxProject* VirtualProjectManager::projectFor( const QString& filePath 
         return nullptr;
     }
     conf.write( QString::fromUtf8( kConfTemplate )
-                    .arg( sanitizedProjectName( docName ), docName, info.fileName() )
+                    .arg( sanitizedProjectName( docName ), docName, info.fileName(),
+                          sanitizedThemeName( htmlTheme_ ) )
                     .toUtf8() );
     conf.close();
 
@@ -199,6 +210,16 @@ const SphinxProject* VirtualProjectManager::projectFor( const QString& filePath 
     handles_.insert( projectId, handle );
     emit logMessage( tr( "가상 프로젝트 생성: %1 (%2)" ).arg( info.fileName(), projectId ) );
     return &handle->project;
+}
+
+void VirtualProjectManager::setHtmlTheme( const QString& theme )
+{
+    if( htmlTheme_ == theme )
+        return;
+
+    htmlTheme_ = theme;
+    // 이미 만든 conf.py 는 다시 읽히지 않는다. 버려서 다음 요청에 새로 쓰게 한다.
+    cleanup();
 }
 
 void VirtualProjectManager::cleanup()

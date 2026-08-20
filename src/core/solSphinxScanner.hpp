@@ -75,6 +75,15 @@ private:
 /// 떨어진다. 그래서 extensions 뿐 아니라 source_suffix 에 실린 `.md` 도 본다
 /// (recommonmark 나 커스텀 파서를 쓰는 프로젝트는 extensions 에 myst 가 없다).
 [[nodiscard]] bool confDeclaresMystMarkdown( const std::filesystem::path& confPath );
+
+/// conf.py 가 선언한 `html_theme`. 없거나 읽을 수 없으면 빈 문자열.
+///
+/// 가상 프로젝트가 "다른 프로젝트와 동일" 테마를 쓸 때, 그 "동일" 이 무엇인지
+/// 알아내는 유일한 자리다. confDeclaresMystMarkdown 과 같은 한계를 갖는다 —
+/// 변수 대입(`html_theme = THEME`)이나 조건부 대입은 잡지 못한다. 그때는 빈
+/// 문자열이 나오고 호출자가 alabaster 로 물러선다.
+[[nodiscard]] std::string readHtmlTheme( const std::filesystem::path& confPath );
+
 [[nodiscard]] std::filesystem::path inferSourcePath(const std::filesystem::path& rootPath, const std::string& rootDoc);
 [[nodiscard]] std::wstring projectIdFor(const std::filesystem::path& workspaceRoot, const std::filesystem::path& rootPath);
 [[nodiscard]] const SphinxProject* resolveProjectForFile(const std::filesystem::path& filePath, const std::vector<SphinxProject>& projects);
