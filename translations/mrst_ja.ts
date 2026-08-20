@@ -684,6 +684,12 @@
         <source>프리뷰 전체 화면(&amp;L)</source>
         <translation type="unfinished">プレビューを全画面表示(&amp;L)</translation>
     </message>
+    <message numerus="yes">
+        <source>하위 %n개 항목이 개요 깊이 설정에 걸려 빠졌습니다.</source>
+        <translation type="unfinished">
+            <numerusform>配下の%n項目がアウトラインの深さ設定で省かれています。</numerusform>
+        </translation>
+    </message>
     <message>
         <source>현재 탭</source>
         <translation type="unfinished">現在のタブ</translation>
@@ -858,6 +864,11 @@
 <context>
     <name>QSettingsDialog</name>
     <message>
+        <source> 단계</source>
+        <extracomment>스핀박스 접미사. 앞의 공백을 지우지 말 것 — 숫자와 붙는다.</extracomment>
+        <translation type="unfinished"> 段階</translation>
+    </message>
+    <message>
         <source> 일마다</source>
         <extracomment>자동 업데이트 확인 주기 스핀박스의 접미사. 숫자 바로 뒤에 붙는다. 앞 공백을 포함해서 번역할 것 — 영어 &quot; days&quot;, 일본어 &quot; 日ごと&quot;.</extracomment>
         <translation type="unfinished"> 日ごと</translation>
@@ -1028,6 +1039,10 @@
         <translation type="unfinished">値</translation>
     </message>
     <message>
+        <source>개요 트리 (활성 문서 / 프로젝트)</source>
+        <translation type="unfinished">アウトラインツリー (アクティブドキュメント / プロジェクト)</translation>
+    </message>
+    <message>
         <source>고정 (0열)</source>
         <translation type="unfinished">固定（0 列目）</translation>
     </message>
@@ -1106,6 +1121,10 @@
 대신 CDN 스크립트로 그리는 수식과 다이어그램은 텍스트로 남습니다.</source>
         <translation type="unfinished">オフにするとプレビューは外部へリクエストを送りません。
 かわりに CDN スクリプトが描く数式と図はテキストのまま残ります。</translation>
+    </message>
+    <message>
+        <source>나타낼 깊이:</source>
+        <translation type="unfinished">表示する深さ:</translation>
     </message>
     <message>
         <source>내보내기...</source>
@@ -1314,6 +1333,18 @@
         <translation type="unfinished">外部編集の検知:</translation>
     </message>
     <message>
+        <source>왼쪽 개요 트리에 몇 단계까지 나타낼지 정합니다. 깊이는 섹션 단계로 세고, 프로젝트 탭의 문서 줄은 세지 않습니다 — 두 탭이 같은 단계의 섹션까지 보여 줍니다.
+
+깊이에 걸려 빠진 하위 항목이 있으면 그 줄 끝에 &quot; …&quot; 이 붙고, 마우스를 올리면 몇 개가 빠졌는지 나옵니다. 표시 없이 자르면 그 자리가 문서의 마지막 단계인 것처럼 읽히기 때문입니다.
+
+이 설정은 트리에 무엇을 올릴지만 정합니다. 문서를 다시 읽지 않으므로 바꾸는 즉시 반영됩니다.</source>
+        <translation type="unfinished">左のアウトラインツリーに何段階まで表示するかを決めます。深さはセクションの段階で数え、プロジェクトタブのドキュメント行は数えません — 両方のタブが同じ段階のセクションまで表示します。
+
+深さで省かれた下位項目がある行の末尾には &quot; …&quot; が付き、マウスを乗せるといくつ省かれたかが分かります。印を付けずに切ると、その行がドキュメントの最後の段階のように読めてしまうからです。
+
+この設定はツリーに載せるものだけを決めます。ドキュメントを読み直さないので、変更は直ちに反映されます。</translation>
+    </message>
+    <message>
         <source>원래 들여쓰기 유지</source>
         <translation type="unfinished">元のインデントを保持</translation>
     </message>
@@ -1410,6 +1441,10 @@
     <message>
         <source>제어문자 표시:</source>
         <translation type="unfinished">制御文字の表示:</translation>
+    </message>
+    <message>
+        <source>제한 없음</source>
+        <translation type="unfinished">制限なし</translation>
     </message>
     <message>
         <source>줄 끝</source>

@@ -42,5 +42,11 @@
             <numerusform></numerusform>
         </translation>
     </message>
+    <message numerus="yes">
+        <source>하위 %n개 항목이 개요 깊이 설정에 걸려 빠졌습니다.</source>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
 </context>
 </TS>
