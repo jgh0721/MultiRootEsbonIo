@@ -246,6 +246,10 @@
         <translation type="unfinished">Reload</translation>
     </message>
     <message>
+        <source>다음 탭(&amp;N)</source>
+        <translation type="unfinished">&amp;Next Tab</translation>
+    </message>
+    <message>
         <source>단어 단위</source>
         <translation type="unfinished">Whole words</translation>
     </message>
@@ -479,6 +483,10 @@ You will be asked about any unsaved documents first. Continue?</translation>
         <translation type="unfinished">This file looks like binary data.</translation>
     </message>
     <message>
+        <source>이전 탭(&amp;P)</source>
+        <translation type="unfinished">&amp;Previous Tab</translation>
+    </message>
+    <message>
         <source>이진 파일 열기 확인</source>
         <translation type="unfinished">Open binary file</translation>
     </message>
@@ -677,6 +685,10 @@ Open it as text anyway?
     <message>
         <source>프리뷰 다시 빌드(&amp;R)</source>
         <translation type="unfinished">&amp;Rebuild Preview</translation>
+    </message>
+    <message>
+        <source>프리뷰 전체 화면(&amp;L)</source>
+        <translation type="unfinished">Ful&amp;l Screen Preview</translation>
     </message>
     <message>
         <source>현재 탭</source>
@@ -977,6 +989,23 @@ file systems that never notify. Files that could not be registered for notificat
         <translation type="unfinished">UV environment setup</translation>
     </message>
     <message>
+        <source>alabaster (Sphinx 기본값)</source>
+        <extracomment>콤보박스 항목. &quot;alabaster&quot; 는 Sphinx 테마 이름이므로 옮기지 않는다.</extracomment>
+        <translation type="unfinished">alabaster (Sphinx default)</translation>
+    </message>
+    <message>
+        <source>conf.py 가 없는 단독 문서는 임시 Sphinx 프로젝트를 만들어 미리보기합니다. 그 임시 프로젝트가 쓸 테마를 여기서 정합니다. 실제 프로젝트에 속한 문서는 언제나 그 프로젝트의 conf.py 를 따르므로 이 설정과 무관합니다.
+
+&quot;다른 프로젝트와 동일&quot; 은 워크스페이스의 실제 프로젝트 conf.py 에 적힌 html_theme 를 그대로 씁니다. 여러 프로젝트가 서로 다른 테마를 쓰면 먼저 발견한 것을 쓰고, 실제 프로젝트가 없거나 어느 conf.py 도 테마를 선언하지 않으면 alabaster 를 씁니다.
+
+목록의 첫 묶음은 Sphinx 에 내장된 테마이고, 그 아래는 이 프로그램이 함께 설치하는 테마입니다. 없는 테마를 고르면 프리뷰 위에 설치 안내가 뜹니다.</source>
+        <translation type="unfinished">A standalone document with no conf.py is previewed through a temporary Sphinx project. This is where you pick the theme that temporary project uses. Documents that belong to a real project always follow that project&apos;s conf.py, so this setting does not affect them.
+
+&quot;Same as other projects&quot; uses the html_theme written in a real project&apos;s conf.py in the workspace. If several projects use different themes, the first one found wins; if there is no real project, or no conf.py declares a theme, alabaster is used.
+
+The first group in the list is the themes built into Sphinx; below it are the themes this program installs alongside. Pick a theme that is not installed and an install notice appears above the preview.</translation>
+    </message>
+    <message>
         <source>mermaid 다이어그램처럼 CDN 스크립트가 그려 주는 요소는 이 항목이 켜져 있어야 렌더링됩니다. 프리뷰 HTML 은 로컬 파일로 열리는데, 브라우저 엔진은 로컬 문서가 외부 주소를 여는 것을 기본적으로 막기 때문입니다.
 
 끄면 프리뷰는 로컬 파일만 읽습니다. 외부로 요청이 나가지 않는 대신 그런 요소는 원본 텍스트 블록으로 남습니다 — 폐쇄망에서는 어차피 받아올 수 없으므로 꺼 두는 편이 낫습니다.</source>
@@ -987,6 +1016,10 @@ When off, the preview reads local files only. Nothing leaves the machine, but th
     <message>
         <source>uv.exe 경로</source>
         <translation type="unfinished">Path to uv.exe</translation>
+    </message>
+    <message>
+        <source>가상 프로젝트 (reStructuredText)</source>
+        <translation type="unfinished">Virtual project (reStructuredText)</translation>
     </message>
     <message>
         <source>가져오기...</source>
@@ -1093,12 +1126,20 @@ Math and diagrams drawn by CDN scripts will stay as plain text.</translation>
         <translation type="unfinished">Save as</translation>
     </message>
     <message>
+        <source>다른 프로젝트와 동일</source>
+        <translation type="unfinished">Same as other projects</translation>
+    </message>
+    <message>
         <source>다음 들여쓰기까지</source>
         <translation type="unfinished">To the next indent</translation>
     </message>
     <message>
         <source>다음 찾기</source>
         <translation type="unfinished">Find next</translation>
+    </message>
+    <message>
+        <source>다음 탭 (탭 목록)</source>
+        <translation type="unfinished">Next tab (tab list)</translation>
     </message>
     <message>
         <source>다크</source>
@@ -1285,6 +1326,10 @@ A tab with unsaved edits is always asked first, even under &apos;Reload automati
     <message>
         <source>이전 찾기</source>
         <translation type="unfinished">Find previous</translation>
+    </message>
+    <message>
+        <source>이전 탭 (탭 목록)</source>
+        <translation type="unfinished">Previous tab (tab list)</translation>
     </message>
     <message>
         <source>인디케이터</source>
@@ -1493,6 +1538,10 @@ Enable the last option to have edits reflected in those documents too. While you
         <translation type="unfinished">Select a theme color</translation>
     </message>
     <message>
+        <source>테마:</source>
+        <translation type="unfinished">Theme:</translation>
+    </message>
+    <message>
         <source>텍스트</source>
         <translation type="unfinished">Text</translation>
     </message>
@@ -1527,6 +1576,14 @@ Enable the last option to have edits reflected in those documents too. While you
     <message>
         <source>프리뷰</source>
         <translation type="unfinished">Preview</translation>
+    </message>
+    <message>
+        <source>프리뷰 다시 빌드</source>
+        <translation type="unfinished">Rebuild preview</translation>
+    </message>
+    <message>
+        <source>프리뷰 전체 화면</source>
+        <translation type="unfinished">Full screen preview</translation>
     </message>
     <message>
         <source>프리뷰는 로컬 문서로 열리는데, 브라우저 엔진은 로컬 문서가 외부 주소를 여는 것을 기본적으로 막습니다. 그래서 다음 요소는 이 항목이 켜져 있어야 렌더링됩니다.
@@ -2921,6 +2978,19 @@ For example: 42 or 42:5</translation>
     <message>
         <source>프리뷰 빌드 완료</source>
         <translation type="unfinished">Preview build finished</translation>
+    </message>
+</context>
+<context>
+    <name>mrst::TabSwitcherPopup</name>
+    <message>
+        <source>열린 문서</source>
+        <extracomment>Ctrl+Tab 팝업의 제목. Visual Studio 의 &quot;Active Files&quot; 자리다.</extracomment>
+        <translation type="unfinished">Open Documents</translation>
+    </message>
+    <message>
+        <source>저장되지 않은 문서</source>
+        <extracomment>Ctrl+Tab 팝업 아래쪽. 이름 없는 버퍼라 보여 줄 경로가 없다는 뜻이다.</extracomment>
+        <translation type="unfinished">Unsaved document</translation>
     </message>
 </context>
 <context>
