@@ -1067,6 +1067,34 @@ QWidget* QSettingsDialog::createPreviewPage()
     virtualLayout->addWidget( virtualHint );
 
     layout->addWidget( virtualGroup );
+
+    auto* outlineGroup  = new QGroupBox( tr( "개요 트리 (활성 문서 / 프로젝트)" ), page );
+    auto* outlineLayout = new QVBoxLayout( outlineGroup );
+    auto* outlineForm   = new QFormLayout;
+
+    m_previewOutlineDepthSpin = new QSpinBox( outlineGroup );
+    // 0 이 "제한하지 않음" 인 것은 위의 재파싱 허용 시간과 같은 관례다.
+    m_previewOutlineDepthSpin->setRange( 0, 9 );
+    m_previewOutlineDepthSpin->setSpecialValueText( tr( "제한 없음" ) );
+    //: 스핀박스 접미사. 앞의 공백을 지우지 말 것 — 숫자와 붙는다.
+    m_previewOutlineDepthSpin->setSuffix( tr( " 단계" ) );
+    outlineForm->addRow( tr( "나타낼 깊이:" ), m_previewOutlineDepthSpin );
+    outlineLayout->addLayout( outlineForm );
+
+    auto* outlineHint = new QLabel(
+        tr( "왼쪽 개요 트리에 몇 단계까지 나타낼지 정합니다. 깊이는 섹션 단계로 세고, "
+            "프로젝트 탭의 문서 줄은 세지 않습니다 — 두 탭이 같은 단계의 섹션까지 "
+            "보여 줍니다.\n\n"
+            "깊이에 걸려 빠진 하위 항목이 있으면 그 줄 끝에 \" …\" 이 붙고, 마우스를 "
+            "올리면 몇 개가 빠졌는지 나옵니다. 표시 없이 자르면 그 자리가 문서의 마지막 "
+            "단계인 것처럼 읽히기 때문입니다.\n\n"
+            "이 설정은 트리에 무엇을 올릴지만 정합니다. 문서를 다시 읽지 않으므로 바꾸는 "
+            "즉시 반영됩니다." ),
+        outlineGroup );
+    outlineHint->setWordWrap( true );
+    outlineLayout->addWidget( outlineHint );
+
+    layout->addWidget( outlineGroup );
     layout->addStretch( 1 );
 
     loadPreviewSettings();
@@ -1093,6 +1121,10 @@ QWidget* QSettingsDialog::createPreviewPage()
         m_previewStubDoxygenCheck->setEnabled( checked );
         limitRow->setEnabled( checked && !m_previewStubDoxygenCheck->isChecked() );
         AppSettings().setValue( QStringLiteral( "preview/applyUnsavedEdits" ), checked );
+        emit settingsApplied();
+    } );
+    connect( m_previewOutlineDepthSpin, &QSpinBox::valueChanged, this, [this]( const int value ) {
+        AppSettings().setValue( QStringLiteral( "preview/outlineMaxDepth" ), value );
         emit settingsApplied();
     } );
     connect( m_previewUnsavedMaxReadSpin, &QSpinBox::valueChanged, this, [this]( const int value ) {
@@ -1141,6 +1173,15 @@ void QSettingsDialog::loadPreviewSettings()
         const QSignalBlocker blocker( m_previewStubDoxygenCheck );
         m_previewStubDoxygenCheck->setChecked(
             settings.value( QStringLiteral( "preview/stubDoxygenWhileTyping" ), true ).toBool() );
+    }
+    if( m_previewOutlineDepthSpin != nullptr )
+    {
+        const QSignalBlocker blocker( m_previewOutlineDepthSpin );
+        // 기본값 3 은 MainWindow.cpp 의 outlineDepthSetting() 과 같아야 한다.
+        // 대화상자를 열어 본 적이 없으면 ini 에 키가 없고, 그때 양쪽이 서로 다른
+        // 값을 기본으로 삼으면 대화상자를 여는 것만으로 트리가 바뀐다.
+        m_previewOutlineDepthSpin->setValue(
+            settings.value( QStringLiteral( "preview/outlineMaxDepth" ), 3 ).toInt() );
     }
     if( m_previewMathRendererCombo != nullptr )
     {
@@ -1193,6 +1234,11 @@ void QSettingsDialog::savePreviewSettings()
     {
         settings.setValue( QStringLiteral( "preview/stubDoxygenWhileTyping" ),
                            m_previewStubDoxygenCheck->isChecked() );
+    }
+    if( m_previewOutlineDepthSpin != nullptr )
+    {
+        settings.setValue( QStringLiteral( "preview/outlineMaxDepth" ),
+                           m_previewOutlineDepthSpin->value() );
     }
     if( m_previewMathRendererCombo != nullptr )
     {

@@ -137,6 +137,7 @@ private:
     QSpinBox*                           m_previewUnsavedMaxReadSpin = nullptr;
     QComboBox*                          m_previewVirtualThemeCombo = nullptr;
     QCheckBox*                          m_previewStubDoxygenCheck = nullptr;
+    QSpinBox*                           m_previewOutlineDepthSpin = nullptr;
     class QComboBox*                    m_previewMathRendererCombo = nullptr;
 
     /// Python/Esbonio 페이지

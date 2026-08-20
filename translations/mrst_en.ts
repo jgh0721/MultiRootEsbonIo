@@ -690,6 +690,13 @@ Open it as text anyway?
         <source>프리뷰 전체 화면(&amp;L)</source>
         <translation type="unfinished">Ful&amp;l Screen Preview</translation>
     </message>
+    <message numerus="yes">
+        <source>하위 %n개 항목이 개요 깊이 설정에 걸려 빠졌습니다.</source>
+        <translation type="unfinished">
+            <numerusform>%n sub-item is left out by the outline depth setting.</numerusform>
+            <numerusform>%n sub-items are left out by the outline depth setting.</numerusform>
+        </translation>
+    </message>
     <message>
         <source>현재 탭</source>
         <translation type="unfinished">Current tab</translation>
@@ -864,6 +871,11 @@ Open it as text anyway?
 <context>
     <name>QSettingsDialog</name>
     <message>
+        <source> 단계</source>
+        <extracomment>스핀박스 접미사. 앞의 공백을 지우지 말 것 — 숫자와 붙는다.</extracomment>
+        <translation type="unfinished"> levels</translation>
+    </message>
+    <message>
         <source> 일마다</source>
         <extracomment>자동 업데이트 확인 주기 스핀박스의 접미사. 숫자 바로 뒤에 붙는다. 앞 공백을 포함해서 번역할 것 — 영어 &quot; days&quot;, 일본어 &quot; 日ごと&quot;.</extracomment>
         <translation type="unfinished"> days</translation>
@@ -1034,6 +1046,10 @@ When off, the preview reads local files only. Nothing leaves the machine, but th
         <translation type="unfinished">Value</translation>
     </message>
     <message>
+        <source>개요 트리 (활성 문서 / 프로젝트)</source>
+        <translation type="unfinished">Outline tree (active document / project)</translation>
+    </message>
+    <message>
         <source>고정 (0열)</source>
         <translation type="unfinished">Fixed (column 0)</translation>
     </message>
@@ -1112,6 +1128,10 @@ Diagrams drawn by CDN scripts stay as plain text instead.</translation>
 대신 CDN 스크립트로 그리는 수식과 다이어그램은 텍스트로 남습니다.</source>
         <translation type="unfinished">Turn this off to stop the preview from making outside requests.
 Math and diagrams drawn by CDN scripts will stay as plain text.</translation>
+    </message>
+    <message>
+        <source>나타낼 깊이:</source>
+        <translation type="unfinished">Depth to show:</translation>
     </message>
     <message>
         <source>내보내기...</source>
@@ -1320,6 +1340,18 @@ A tab with unsaved edits is always asked first, even under &apos;Reload automati
         <translation type="unfinished">External edit detection:</translation>
     </message>
     <message>
+        <source>왼쪽 개요 트리에 몇 단계까지 나타낼지 정합니다. 깊이는 섹션 단계로 세고, 프로젝트 탭의 문서 줄은 세지 않습니다 — 두 탭이 같은 단계의 섹션까지 보여 줍니다.
+
+깊이에 걸려 빠진 하위 항목이 있으면 그 줄 끝에 &quot; …&quot; 이 붙고, 마우스를 올리면 몇 개가 빠졌는지 나옵니다. 표시 없이 자르면 그 자리가 문서의 마지막 단계인 것처럼 읽히기 때문입니다.
+
+이 설정은 트리에 무엇을 올릴지만 정합니다. 문서를 다시 읽지 않으므로 바꾸는 즉시 반영됩니다.</source>
+        <translation type="unfinished">Sets how many levels the outline tree on the left shows. Depth counts section levels — the document rows on the Project tab are not counted, so both tabs show sections down to the same level.
+
+Where sub-items are left out by the depth, &quot; …&quot; is appended to that row; hover it to see how many were left out. Cutting them without a mark would read as if that row were the last level of the document.
+
+This setting only decides what goes into the tree. Nothing is re-read from disk, so a change takes effect immediately.</translation>
+    </message>
+    <message>
         <source>원래 들여쓰기 유지</source>
         <translation type="unfinished">Keep the original indent</translation>
     </message>
@@ -1416,6 +1448,10 @@ When turned off, existing hot exit backups are deleted immediately.</translation
     <message>
         <source>제어문자 표시:</source>
         <translation type="unfinished">Show control characters:</translation>
+    </message>
+    <message>
+        <source>제한 없음</source>
+        <translation type="unfinished">No limit</translation>
     </message>
     <message>
         <source>줄 끝</source>
