@@ -46,7 +46,12 @@ QToolBar* QBaseView::createToolBar()
 {
     // MainWindow에서 탭 전환 시 이전 도구모음은 삭제되므로
     // 매번 새로 생성해야 함 (m_toolBar 캐싱하지 않음)
-    auto* tb = new QToolBar( this );
+    //
+    // 부모는 도구모음 슬롯이다. 뷰를 부모로 삼으면 안 되는 이유는
+    // setToolBarHost() 주석에 적어 두었다 (Qlementine 콤보박스 무한 재귀).
+    // 슬롯이 없는 경우(단독 시험 등)에만 뷰로 떨어진다 — 부모를 아예 주지
+    // 않으면 최상위 위젯이 되어 별도 창으로 떠 버린다.
+    auto* tb = new QToolBar( m_toolBarHost ? m_toolBarHost.data() : static_cast< QWidget* >( this ) );
     tb->setMovable( false );
     tb->setIconSize( QSize( 16, 16 ) );
     tb->setToolButtonStyle( Qt::ToolButtonIconOnly );

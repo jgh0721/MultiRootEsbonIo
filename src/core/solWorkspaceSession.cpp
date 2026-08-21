@@ -60,9 +60,8 @@ QJsonObject sessionToJson( const WorkspaceSession& session )
         { QStringLiteral( "workspaceRoot" ), session.workspaceRoot },
         { QStringLiteral( "documents" ), documents },
         { QStringLiteral( "activeIndex" ), session.activeIndex },
-        { QStringLiteral( "sideSplitterSizes" ), toJsonArray( session.sideSplitterSizes ) },
-        { QStringLiteral( "contentSplitterSizes" ), toJsonArray( session.contentSplitterSizes ) },
         { QStringLiteral( "previewSplitterSizes" ), toJsonArray( session.previewSplitterSizes ) },
+        { QStringLiteral( "dockLayout" ), session.dockLayout },
     };
 }
 
@@ -94,9 +93,9 @@ WorkspaceSession sessionFromJson( const QJsonObject& object )
     const int activeIndex = object.value( QStringLiteral( "activeIndex" ) ).toInt( -1 );
     session.activeIndex = activeIndex < session.documents.size() ? activeIndex : -1;
 
-    session.sideSplitterSizes = toIntList( object.value( QStringLiteral( "sideSplitterSizes" ) ) );
-    session.contentSplitterSizes = toIntList( object.value( QStringLiteral( "contentSplitterSizes" ) ) );
     session.previewSplitterSizes = toIntList( object.value( QStringLiteral( "previewSplitterSizes" ) ) );
+    // 이 키는 이 버전에서 생겼다. 없으면 빈 문자열이 되고, 그때는 기본 배치를 쓴다.
+    session.dockLayout = object.value( QStringLiteral( "dockLayout" ) ).toString();
     return session;
 }
 

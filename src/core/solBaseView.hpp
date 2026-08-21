@@ -47,6 +47,21 @@ public:
     /// 뷰 독립 도구모음
     virtual QToolBar*                   createToolBar();
     virtual QToolBar*                   createAuxiliaryToolBar() { return nullptr; }
+    /// 만들어지는 도구모음의 부모가 될 위젯. MainWindow 가 자기 도구모음 슬롯을
+    /// 심어 준다.
+    ///
+    /// 왜 뷰 자신을 부모로 쓰지 않는가: 뷰는 도크 매니저 안에 있고, Qt ADS 는
+    /// 도크 매니저에 스타일시트를 건다. 스타일시트가 조상에 있으면 Qt 는 위젯을
+    /// QStyleSheetStyle 로 감싸 **생성 도중에** polish() 를 부르는데, 그 자리에서
+    /// Qlementine 의 ComboboxItemViewFilter 가 무한 재귀에 빠진다(0xC00000FD).
+    /// 이 프로젝트가 이미 두 번 물린 상류 버그다 — solThemeManager.cpp 의 전역
+    /// 스타일시트 금지 주석과 QTextView::createToolBar() 의
+    /// setSizeAdjustPolicy 금지 주석이 같은 것을 말한다. 도구모음 슬롯은 도크
+    /// 매니저의 형제라 그 사슬 밖에 있다.
+    ///
+    /// 도구모음이 만들어진 **뒤에** 부모를 옮기는 것으로는 늦다. 콤보박스가
+    /// 생성되는 시점이 문제이기 때문이다.
+    void                                setToolBarHost( QWidget* host ) { m_toolBarHost = host; }
     void                                setToolBarVisible( bool visible );
     bool                                isToolBarVisible() const { return m_toolBarVisible; }
 
@@ -84,6 +99,8 @@ protected:
     Theme                               m_theme = Theme::Light;
     QPointer<QToolBar>                  m_toolBar = nullptr;
     QPointer<QToolBar>                  m_auxiliaryToolBar = nullptr;
+    /// setToolBarHost() 참고. 비어 있으면 뷰 자신이 부모가 된다.
+    QPointer<QWidget>                   m_toolBarHost = nullptr;
     bool                                m_toolBarVisible = true;
     bool                                m_lastCopyAvailability = false;
     bool                                m_loadingActive = false;

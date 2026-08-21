@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>MainWindow</class>
+ <!-- 이 파일은 배치를 정하지 않는다. 패널 내용을 선언하는 자리다.
+
+      좌측(탐색기·요약)과 하단(진단·로그·검색)은 Qt ADS 의 도크 위젯으로 들어가고,
+      실제 배치는 MainWindow::setupDockLayout() 이 만든다. 그래서 여기서는 패널마다
+      pnl* 컨테이너를 하나씩 세로로 늘어놓기만 한다 — Designer 로 열면 앱과 닮지
+      않은 세로 목록으로 보이는데, 그것이 정상이다. setupDockLayout() 이 이 컨테이너
+      들을 각자의 도크로 옮기고 나면 centralwidget 의 레이아웃에는 도크 매니저만
+      남는다.
+
+      pnl* 컨테이너를 C++ 로 만들지 않고 여기 두는 이유: 잎 위젯(treOutlineDocument
+      등)의 이름과 속성을 한곳에서 관리해야 MainWindow.cpp 의 Ui.* 참조 25 곳이
+      그대로 살아 있고, 트리 헤더 설정 같은 것을 Designer 에서 계속 볼 수 있다. -->
  <widget class="QMainWindow" name="MainWindow">
   <property name="geometry">
    <rect>
@@ -14,7 +26,7 @@
    <string notr="true">MultiRoot reST Editor</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QHBoxLayout" name="horizontalLayout_2">
+   <layout class="QVBoxLayout" name="centralLayout">
     <property name="leftMargin">
      <number>0</number>
     </property>
@@ -27,275 +39,228 @@
     <property name="bottomMargin">
      <number>0</number>
     </property>
+    <property name="spacing">
+     <number>0</number>
+    </property>
     <item>
-     <widget class="QSplitter" name="splSideWithContent">
-      <property name="orientation">
-       <enum>Qt::Orientation::Horizontal</enum>
+     <!-- 중앙 도크의 내용. 편집기 | 프리뷰 스플리터는 도킹으로 옮기지 않는다 —
+          QWebEngineView 를 떼어내 별도 창으로 띄우는 경로를 만들지 않기 위해서다. -->
+     <widget class="QFrame" name="frmContents">
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
       </property>
-      <widget class="QSplitter" name="splFolderWithOutlineOnSide">
-       <property name="orientation">
-        <enum>Qt::Orientation::Vertical</enum>
+      <property name="frameShadow">
+       <enum>QFrame::Shadow::Raised</enum>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_7">
+       <property name="leftMargin">
+        <number>0</number>
        </property>
-       <widget class="QFrame" name="frmLeftSideFolterTree">
-        <property name="frameShape">
-         <enum>QFrame::Shape::StyledPanel</enum>
-        </property>
-        <property name="frameShadow">
-         <enum>QFrame::Shadow::Raised</enum>
-        </property>
-        <layout class="QVBoxLayout" name="verticalLayout">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <item>
-          <widget class="QTreeView" name="treLeftSideFolterTree">
-           <property name="indentation">
-            <number>15</number>
-           </property>
-           <attribute name="headerCascadingSectionResizes">
-            <bool>true</bool>
-           </attribute>
-           <attribute name="headerShowSortIndicator" stdset="0">
-            <bool>true</bool>
-           </attribute>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-       <widget class="QFrame" name="frmLeftSideOutline">
-        <property name="frameShape">
-         <enum>QFrame::Shape::StyledPanel</enum>
-        </property>
-        <property name="frameShadow">
-         <enum>QFrame::Shadow::Raised</enum>
-        </property>
-        <layout class="QVBoxLayout" name="verticalLayout_2">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <item>
-          <widget class="QTabWidget" name="tabLeftSideOutline">
-           <property name="currentIndex">
-            <number>1</number>
-           </property>
-           <widget class="QWidget" name="tabOutlineDocument">
-            <attribute name="title">
-             <string>활성 문서</string>
-            </attribute>
-            <layout class="QVBoxLayout" name="verticalLayout_3">
-             <item>
-              <widget class="QTreeWidget" name="treOutlineDocument">
-               <column>
-                <property name="text">
-                 <string notr="true">1</string>
-                </property>
-               </column>
-              </widget>
-             </item>
-            </layout>
-           </widget>
-           <widget class="QWidget" name="tabOutlineProject">
-            <attribute name="title">
-             <string>프로젝트</string>
-            </attribute>
-            <layout class="QVBoxLayout" name="verticalLayout_4">
-             <item>
-              <widget class="QTreeWidget" name="treOutlineProject">
-               <column>
-                <property name="text">
-                 <string notr="true">1</string>
-                </property>
-               </column>
-              </widget>
-             </item>
-            </layout>
-           </widget>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </widget>
-      <widget class="QSplitter" name="splEditWithStatisticsOnContent">
-       <property name="orientation">
-        <enum>Qt::Orientation::Vertical</enum>
+       <property name="topMargin">
+        <number>0</number>
        </property>
-       <widget class="QFrame" name="frmContents">
-        <property name="frameShape">
-         <enum>QFrame::Shape::StyledPanel</enum>
-        </property>
-        <property name="frameShadow">
-         <enum>QFrame::Shadow::Raised</enum>
-        </property>
-        <layout class="QVBoxLayout" name="verticalLayout_7">
-         <property name="leftMargin">
-          <number>0</number>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QSplitter" name="splitter_2">
+         <property name="orientation">
+          <enum>Qt::Orientation::Horizontal</enum>
          </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <item>
-          <widget class="QSplitter" name="splitter_2">
-           <property name="orientation">
-            <enum>Qt::Orientation::Horizontal</enum>
-           </property>
-           <widget class="QFrame" name="frmEditor">
-            <property name="frameShape">
-             <enum>QFrame::Shape::NoFrame</enum>
-            </property>
-            <property name="frameShadow">
-             <enum>QFrame::Shadow::Plain</enum>
-            </property>
-            <layout class="QVBoxLayout" name="verticalLayout_5">
-             <property name="leftMargin">
-              <number>0</number>
-             </property>
-             <property name="topMargin">
-              <number>0</number>
-             </property>
-             <property name="rightMargin">
-              <number>0</number>
-             </property>
-             <property name="bottomMargin">
-              <number>0</number>
-             </property>
-             <item>
-              <widget class="QTabWidget" name="tabEditor"/>
-             </item>
-            </layout>
-           </widget>
-           <widget class="QFrame" name="frmWebPreview">
-            <property name="frameShape">
-             <enum>QFrame::Shape::NoFrame</enum>
-            </property>
-            <property name="frameShadow">
-             <enum>QFrame::Shadow::Plain</enum>
-            </property>
-            <layout class="QVBoxLayout" name="verticalLayout_6">
-             <property name="leftMargin">
-              <number>0</number>
-             </property>
-             <property name="topMargin">
-              <number>0</number>
-             </property>
-             <property name="rightMargin">
-              <number>0</number>
-             </property>
-             <property name="bottomMargin">
-              <number>0</number>
-             </property>
-             <item>
-              <!-- url 속성을 두지 않는다. uic 가 그것을 setProperty("url", ...) 로
-                   펼치고, 그것이 QWebEngineView::setUrl() -> page() 생성 -> Chromium
-                   부팅으로 이어진다. 즉 setupUi() 안에서 Chromium 이 통째로 뜬다
-                   (실측 424~1254ms). 그 시점은 첫 프레임보다 앞이라 그동안 창이
-                   아무것도 그리지 못한다. 페이지 생성은 MainWindow 가 첫 페인트
-                   뒤에 명시적으로 한다(initialisePreview). -->
-              <widget class="QWebEngineView" name="webEngineView" native="true"/>
-             </item>
-            </layout>
-           </widget>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-       <widget class="QFrame" name="frmBottom">
-        <property name="frameShape">
-         <enum>QFrame::Shape::StyledPanel</enum>
-        </property>
-        <property name="frameShadow">
-         <enum>QFrame::Shadow::Raised</enum>
-        </property>
-        <layout class="QHBoxLayout" name="horizontalLayout">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <item>
-          <widget class="QTabWidget" name="tabStatistics">
-           <property name="currentIndex">
+         <widget class="QFrame" name="frmEditor">
+          <property name="frameShape">
+           <enum>QFrame::Shape::NoFrame</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Shadow::Plain</enum>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayout_5">
+           <property name="leftMargin">
             <number>0</number>
            </property>
-           <widget class="QWidget" name="tabDiagnostics">
-            <attribute name="title">
-             <string>진단</string>
-            </attribute>
-            <layout class="QVBoxLayout" name="verticalLayout_9">
-             <property name="leftMargin">
-              <number>0</number>
-             </property>
-             <property name="topMargin">
-              <number>0</number>
-             </property>
-             <property name="rightMargin">
-              <number>0</number>
-             </property>
-             <property name="bottomMargin">
-              <number>0</number>
-             </property>
-             <item>
-              <widget class="QTableWidget" name="tblDiagnostics"/>
-             </item>
-            </layout>
-           </widget>
-           <widget class="QWidget" name="tabLog">
-            <attribute name="title">
-             <string>로그</string>
-            </attribute>
-            <layout class="QVBoxLayout" name="verticalLayout_8">
-             <property name="leftMargin">
-              <number>0</number>
-             </property>
-             <property name="topMargin">
-              <number>0</number>
-             </property>
-             <property name="rightMargin">
-              <number>0</number>
-             </property>
-             <property name="bottomMargin">
-              <number>0</number>
-             </property>
-             <item>
-              <widget class="QPlainTextEdit" name="logView"/>
-             </item>
-            </layout>
-           </widget>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </widget>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <widget class="QTabWidget" name="tabEditor"/>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QFrame" name="frmWebPreview">
+          <property name="frameShape">
+           <enum>QFrame::Shape::NoFrame</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Shadow::Plain</enum>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayout_6">
+           <property name="leftMargin">
+            <number>0</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <!-- url 속성을 두지 않는다. uic 가 그것을 setProperty("url", ...) 로
+                 펼치고, 그것이 QWebEngineView::setUrl() -> page() 생성 -> Chromium
+                 부팅으로 이어진다. 즉 setupUi() 안에서 Chromium 이 통째로 뜬다
+                 (실측 424~1254ms). 그 시점은 첫 프레임보다 앞이라 그동안 창이
+                 아무것도 그리지 못한다. 페이지 생성은 MainWindow 가 첫 페인트
+                 뒤에 명시적으로 한다(initialisePreview). -->
+            <widget class="QWebEngineView" name="webEngineView" native="true"/>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <!-- 좌측 위 도크: 탐색기 -->
+     <widget class="QWidget" name="pnlFolderTree" native="true">
+      <layout class="QVBoxLayout" name="pnlFolderTreeLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QTreeView" name="treLeftSideFolterTree">
+         <property name="indentation">
+          <number>15</number>
+         </property>
+         <attribute name="headerCascadingSectionResizes">
+          <bool>true</bool>
+         </attribute>
+         <attribute name="headerShowSortIndicator" stdset="0">
+          <bool>true</bool>
+         </attribute>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <!-- 좌측 아래 도크: 요약(활성 문서) -->
+     <widget class="QWidget" name="pnlOutlineDocument" native="true">
+      <layout class="QVBoxLayout" name="pnlOutlineDocumentLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QTreeWidget" name="treOutlineDocument">
+         <column>
+          <property name="text">
+           <string notr="true">1</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <!-- 좌측 아래 도크: 요약(프로젝트). 활성 문서와 같은 자리에 탭으로 붙는다. -->
+     <widget class="QWidget" name="pnlOutlineProject" native="true">
+      <layout class="QVBoxLayout" name="pnlOutlineProjectLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QTreeWidget" name="treOutlineProject">
+         <column>
+          <property name="text">
+           <string notr="true">1</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <!-- 하단 도크: 진단 -->
+     <widget class="QWidget" name="pnlDiagnostics" native="true">
+      <layout class="QVBoxLayout" name="pnlDiagnosticsLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QTableWidget" name="tblDiagnostics"/>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <!-- 하단 도크: 로그 -->
+     <widget class="QWidget" name="pnlLog" native="true">
+      <layout class="QVBoxLayout" name="pnlLogLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QPlainTextEdit" name="logView"/>
+       </item>
+      </layout>
      </widget>
     </item>
    </layout>

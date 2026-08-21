@@ -27,9 +27,14 @@ struct WorkspaceSession
     QString                             workspaceRoot;
     QVector< OpenDocumentState >        documents;
     int                                 activeIndex = -1;
-    QList< int >                        sideSplitterSizes;      ///< 사이드바 | 본문
-    QList< int >                        contentSplitterSizes;   ///< 편집기 | 진단/로그
     QList< int >                        previewSplitterSizes;   ///< 편집기 | 프리뷰
+    /// 좌측·하단 도크의 배치. ads::CDockManager::saveState() 를 base64 로 담는다
+    /// (기본 설정이 XML 압축이라 사람이 읽을 수 있는 형태가 아니다).
+    ///
+    /// 스키마를 올리지 않고 키만 더한다. sessionFromJson() 은 스키마가 다르면
+    /// 세션을 통째로 버리므로, 올리면 이 버전으로 올라오는 사용자가 열어 둔
+    /// 탭을 전부 잃는다. 비어 있으면 기본 배치를 쓰면 되니 그럴 이유가 없다.
+    QString                             dockLayout;
 
     [[nodiscard]] bool isEmpty() const { return workspaceRoot.isEmpty() && documents.isEmpty(); }
 };

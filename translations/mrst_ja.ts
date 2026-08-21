@@ -507,6 +507,10 @@
         <translation type="unfinished">保存(&amp;S)</translation>
     </message>
     <message>
+        <source>저장된 패널 배치를 읽을 수 없어 기본 배치로 엽니다.</source>
+        <translation type="unfinished">保存されたパネル配置を読み込めないため、既定の配置で開きます。</translation>
+    </message>
+    <message>
         <source>저장이 진행 중입니다. 저장 완료 후 다시 탭을 닫아 주세요.</source>
         <translation type="unfinished">保存の実行中です。保存が終わってからタブを閉じ直してください。</translation>
     </message>
@@ -589,6 +593,10 @@
         <translation type="unfinished">キャンセル</translation>
     </message>
     <message>
+        <source>탐색기</source>
+        <translation type="unfinished">エクスプローラー</translation>
+    </message>
+    <message>
         <source>탭 %1</source>
         <translation type="unfinished">タブ %1</translation>
     </message>
@@ -655,6 +663,10 @@
     <message>
         <source>파일이 밖에서 사라졌습니다. 편집 중인 내용은 그대로 두었습니다: %1</source>
         <translation type="unfinished">ファイルが外部で削除されました。編集中の内容はそのまま残しました: %1</translation>
+    </message>
+    <message>
+        <source>패널(&amp;P)</source>
+        <translation type="unfinished">パネル(&amp;P)</translation>
     </message>
     <message>
         <source>패키지 설치 실패: %1</source>
