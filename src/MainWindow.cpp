@@ -21,6 +21,11 @@
 #include "utils/solBackgroundWork.hpp"
 #include "utils/solPhaseTrace.hpp"
 
+#include <DockAreaWidget.h>
+#include <DockManager.h>
+#include <DockSplitter.h>
+#include <DockWidget.h>
+
 #include <QWebEnginePage>
 #include <QWebEngineScriptCollection>
 
@@ -384,6 +389,9 @@ MainWindow::MainWindow( QWidget* parent )
         app->installEventFilter( this );
 
     setupCentralContainer();
+    // .ui 가 세로로 늘어놓은 pnl* 패널들을 도크로 옮긴다. 이 뒤로는 Ui.pnl* 을
+    // 직접 건드리지 않는다 — 부모가 도크 위젯이다.
+    setupDockLayout();
 
     treLeftFolderTreeModel_ = new QFileSystemModel( this );
     treLeftFolderTreeModel_->setRootPath( "" );
@@ -414,13 +422,6 @@ MainWindow::MainWindow( QWidget* parent )
     // 시작 화면(setHtml)과 컨트롤러 연결은 여기서 하지 않는다. 둘 다 page() 를
     // 만들어 Chromium 을 통째로 띄우고(실측 424~1254ms), 그 시점은 첫 프레임보다
     // 앞이라 그동안 창이 아무것도 그리지 못한다. initialisePreview() 로 미룬다.
-
-    Ui.splFolderWithOutlineOnSide->setMinimumWidth( 200 );
-    Ui.frmBottom->setMinimumHeight( 150 );
-    Ui.splEditWithStatisticsOnContent->setStretchFactor( 0, 1 );
-    Ui.splEditWithStatisticsOnContent->setStretchFactor( 1, 0 );
-    Ui.splSideWithContent->setStretchFactor( 0, 0 );
-    Ui.splSideWithContent->setStretchFactor( 1, 1 );
 
     // 편집기 | 프리뷰 스플리터.
     // 자식 하나가 QWebEngineView(별도 합성 표면)라 핸들을 끌면 노출 영역이
@@ -578,6 +579,9 @@ void MainWindow::advanceStartupPhase()
     // 레이아웃이 안정된 뒤에 손본다. 탭이 열리는 동안에는 스플리터가 아직 최종
     // 폭을 모른다.
     QTimer::singleShot( 0, this, &MainWindow::ensureVisiblePreviewSplit );
+    // 도크도 같은 이유로 여기서 비율을 정한다. 세션이 배치를 복원했으면
+    // applyDefaultDockSizes() 가 스스로 물러난다.
+    QTimer::singleShot( 0, this, &MainWindow::applyDefaultDockSizes );
 }
 
 void MainWindow::ensureVisiblePreviewSplit()
@@ -752,6 +756,22 @@ void MainWindow::createMenus()
     auto* themeToggleAction = viewMenu->addAction( QString(), this, &MainWindow::onThemeToggle );
     themeToggleAction->setObjectName( QStringLiteral( "view.themeToggle" ) );
 
+    // 패널을 되살리는 곳. 도크의 닫기 버튼을 누르면 그 패널이 화면에서 사라지고,
+    // 이 메뉴가 없으면 다시 꺼낼 방법이 없다.
+    //
+    // ADS 의 CDockManager::viewMenu() 를 쓰지 않는다. 제목이 영어 "Show View" 로
+    // 박혀 있어 번역 파이프라인을 타지 않는다. 항목 글자는 도크 제목을 그대로
+    // 따라오므로(retranslateDockTitles 참고) 여기서 따로 손댈 것이 없다.
+    dockPanelsMenu_ = viewMenu->addMenu( QString() );
+    dockPanelsMenu_->setObjectName( QStringLiteral( "menu.view.panels" ) );
+    for( ads::CDockWidget* dock : { dockExplorer_, dockOutlineDocument_, dockOutlineProject_,
+                                    dockDiagnostics_, dockLog_ } )
+    {
+        if( dock != nullptr )
+            dockPanelsMenu_->addAction( dock->toggleViewAction() );
+    }
+    // 검색은 setupWorkspaceSearchTab() 이 만든다 — createMenus() 보다 뒤다.
+
     // 코드 접기. 마진의 [-] 를 하나씩 누르는 것 말고 문서 전체를 한 번에
     // 여닫는 수단이 있어야 개요처럼 쓸 수 있다. 접기 자체를 켜고 끄는 것은
     // 설정(텍스트 편집기 > 코드 폴딩)에 있다.
@@ -909,6 +929,7 @@ void MainWindow::retranslateUi()
     }
 
     retranslateUpdateBar();
+    retranslateDockTitles();
 
     // 뷰어 도구모음은 QTextView 가 통째로 다시 만든다. 편집기 라벨(언어/인코딩/
     // 줄바꿈/탭 간격)이 여기서 한꺼번에 해결된다 — 테마 전환이 이미 같은 경로를
@@ -926,12 +947,8 @@ void MainWindow::retranslateUi()
 
 void MainWindow::retranslateWorkspaceSearchTab()
 {
-    if( searchTabPage_ == nullptr || Ui.tabStatistics == nullptr )
+    if( searchTabPage_ == nullptr )
         return;
-
-    const int index = Ui.tabStatistics->indexOf( searchTabPage_ );
-    if( index >= 0 )
-        Ui.tabStatistics->setTabText( index, tr( "검색" ) );
 
     if( auto* b = searchTabPage_->findChild< QPushButton* >( QStringLiteral( "search.find" ) ) )
         b->setText( tr( "찾기" ) );
@@ -1004,6 +1021,7 @@ void MainWindow::retranslateMenus()
 
     menuTitle ( "menu.view",          tr( "보기(&V)" ) );
     actionText( "view.themeToggle",   tr( "테마 전환" ) );
+    menuTitle ( "menu.view.panels",   tr( "패널(&P)" ) );
     actionText( "editor.foldAll",     tr( "모두 접기(&F)" ) );
     actionText( "editor.unfoldAll",   tr( "모두 펼치기(&U)" ) );
     actionText( "preview.rebuild",    tr( "프리뷰 다시 빌드(&R)" ) );
@@ -1022,15 +1040,20 @@ void MainWindow::retranslateMenus()
 // ═══════════════════════════════════════════════════════════
 // 중앙 컨테이너 구성
 //
-// 메뉴 바 바로 아래에 뷰어 도구모음 슬롯을 두고, 그 밑에 .ui 로 만든
-// 원래 중앙 위젯을 배치한다. 이 슬롯이 없으면 updateViewerToolBar() 가
+// 메뉴 바 바로 아래에 뷰어 도구모음 슬롯을 두고, 그 밑에 도크 매니저를
+// 놓는다(setupDockLayout 이 넣는다). 이 슬롯이 없으면 updateViewerToolBar() 가
 // 도구모음을 부모 없는 최상위 위젯으로 만들어 별도 창으로 떠 버린다.
 // ═══════════════════════════════════════════════════════════
 void MainWindow::setupCentralContainer()
 {
     // takeCentralWidget() 은 소유권만 넘기고 삭제하지 않는다.
     // setCentralWidget() 은 기존 중앙 위젯을 삭제하므로 반드시 먼저 떼어낸다.
-    QWidget* uiCentralWidget = takeCentralWidget();
+    //
+    // 이 위젯은 **레이아웃에 넣지 않는다.** .ui 의 centralwidget 은 이제
+    // frmContents 와 pnl* 를 담아 두는 껍데기일 뿐이고, setupDockLayout() 이
+    // 그것들을 도크로 옮긴 뒤 껍데기를 지운다. 예전처럼 레이아웃에 넣으면
+    // 내용이 빠져나간 빈 위젯이 stretch 1 로 남아 창의 절반을 먹는다.
+    m_uiCentralShell = takeCentralWidget();
 
     m_centralContainer = new QWidget( this );
     m_centralContainer->setObjectName( QStringLiteral( "centralContainer" ) );
@@ -1051,15 +1074,247 @@ void MainWindow::setupCentralContainer()
 
     containerLayout->addWidget( m_viewerToolBarHost );
 
-    if( uiCentralWidget )
-    {
-        uiCentralWidget->setAcceptDrops( true );
-        // WA_OpaquePaintEvent 는 붙이지 않는다 — paintEvent 가 없는 평범한 QWidget 이라
-        // 배경 지우기를 끄면 노출 영역에 이전 픽셀이 남는다 (스플리터 드래그 시 검은 띠).
-        containerLayout->addWidget( uiCentralWidget, 1 );
-    }
-
     setCentralWidget( m_centralContainer );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 도킹 배치 (Qt ADS)
+//
+// .ui 는 패널 내용만 선언한다 (그 파일 머리의 주석 참고). 배치는 여기서
+// 만든다 — 좌측 위에 탐색기, 그 아래에 요약 두 개를 탭으로, 하단에 진단·로그,
+// 중앙에 편집기|프리뷰. 지금까지 스플리터가 만들던 그림과 같지만, 이제 각
+// 패널에 핀 버튼이 붙어 창 가장자리 탭으로 접힌다.
+// ═══════════════════════════════════════════════════════════
+ads::CDockWidget* MainWindow::makeDock( const char* id, const QString& title, QWidget* content )
+{
+    auto* dock = new ads::CDockWidget( dockManager_, title, this );
+    // objectName 을 반드시 명시한다. CDockWidget 은 이것을 제목으로 초기화하는데,
+    // saveState()/restoreState() 가 이 값을 키로 쓴다. 제목은 번역 대상이므로
+    // 그대로 두면 **UI 언어를 바꾼 순간 저장해 둔 배치를 못 읽는다.**
+    dock->setObjectName( QLatin1String( id ) );
+
+    if( content != nullptr )
+    {
+        // 기본값(AutoScrollArea)은 스크롤 영역이 아닌 위젯을 QScrollArea 로
+        // 감싼다. pnl* 은 전부 레이아웃만 든 평범한 QWidget 이라 그렇게 감싸이면
+        // 스크롤바가 이중으로 생기고, 중앙의 편집기|프리뷰 스플리터는 아예
+        // 망가진다.
+        dock->setWidget( content, ads::CDockWidget::ForceNoScrollArea );
+    }
+    return dock;
+}
+
+void MainWindow::setupDockLayout()
+{
+    // 설정 플래그는 **정적**이고 CDockManager 를 만들기 전에 넣어야 한다.
+    ads::CDockManager::setConfigFlags( ads::CDockManager::DefaultOpaqueConfig
+                                       | ads::CDockManager::FocusHighlighting
+                                       | ads::CDockManager::DockAreaHasUndockButton );
+    // DefaultAutoHideConfig 가 제목줄의 핀 버튼과 창 가장자리 탭 바를 켠다.
+    // AutoHideShowOnMouseOver 를 더하면 Visual Studio 처럼 탭에 마우스를 올리는
+    // 것만으로 패널이 겹쳐 나온다 (클릭해야 열리는 것이 기본값이다).
+    //
+    // AutoHideFlags 로 감싸는 것은 군더더기가 아니다. ADS 는 ConfigFlags 에만
+    // Q_DECLARE_OPERATORS_FOR_FLAGS 를 걸어 두었고 AutoHideFlags 에는 걸지
+    // 않아서(DockManager.h:914), 열거자끼리 `|` 하면 int 가 되어 컴파일이 막힌다.
+    ads::CDockManager::setAutoHideConfigFlags(
+            ads::CDockManager::AutoHideFlags( ads::CDockManager::DefaultAutoHideConfig )
+            | ads::CDockManager::AutoHideShowOnMouseOver );
+
+    // 부모는 m_centralContainer 다. QMainWindow 를 주면 ADS 가 생성자에서
+    // setCentralWidget(this) 를 불러 뷰어 도구모음 슬롯을 날려 버린다
+    // (DockManager.cpp 의 생성자). 레이아웃에는 슬롯 **아래**로 들어간다.
+    dockManager_ = new ads::CDockManager( m_centralContainer );
+    // 예전에 .ui 중앙 위젯이 들고 있던 역할. 드롭 대상이 되어야 파일을 편집기
+    // 위로 끌어다 놓을 수 있다 (실제 처리는 MainWindow::dropEvent 가 한다 —
+    // 드롭을 받지 않는 자식 위에서는 이벤트가 부모로 올라간다).
+    dockManager_->setAcceptDrops( true );
+    if( auto* containerLayout = qobject_cast< QVBoxLayout* >( m_centralContainer->layout() ) )
+        containerLayout->addWidget( dockManager_, 1 );
+
+    // ── 중앙: 편집기 | 프리뷰 ──
+    // 도킹으로 옮기지 않는다. QWebEngineView 는 자기 합성 표면을 갖고 있어
+    // 떼어내 별도 창으로 띄우면 페이지가 다시 붙는 동안 화면이 비고, 탭 목록
+    // (Ctrl+Tab)이 어느 창에 떠야 하는지가 애매해진다. setCentralWidget() 은
+    // 닫기·이동·떼내기·핀 기능을 스스로 꺼 준다.
+    dockEditor_ = makeDock( "dock.editor", QString(), Ui.frmContents );
+    // CDockWidget 은 기본으로 60x40 을 minimumSizeHint 로 돌려준다(리사이즈를
+    // 막지 않으려고). 그러면 frmEditor 240 / frmWebPreview 120 하한이 중앙
+    // 영역까지 올라오지 못해서, 창을 좁히면 splitter_2 가 자기 최소 폭 아래로
+    // 눌려 편집기와 프리뷰가 잘린다.
+    //
+    // ...FromContentMinimumSize 가 아니라 ...FromContent 다. 앞의 것은 내용
+    // 위젯의 minimumSize() 를 보는데 frmContents 에는 그것을 지정한 곳이 없어
+    // (0,0) 이라 아무 일도 하지 않는다. 뒤의 것이 minimumSizeHint() 를 보고,
+    // 그 값이 splitter_2 를 거쳐 두 프레임의 하한에서 올라온다.
+    dockEditor_->setMinimumSizeHintMode( ads::CDockWidget::MinimumSizeHintFromContent );
+    ads::CDockAreaWidget* centralArea = dockManager_->setCentralWidget( dockEditor_ );
+
+    // ── 좌측 ──
+    dockExplorer_ = makeDock( "dock.explorer", tr( "탐색기" ), Ui.pnlFolderTree );
+    ads::CDockAreaWidget* leftArea =
+            dockManager_->addDockWidget( ads::LeftDockWidgetArea, dockExplorer_ );
+
+    // 요약 둘은 탐색기 **아래**에 붙는다 (예전 splFolderWithOutlineOnSide 의 배치).
+    dockOutlineDocument_ = makeDock( "dock.outline.document", tr( "활성 문서" ),
+                                     Ui.pnlOutlineDocument );
+    ads::CDockAreaWidget* outlineArea =
+            dockManager_->addDockWidget( ads::BottomDockWidgetArea, dockOutlineDocument_, leftArea );
+
+    dockOutlineProject_ = makeDock( "dock.outline.project", tr( "프로젝트" ),
+                                    Ui.pnlOutlineProject );
+    dockManager_->addDockWidgetTabToArea( dockOutlineProject_, outlineArea );
+    // 예전 tabLeftSideOutline 의 currentIndex 가 1(프로젝트)이었다.
+    dockOutlineProject_->setAsCurrentTab();
+
+    // ── 하단 ──
+    dockDiagnostics_ = makeDock( "dock.diagnostics", tr( "진단" ), Ui.pnlDiagnostics );
+    dockManager_->addDockWidget( ads::BottomDockWidgetArea, dockDiagnostics_, centralArea );
+
+    dockLog_ = makeDock( "dock.log", tr( "로그" ), Ui.pnlLog );
+    if( ads::CDockAreaWidget* bottomArea = dockDiagnostics_->dockAreaWidget() )
+        dockManager_->addDockWidgetTabToArea( dockLog_, bottomArea );
+    dockDiagnostics_->setAsCurrentTab();
+
+    applyDockStylesheetOverrides();
+
+    // .ui 의 centralwidget 은 이제 비었다 — frmContents 와 pnl* 는 위에서
+    // setWidget() 이 도크로 데려갔다. 남겨 두면 안 된다: 빈 위젯이 레이아웃에
+    // 붙어 있으면 창의 절반을 먹고, 부모로 남아 있으면 Ui.pnl* 의 소멸 순서가
+    // 도크와 엇갈린다.
+    delete m_uiCentralShell;
+    m_uiCentralShell = nullptr;
+}
+
+void MainWindow::applyDefaultDockSizes()
+{
+    if( dockManager_ == nullptr || dockLayoutFromSession_ )
+        return;   // 세션이 정한 배치를 덮지 않는다
+
+    // 창이 실제 크기를 갖기 **전에** 하면 안 된다. QSplitter::setSizes() 는 그
+    // 시점의 스플리터 길이가 0 이면 준 값을 전부 0 으로 누르고, 이후 리사이즈에서도
+    // 되살리지 않는다. 실측으로 물렸다 — 생성자에서 주었을 때 하단 진단/로그
+    // 영역이 0 높이로 열렸다. (ensureVisiblePreviewSplit 이 같은 이유로 같은
+    // 자리에서 돈다.)
+    //
+    // 절대값이 아니라 비율로 준다. 창 크기는 사용자마다 다르고, 세션이 생기면
+    // 그 뒤로는 dockLayout 이 이 값을 대신한다.
+    const auto ratio = []( QSplitter* splitter, int first, int second ) {
+        if( splitter == nullptr || splitter->count() != 2 )
+            return;
+        const QList< int > sizes = splitter->sizes();
+        const int          total = sizes.at( 0 ) + sizes.at( 1 );
+        if( total <= 0 )
+            return;   // 아직 레이아웃이 없다
+        const int head = total * first / ( first + second );
+        splitter->setSizes( { head, total - head } );
+    };
+    const auto areaSplitter = []( ads::CDockWidget* dock ) -> QSplitter* {
+        ads::CDockAreaWidget* area = dock != nullptr ? dock->dockAreaWidget() : nullptr;
+        return area != nullptr ? area->parentSplitter() : nullptr;
+    };
+
+    // 좌측 | 본문. 루트 스플리터를 직접 얻을 방법이 없다(rootSplitter() 는
+    // protected) — 좌측 영역에서 도크 매니저가 부모인 스플리터까지 올라간다.
+    QSplitter* root = areaSplitter( dockExplorer_ );
+    while( root != nullptr && root->parentWidget() != dockManager_ )
+        root = qobject_cast< QSplitter* >( root->parentWidget() );
+    ratio( root, 1, 4 );
+
+    // 탐색기 | 요약 (좌측 안의 세로 분할)
+    ratio( areaSplitter( dockOutlineDocument_ ), 1, 1 );
+    // 편집기 | 하단
+    ratio( areaSplitter( dockDiagnostics_ ), 4, 1 );
+}
+
+void MainWindow::applyDockStylesheetOverrides()
+{
+    if( dockManager_ == nullptr )
+        return;
+
+    // ADS 의 기본 스타일시트는 비활성 탭의 글자색을 `palette(light)` 로 준다
+    // (stylesheets/*_dark.css 의 `ads--CDockWidgetTab QLabel`). Light 는 버튼색을
+    // **밝은 쪽으로** 민 음영이라 라이트 테마에서는 맞지만, Qlementine 의 다크
+    // 팔레트에서는 창 배경과 거의 같은 값이 되어 글자가 사라진다. 실제로 요약
+    // 패널의 "활성 문서 / 프로젝트" 중 선택되지 않은 탭이 안 보였다.
+    //
+    // 그래서 그 규칙 하나만 테마 색으로 덮는다. 비활성은 흐리게, 활성은 또렷하게
+    // — Visual Studio 도 그렇게 구분한다.
+    const QColor  fg  = ThemeManager::instance().foregroundColor();
+    const QString dim = QStringLiteral( "rgba(%1, %2, %3, 165)" )
+                                .arg( fg.red() ).arg( fg.green() ).arg( fg.blue() );
+
+    // ADS 가 만든 스타일시트에 **덧붙인다**. 통째로 갈아치우면 핀/닫기 버튼
+    // 아이콘(qproperty-icon)까지 날아간다.
+    //
+    // 덧붙이기 전에 지난번에 붙인 것을 잘라낸다. ADS 가 스타일시트를 다시 읽는
+    // 것은 밝기가 뒤집힐 때뿐인데, themeChanged 는 색만 바꿀 때도 나온다
+    // (설정에서 색을 손볼 때마다). 잘라내지 않으면 그때마다 같은 규칙이 한 벌씩
+    // 쌓여 스타일시트가 끝없이 자란다.
+    static const QString kMarker = QStringLiteral( "\n/* mrst-dock-overrides */" );
+    QString              sheet   = dockManager_->styleSheet();
+    const int            at      = sheet.indexOf( kMarker );
+    if( at >= 0 )
+        sheet.truncate( at );
+
+    dockManager_->setStyleSheet(
+            sheet + kMarker
+            + QStringLiteral( "\nads--CDockWidgetTab QLabel { color: %1; }"
+                              "\nads--CDockWidgetTab[activeTab=\"true\"] QLabel { color: %2; }"
+                              "\nads--CAutoHideTab { color: %2; }" )
+                      .arg( dim, fg.name() ) );
+}
+
+void MainWindow::retranslateDockTitles()
+{
+    // setWindowTitle() 하나가 탭 글자, 가장자리 사이드 탭 글자, 그리고 보기 >
+    // 패널의 액션 글자를 함께 갱신한다 (CDockWidget 이 WindowTitleChange 를
+    // 받아 세 곳에 옮긴다). 저장/복원 키는 objectName 이라 여기서 바뀌지 않는다.
+    const auto title = []( ads::CDockWidget* dock, const QString& text ) {
+        if( dock != nullptr )
+            dock->setWindowTitle( text );
+    };
+    title( dockExplorer_,        tr( "탐색기" ) );
+    title( dockOutlineDocument_, tr( "활성 문서" ) );
+    title( dockOutlineProject_,  tr( "프로젝트" ) );
+    title( dockDiagnostics_,     tr( "진단" ) );
+    title( dockLog_,             tr( "로그" ) );
+    title( dockSearch_,          tr( "검색" ) );
+}
+
+void MainWindow::restoreDockLayout( const QString& base64 )
+{
+    if( dockManager_ == nullptr || base64.isEmpty() )
+        return;   // 이 버전보다 먼저 만들어진 세션이다. 기본 배치로 시작한다.
+
+    const QByteArray state = QByteArray::fromBase64( base64.toLatin1() );
+    if( state.isEmpty() )
+        return;
+
+    // 실패해도 그냥 넘어간다. restoreState() 는 못 읽으면 손대지 않고 false 를
+    // 돌려주므로 기본 배치가 남는다 — 배치 하나 때문에 열린 탭을 잃는 것보다
+    // 낫다. 실패하는 경우: 저장 당시에 없던 도크가 생겼거나, 그 반대.
+    if( dockManager_->restoreState( state ) )
+        dockLayoutFromSession_ = true;
+    else
+        appendLog( tr( "저장된 패널 배치를 읽을 수 없어 기본 배치로 엽니다." ) );
+}
+
+void MainWindow::hideAllDockPanels()
+{
+    if( dockManager_ == nullptr )
+        return;
+
+    // dockWidgetsMap() 으로 훑는다. 멤버 포인터를 하나씩 적으면 도크를 새로
+    // 더할 때마다 여기를 함께 고쳐야 하고, 잊으면 전체 화면에 패널 하나가
+    // 남는다 — 그 버그는 새 패널을 만든 커밋에서는 보이지 않는다.
+    const QMap< QString, ads::CDockWidget* > docks = dockManager_->dockWidgetsMap();
+    for( ads::CDockWidget* dock : docks )
+    {
+        if( dock == nullptr || dock == dockEditor_ )
+            continue;
+        dock->toggleView( false );
+    }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1279,6 +1534,13 @@ void MainWindow::applyCurrentTheme()
     }
 
     updateViewerToolBar();
+
+    // 도크 스타일시트 덧붙임은 **미뤄서** 다시 넣는다. ADS 는 팔레트가 바뀌면
+    // 자기 eventFilter 에서 스타일시트를 통째로 다시 읽어(setStyleSheet) 우리가
+    // 덧붙인 규칙을 지운다. 그 처리가 지금 이 호출과 같은 이벤트 전달 안에서
+    // 일어나므로, 여기서 바로 덧붙이면 곧이어 덮인다.
+    QTimer::singleShot( 0, this, &MainWindow::applyDockStylesheetOverrides );
+
     //ToolbarIcons::refreshToolBar( m_mainToolBar );
     //ToolbarIcons::refreshToolBar( m_viewerToolBar );
     //ToolbarIcons::refreshToolBar( m_viewerAuxToolBar );
@@ -1594,6 +1856,9 @@ int MainWindow::addViewTab( QBaseView* view )
         return -1;
 
     view->setAcceptDrops( true );
+    // 도구모음을 만들 때 쓸 부모. 뷰가 아니라 슬롯이어야 하는 이유는
+    // QBaseView::setToolBarHost() 주석에 있다 (Qlementine 콤보박스 무한 재귀).
+    view->setToolBarHost( m_viewerToolBarHost );
 
     const int idx = m_tabWidget->addTab( view, view->title() );
     m_tabWidget->setCurrentIndex( idx );
@@ -2076,10 +2341,10 @@ void MainWindow::setPreviewFullScreen( const bool enabled )
     {
         previewFullScreen_.windowStates = windowState();
         previewFullScreen_.previewSplitSizes = Ui.splitter_2->sizes();
-        previewFullScreen_.contentSplitSizes = Ui.splEditWithStatisticsOnContent->sizes();
-        previewFullScreen_.sideSplitSizes = Ui.splSideWithContent->sizes();
-        previewFullScreen_.sidePanelVisible = Ui.splFolderWithOutlineOnSide->isVisible();
-        previewFullScreen_.bottomVisible = Ui.frmBottom->isVisible();
+        // 좌측·하단은 도크 배치 전체를 한 덩어리로 기억한다. "보였는가" 만
+        // 남기면 핀 고정해 둔 패널이 핀이 풀린 채로, 하단에서 로그를 보고
+        // 있었으면 진단 탭으로 돌아온다.
+        previewFullScreen_.dockState = dockManager_->saveState();
         previewFullScreen_.editorVisible = Ui.frmEditor->isVisible();
         previewFullScreen_.menuBarVisible = menuBar()->isVisible();
         previewFullScreen_.statusBarVisible = statusBar()->isVisible();
@@ -2101,8 +2366,10 @@ void MainWindow::setPreviewFullScreen( const bool enabled )
             addAction( action );
         }
 
-        Ui.splFolderWithOutlineOnSide->hide();
-        Ui.frmBottom->hide();
+        // 중앙(편집기|프리뷰)만 남기고 모든 도크를 닫는다. 가장자리에 핀 고정해
+        // 둔 패널도 이걸로 함께 걷힌다 — 마지막 탭이 사라지면 사이드 탭 바가
+        // 스스로 숨는다.
+        hideAllDockPanels();
         Ui.frmEditor->hide();
         menuBar()->hide();
         statusBar()->hide();
@@ -2124,8 +2391,6 @@ void MainWindow::setPreviewFullScreen( const bool enabled )
     }
     previewFullScreen_.borrowedActions.clear();
 
-    Ui.splFolderWithOutlineOnSide->setVisible( previewFullScreen_.sidePanelVisible );
-    Ui.frmBottom->setVisible( previewFullScreen_.bottomVisible );
     Ui.frmEditor->setVisible( previewFullScreen_.editorVisible );
     menuBar()->setVisible( previewFullScreen_.menuBarVisible );
     statusBar()->setVisible( previewFullScreen_.statusBarVisible );
@@ -2145,13 +2410,17 @@ void MainWindow::setPreviewFullScreen( const bool enabled )
         if( previewFullScreen_.active )
             return;   // 그 사이 다시 들어갔다
 
-        const auto restoreSizes = []( QSplitter* splitter, const QList< int >& sizes ) {
-            if( splitter != nullptr && sizes.size() == splitter->count() )
-                splitter->setSizes( sizes );
-        };
-        restoreSizes( Ui.splSideWithContent, previewFullScreen_.sideSplitSizes );
-        restoreSizes( Ui.splEditWithStatisticsOnContent, previewFullScreen_.contentSplitSizes );
-        restoreSizes( Ui.splitter_2, previewFullScreen_.previewSplitSizes );
+        // 도크 배치가 먼저다. restoreState() 가 편집기|프리뷰 스플리터를 담은
+        // 중앙 도크를 재배치하므로, 순서를 뒤집으면 아래 setSizes() 가 그
+        // 재배치에 덮인다.
+        if( !previewFullScreen_.dockState.isEmpty() )
+            dockManager_->restoreState( previewFullScreen_.dockState );
+
+        if( Ui.splitter_2 != nullptr
+            && previewFullScreen_.previewSplitSizes.size() == Ui.splitter_2->count() )
+        {
+            Ui.splitter_2->setSizes( previewFullScreen_.previewSplitSizes );
+        }
     } );
 
     if( QBaseView* view = currentView() )
@@ -3279,10 +3548,12 @@ void MainWindow::retranslateOutlinePlaceholders()
 // ═══════════════════════════════════════════════════════════
 void MainWindow::setupWorkspaceSearchTab()
 {
-    if( Ui.tabStatistics == nullptr )
+    if( dockManager_ == nullptr || dockDiagnostics_ == nullptr )
         return;
 
-    auto* page = new QWidget( Ui.tabStatistics );
+    // 이 패널만 .ui 에 없다. 내용이 코드로 조립되기 때문이다 — 그래서 pnl*
+    // 컨테이너 대신 여기서 만들어 도크에 담는다.
+    auto* page = new QWidget;
     auto* layout = new QVBoxLayout( page );
     layout->setContentsMargins( 4, 4, 4, 4 );
     layout->setSpacing( 4 );
@@ -3325,7 +3596,16 @@ void MainWindow::setupWorkspaceSearchTab()
     layout->addWidget( searchResultTree_, 1 );
 
     searchTabPage_ = page;
-    Ui.tabStatistics->addTab( page, tr( "검색" ) );
+    dockSearch_ = makeDock( "dock.search", tr( "검색" ), page );
+    if( ads::CDockAreaWidget* bottomArea = dockDiagnostics_->dockAreaWidget() )
+        dockManager_->addDockWidgetTabToArea( dockSearch_, bottomArea );
+    else
+        dockManager_->addDockWidget( ads::BottomDockWidgetArea, dockSearch_ );
+    // 진단이 계속 앞에 있어야 한다. 탭을 더하면 그것이 활성 탭이 된다.
+    dockDiagnostics_->setAsCurrentTab();
+    // createMenus() 는 이미 지났으므로 보기 > 패널에 여기서 붙인다.
+    if( dockPanelsMenu_ != nullptr )
+        dockPanelsMenu_->addAction( dockSearch_->toggleViewAction() );
 
     connect( findButton, &QPushButton::clicked, this, &MainWindow::runWorkspaceSearch );
     connect( searchQueryEdit_, &QLineEdit::returnPressed, this, &MainWindow::runWorkspaceSearch );
@@ -3501,21 +3781,17 @@ void MainWindow::saveWorkspaceSessionNow()
         session.documents.push_back( document );
     }
 
-    // 전체 화면 도중에는 화면의 배치를 저장하지 않는다. 지금 스플리터가 들고
-    // 있는 값은 "편집기와 좌측·하단이 0" 이라서, 그대로 저장하면 다음 실행이
-    // **아무것도 없는 창**으로 열린다. 들어올 때 기억해 둔 값을 쓴다.
+    // 전체 화면 도중에는 화면의 배치를 저장하지 않는다. 지금 배치는 "편집기와
+    // 좌측·하단이 없음" 이라서, 그대로 저장하면 다음 실행이 **아무것도 없는
+    // 창**으로 열린다. 들어올 때 기억해 둔 값을 쓴다.
     if( previewFullScreen_.active )
     {
-        session.sideSplitterSizes = previewFullScreen_.sideSplitSizes;
-        session.contentSplitterSizes = previewFullScreen_.contentSplitSizes;
+        session.dockLayout = QString::fromLatin1( previewFullScreen_.dockState.toBase64() );
         session.previewSplitterSizes = previewFullScreen_.previewSplitSizes;
     }
     else
     {
-        if( QSplitter* splitter = Ui.splSideWithContent )
-            session.sideSplitterSizes = splitter->sizes();
-        if( QSplitter* splitter = Ui.splEditWithStatisticsOnContent )
-            session.contentSplitterSizes = splitter->sizes();
+        session.dockLayout = QString::fromLatin1( dockManager_->saveState().toBase64() );
         if( QSplitter* splitter = Ui.splitter_2 )
             session.previewSplitterSizes = splitter->sizes();
     }
@@ -3549,15 +3825,18 @@ void MainWindow::restoreLastSession()
         openFile( document.path );
     }
 
-    // 스플리터는 탭을 다 만든 뒤에 적용해야 레이아웃이 다시 계산되며 덮이지 않는다.
+    // 배치는 탭을 다 만든 뒤에 적용해야 레이아웃이 다시 계산되며 덮이지 않는다.
+    //
+    // 도크 배치가 먼저다. restoreState() 가 편집기|프리뷰 스플리터를 담은 중앙
+    // 도크를 재배치하므로, 순서를 뒤집으면 아래 setSizes() 가 그것에 덮인다.
+    restoreDockLayout( session.dockLayout );
+
     auto restoreSizes = [ this ]( QSplitter* splitter, const QList< int >& sizes ) {
         if( splitter == nullptr || sizes.size() != splitter->count() )
             return false;
         splitter->setSizes( sizes );
         return true;
     };
-    restoreSizes( Ui.splSideWithContent, session.sideSplitterSizes );
-    restoreSizes( Ui.splEditWithStatisticsOnContent, session.contentSplitterSizes );
     previewSplitFromSession_ = restoreSizes( Ui.splitter_2, session.previewSplitterSizes );
 
     if( session.activeIndex >= 0 && session.activeIndex < m_tabWidget->count() )

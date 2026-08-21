@@ -29,6 +29,11 @@ class QTextView;
 class QTimer;
 class QVBoxLayout;
 
+namespace ads {
+class CDockManager;
+class CDockWidget;
+}
+
 namespace mrst {
 class ExternalChangeWatcher;
 class PythonEnvManager;
@@ -135,6 +140,29 @@ private:
     void retranslateOutlinePlaceholders();
     void retranslateUpdateBar();
     void                                setupCentralContainer();
+    /// .ui 가 세로로 늘어놓은 pnl* 패널들을 Qt ADS 의 도크로 옮긴다.
+    /// setupCentralContainer() 직후에 부른다 — 도크 매니저가 뷰어 도구모음
+    /// 슬롯 아래에 들어가야 한다.
+    void                                setupDockLayout();
+    /// 도크 하나를 만들어 pnl* 위젯을 담는다.
+    /// id 는 저장/복원 키다. 절대 번역하지 않는다 (setupDockLayout 주석 참고).
+    ads::CDockWidget*                   makeDock( const char* id, const QString& title,
+                                                  QWidget* content );
+    /// 도크의 제목(= 탭 글자 = 사이드 탭 글자 = 보기 > 패널의 액션 글자)을
+    /// 다시 넣는다.
+    void                                retranslateDockTitles();
+    /// 첫 실행(세션에 배치가 없을 때)의 패널 비율을 정한다. 창이 실제 크기를
+    /// 가진 뒤에 불러야 한다 — 이유는 구현부 주석에 있다.
+    void                                applyDefaultDockSizes();
+    /// ADS 기본 스타일시트에서 다크 테마와 어긋나는 규칙을 덮는다.
+    void                                applyDockStylesheetOverrides();
+    /// 세션에 담긴 도크 배치(base64)를 되살린다. 비었거나 못 읽으면 기본 배치를
+    /// 그대로 둔다.
+    void                                restoreDockLayout( const QString& base64 );
+    /// 중앙(편집기|프리뷰)을 뺀 모든 도크를 닫는다. 되돌리는 쌍은 없다 —
+    /// 프리뷰 전체 화면에서 나올 때는 기억해 둔 배치를 restoreState() 로
+    /// 통째로 되살리기 때문이다.
+    void                                hideAllDockPanels();
     QString normalizeFilePath( const QString& filePath ) const;
     void                                applyThemeToView( QBaseView* view ) const;
     void                                applyCurrentTheme();
@@ -201,8 +229,26 @@ private:
     QFileSystemModel*                   treLeftFolderTreeModel_ = nullptr;
 
     QWidget*                            m_centralContainer = nullptr;
+    /// .ui 의 centralwidget. setupCentralContainer() 가 떼어내 들고 있다가
+    /// setupDockLayout() 이 내용을 도크로 옮긴 뒤 지운다. 그 뒤로는 nullptr 다.
+    QWidget*                            m_uiCentralShell = nullptr;
     QWidget*                            m_viewerToolBarHost = nullptr;
     QVBoxLayout*                        m_viewerToolBarLayout = nullptr;
+
+    // ── 도킹 (Qt ADS) ──
+    /// 좌측·하단 패널의 배치를 쥐고 있다. m_centralContainer 안에 있다.
+    ads::CDockManager*                  dockManager_ = nullptr;
+    /// 편집기 | 프리뷰. 닫거나 떼어낼 수 없는 중앙 도크다.
+    ads::CDockWidget*                   dockEditor_ = nullptr;
+    ads::CDockWidget*                   dockExplorer_ = nullptr;
+    ads::CDockWidget*                   dockOutlineDocument_ = nullptr;
+    ads::CDockWidget*                   dockOutlineProject_ = nullptr;
+    ads::CDockWidget*                   dockDiagnostics_ = nullptr;
+    ads::CDockWidget*                   dockLog_ = nullptr;
+    /// setupWorkspaceSearchTab() 이 만든다 (내용이 코드로 조립되기 때문).
+    ads::CDockWidget*                   dockSearch_ = nullptr;
+    /// 보기 > 패널. 닫은 패널을 되살리는 유일한 수단이다.
+    QMenu*                              dockPanelsMenu_ = nullptr;
     QTabWidget*                         m_tabWidget = nullptr;
     QToolBar*                           m_mainToolBar = nullptr;
     QPointer<QToolBar>                  m_viewerToolBar = nullptr;   // 뷰어별 도구모음
@@ -247,6 +293,9 @@ private:
     bool                                previewInitialised_ = false;
     /// 세션이 프리뷰 스플리터 배치를 복원했는가. 복원했으면 기본 배분으로 덮지 않는다.
     bool                                previewSplitFromSession_ = false;
+    /// 세션이 도크 배치를 복원했는가. 위와 같은 이유로 둔다 — 사용자가 옮겨 둔
+    /// 패널을 기본 비율로 되돌리면 그 조작이 매 실행마다 사라진다.
+    bool                                dockLayoutFromSession_ = false;
     /// setStartupPaths() 로 받아 둔 명령줄 경로. 비면 지난 세션을 복원한다.
     QStringList                         startupPaths_;
 
@@ -273,10 +322,11 @@ private:
         bool                            active = false;
         Qt::WindowStates                windowStates = Qt::WindowNoState;
         QList< int >                    previewSplitSizes;
-        QList< int >                    contentSplitSizes;
-        QList< int >                    sideSplitSizes;
-        bool                            sidePanelVisible = true;
-        bool                            bottomVisible = true;
+        /// 좌측·하단 도크의 배치 전체. bool 세 개로는 모자란다 — 어느 패널을
+        /// 가장자리에 핀 고정해 두었는지, 하단에서 어느 탭을 보고 있었는지,
+        /// 떼어내 띄운 창이 있었는지까지 여기 들어 있다. 나올 때 그대로
+        /// 되돌려야 "들어가기 전 상태" 가 지켜진다.
+        QByteArray                      dockState;
         bool                            editorVisible = true;
         bool                            menuBarVisible = true;
         bool                            statusBarVisible = true;

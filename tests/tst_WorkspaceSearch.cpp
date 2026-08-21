@@ -5,6 +5,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QTest>
@@ -52,6 +53,7 @@ private slots:
 
     // ── 세션 ──
     void sessionRoundTrips();
+    void sessionWithoutDockLayoutStillLoads();
     void sessionRejectsUnknownSchema();
     void sessionDropsOutOfRangeActiveIndex();
 };
@@ -244,8 +246,8 @@ void TestWorkspaceSearch::sessionRoundTrips()
     session.documents = { { QStringLiteral( "C:/a.rst" ), 12, 3, 8 },
                          { QStringLiteral( "C:/b.rst" ), 1, 1, 1 } };
     session.activeIndex = 1;
-    session.sideSplitterSizes = { 250, 900 };
-    session.contentSplitterSizes = { 700, 200 };
+    session.previewSplitterSizes = { 700, 200 };
+    session.dockLayout = QStringLiteral( "eJxLyU/OTs0rzs8rzi/OL0nNzQMAWkoJhA==" );
 
     QVERIFY( saveWorkspaceSession( session ) );
     QVERIFY( QFile::exists( sessionFilePath( temp.path() ) ) );
@@ -255,8 +257,29 @@ void TestWorkspaceSearch::sessionRoundTrips()
     QCOMPARE( restored.documents.first().caretLine, 12 );
     QCOMPARE( restored.documents.first().firstVisibleLine, 8 );
     QCOMPARE( restored.activeIndex, 1 );
-    QCOMPARE( restored.sideSplitterSizes, QList< int >( { 250, 900 } ) );
-    QCOMPARE( restored.contentSplitterSizes, QList< int >( { 700, 200 } ) );
+    QCOMPARE( restored.previewSplitterSizes, QList< int >( { 700, 200 } ) );
+    QCOMPARE( restored.dockLayout, session.dockLayout );
+}
+
+void TestWorkspaceSearch::sessionWithoutDockLayoutStillLoads()
+{
+    // 이 버전보다 먼저 만들어진 파일에는 dockLayout 이 없다. 스키마를 올리지
+    // 않은 것이 그래서다 — 올렸다면 아래 세션이 통째로 버려지고 사용자가 열어
+    // 둔 탭을 잃는다. 배치만 기본값으로 시작하면 된다.
+    const QJsonObject old{
+        { QStringLiteral( "schema" ), 1 },
+        { QStringLiteral( "workspaceRoot" ), QStringLiteral( "C:/w" ) },
+        { QStringLiteral( "documents" ),
+         QJsonArray{ QJsonObject{ { QStringLiteral( "path" ), QStringLiteral( "C:/a.rst" ) },
+                                  { QStringLiteral( "caretLine" ), 7 } } } },
+        { QStringLiteral( "activeIndex" ), 0 },
+    };
+
+    const WorkspaceSession restored = sessionFromJson( old );
+    QCOMPARE( restored.documents.size(), 1 );
+    QCOMPARE( restored.documents.first().caretLine, 7 );
+    QCOMPARE( restored.activeIndex, 0 );
+    QVERIFY( restored.dockLayout.isEmpty() );
 }
 
 void TestWorkspaceSearch::sessionRejectsUnknownSchema()

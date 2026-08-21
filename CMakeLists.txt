@@ -96,6 +96,7 @@ find_package(Qt6 REQUIRED COMPONENTS
 # ── 외부 라이브러리 (FetchContent) ────────────────────────
 include(cmake/BuildScintillaLexilla.cmake)
 include(cmake/BuildQlementine.cmake)
+include(cmake/BuildQtADS.cmake)
 
 # windeployqt 인자를 개발 빌드와 릴리스 패키징이 함께 쓴다.
 include(cmake/MrstDeployFlags.cmake)
@@ -271,6 +272,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     ScintillaEditBaseQt
     LexillaStatic
     qlementine
+    ads::qtadvanceddocking
 )
 
 if(MSVC)
