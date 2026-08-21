@@ -511,6 +511,10 @@ You will be asked about any unsaved documents first. Continue?</translation>
         <translation type="unfinished">&amp;Save</translation>
     </message>
     <message>
+        <source>저장된 패널 배치를 읽을 수 없어 기본 배치로 엽니다.</source>
+        <translation type="unfinished">The saved panel layout could not be read; opening with the default layout.</translation>
+    </message>
+    <message>
         <source>저장이 진행 중입니다. 저장 완료 후 다시 탭을 닫아 주세요.</source>
         <translation type="unfinished">A save is in progress. Please close the tab again once it finishes.</translation>
     </message>
@@ -593,6 +597,10 @@ You will be asked about any unsaved documents first. Continue?</translation>
         <translation type="unfinished">Cancel</translation>
     </message>
     <message>
+        <source>탐색기</source>
+        <translation type="unfinished">Explorer</translation>
+    </message>
+    <message>
         <source>탭 %1</source>
         <translation type="unfinished">Tab %1</translation>
     </message>
@@ -661,6 +669,10 @@ Open it as text anyway?
     <message>
         <source>파일이 밖에서 사라졌습니다. 편집 중인 내용은 그대로 두었습니다: %1</source>
         <translation type="unfinished">The file is gone from disk. The text you were editing was left untouched: %1</translation>
+    </message>
+    <message>
+        <source>패널(&amp;P)</source>
+        <translation type="unfinished">&amp;Panels</translation>
     </message>
     <message>
         <source>패키지 설치 실패: %1</source>
