@@ -472,6 +472,34 @@ if(MRST_BUILD_TESTS)
     endif()
 
     add_test(NAME mrst_ui_tests COMMAND mrst_ui_tests)
+
+    # ── 테스트 실행 환경 ───────────────────────────────────
+    # 두 테스트 exe 는 Qt6::Test 를 링크한다. 그런데 개발 빌드의 Qt DLL 은 **앱**
+    # exe 를 대상으로 한 windeployqt 가 놓아 준 것이고 앱은 Qt6::Test 를 쓰지
+    # 않으므로, 출력 디렉터리에 Qt6Test[d].dll 만 없다. 그러면 두 exe 가 코드를
+    # 한 줄도 실행하기 전에 로더 단계에서 0xC0000135(STATUS_DLL_NOT_FOUND) 로
+    # 죽는다. ctest 는 그것을 테스트 실패가 아니라 "Exception" 으로 찍으므로
+    # 무엇이 없는지가 드러나지 않는다.
+    #
+    # 그 DLL 을 출력 디렉터리에 복사해 넣지 않는다 — 아래 플러그인 경로를 Qt
+    # 설치본으로 돌린 것과 같은 판단이다. 대신 PATH 앞에 Qt 의 bin 을 붙인다.
+    # Qt6Test 뿐 아니라 앞으로 테스트가 링크할 어떤 Qt 모듈도 함께 해결되므로
+    # 모듈을 더할 때 이 자리를 고칠 일이 없다.
+    #
+    # ENVIRONMENT_MODIFICATION 은 CMake 3.22 이상이 필요하다 (CMakePresets.json
+    # 이 3.28 을 요구하므로 항상 충족된다). ENVIRONMENT 와는 다른 속성이라
+    # 아래 mrst_ui_tests 설정과 겹치지 않는다 — ENVIRONMENT 가 먼저 적용되고
+    # 그 위에 이 수정이 얹힌다.
+    get_filename_component(MRST_QT_BIN_DIR "${Qt6_DIR}/../../../bin" ABSOLUTE)
+    if(NOT IS_DIRECTORY "${MRST_QT_BIN_DIR}")
+        message(FATAL_ERROR
+                "Qt bin 디렉터리를 찾을 수 없다: ${MRST_QT_BIN_DIR}\n"
+                "Qt6_DIR(${Qt6_DIR}) 기준으로 유도한 경로다. Qt 설치 구조가 바뀌면 여기를 고친다.\n"
+                "이 경로가 어긋나면 테스트가 Qt6Test DLL 을 찾지 못해 0xC0000135 로 죽는다.")
+    endif()
+    set_tests_properties(mrst_tests mrst_ui_tests PROPERTIES
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${MRST_QT_BIN_DIR}")
+
     # 헤드리스(`-platform offscreen`)로 돌릴 때 쓸 플러그인은 배포 디렉터리에 없다.
     # windeployqt 가 qwindows 만 놓고 가는데, 릴리스 패키징이 그 목록을 검증하므로
     # 거기에 offscreen 을 더할 수도 없다. Qt 설치본을 가리켜 준다.
