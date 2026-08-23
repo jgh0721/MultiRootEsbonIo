@@ -173,6 +173,14 @@
         <translation type="unfinished">%1 のインストール準備が完了しました。アプリを再起動すると適用されます。</translation>
     </message>
     <message>
+        <source>%1 에 만들 파일 이름:</source>
+        <translation type="unfinished">%1 に作るファイル名:</translation>
+    </message>
+    <message>
+        <source>%1 에 만들 폴더 이름:</source>
+        <translation type="unfinished">%1 に作るフォルダー名:</translation>
+    </message>
+    <message>
         <source>(없음)</source>
         <translation type="unfinished">（なし）</translation>
     </message>
@@ -209,8 +217,22 @@
         </translation>
     </message>
     <message>
+        <source>같은 이름이 이미 있습니다:
+%1</source>
+        <translation type="unfinished">同じ名前がすでにあります:
+%1</translation>
+    </message>
+    <message>
         <source>검색</source>
         <translation type="unfinished">検索</translation>
+    </message>
+    <message>
+        <source>고른 항목 삭제</source>
+        <translation type="unfinished">選んだ項目を削除</translation>
+    </message>
+    <message>
+        <source>고른 항목의 이름 바꾸기</source>
+        <translation type="unfinished">選んだ項目の名前を変更</translation>
     </message>
     <message>
         <source>공백 %1</source>
@@ -283,6 +305,10 @@
     <message>
         <source>마크다운</source>
         <translation type="unfinished">Markdown</translation>
+    </message>
+    <message>
+        <source>먼저 워크스페이스를 여십시오.</source>
+        <translation type="unfinished">先にワークスペースを開いてください。</translation>
     </message>
     <message>
         <source>메시지</source>
@@ -367,6 +393,42 @@
         <translation type="unfinished">貼り付け(&amp;P)</translation>
     </message>
     <message>
+        <source>빌드</source>
+        <translation type="unfinished">ビルド</translation>
+    </message>
+    <message>
+        <source>빌드 완료: %1</source>
+        <translation type="unfinished">ビルド完了: %1</translation>
+    </message>
+    <message>
+        <source>빌드(&amp;B)…</source>
+        <translation type="unfinished">ビルド(&amp;B)…</translation>
+    </message>
+    <message>
+        <source>빌드가 이미 돌고 있습니다. 끝난 뒤에 다시 요청하십시오.</source>
+        <translation type="unfinished">ビルドがすでに走っています。終わってから再度お試しください。</translation>
+    </message>
+    <message>
+        <source>빌드에 실패했습니다. 로그 탭을 확인하십시오.</source>
+        <translation type="unfinished">ビルドに失敗しました。ログタブを確認してください。</translation>
+    </message>
+    <message>
+        <source>삭제</source>
+        <translation type="unfinished">削除</translation>
+    </message>
+    <message>
+        <source>삭제(&amp;D)…</source>
+        <translation type="unfinished">削除(&amp;D)…</translation>
+    </message>
+    <message>
+        <source>삭제: %1</source>
+        <translation type="unfinished">削除: %1</translation>
+    </message>
+    <message>
+        <source>새 문서.rst</source>
+        <translation type="unfinished">新しい文書.rst</translation>
+    </message>
+    <message>
         <source>새 버전 %1 을 설치할 준비가 되었습니다.
 
 앱을 닫고 파일을 교체한 뒤 다시 실행합니다.
@@ -381,8 +443,44 @@
         <translation type="unfinished">新しいバージョン %1 があります（約 %2MB）。</translation>
     </message>
     <message>
+        <source>새 이름:</source>
+        <translation type="unfinished">新しい名前:</translation>
+    </message>
+    <message>
+        <source>새 파일</source>
+        <translation type="unfinished">新規ファイル</translation>
+    </message>
+    <message>
+        <source>새 파일 만들기</source>
+        <translation type="unfinished">新しいファイルを作る</translation>
+    </message>
+    <message>
         <source>새 파일(&amp;N)</source>
         <translation type="unfinished">新規ファイル(&amp;N)</translation>
+    </message>
+    <message>
+        <source>새 파일(&amp;N)…</source>
+        <translation type="unfinished">新しいファイル(&amp;N)…</translation>
+    </message>
+    <message>
+        <source>새 파일: %1</source>
+        <translation type="unfinished">新しいファイル: %1</translation>
+    </message>
+    <message>
+        <source>새 폴더</source>
+        <translation type="unfinished">新しいフォルダー</translation>
+    </message>
+    <message>
+        <source>새 폴더 만들기</source>
+        <translation type="unfinished">新しいフォルダーを作る</translation>
+    </message>
+    <message>
+        <source>새 폴더(&amp;F)…</source>
+        <translation type="unfinished">新しいフォルダー(&amp;F)…</translation>
+    </message>
+    <message>
+        <source>새 폴더: %1</source>
+        <translation type="unfinished">新しいフォルダー: %1</translation>
     </message>
     <message>
         <source>설정(&amp;I)...</source>
@@ -479,6 +577,32 @@
         <translation type="unfinished">このファイルはバイナリデータのようです。</translation>
     </message>
     <message>
+        <source>이름 바꾸기</source>
+        <translation type="unfinished">名前の変更</translation>
+    </message>
+    <message>
+        <source>이름 바꾸기(&amp;M)…</source>
+        <translation type="unfinished">名前の変更(&amp;M)…</translation>
+    </message>
+    <message>
+        <source>이름 바꾸기: %1 → %2</source>
+        <translation type="unfinished">名前の変更: %1 → %2</translation>
+    </message>
+    <message>
+        <source>이름으로 쓸 수 없는 글자가 있습니다.</source>
+        <translation type="unfinished">名前に使えない文字が含まれています。</translation>
+    </message>
+    <message>
+        <source>이름을 바꿀 수 없습니다:
+%1</source>
+        <translation type="unfinished">名前を変更できません:
+%1</translation>
+    </message>
+    <message>
+        <source>이름의 일부를 치면 걸러집니다. `*` 나 `?` 를 넣으면 와일드카드로 봅니다.</source>
+        <translation type="unfinished">名前の一部を入力すると絞り込みます。`*` や `?` を入れるとワイルドカードとして扱います。</translation>
+    </message>
+    <message>
         <source>이전 탭(&amp;P)</source>
         <translation type="unfinished">前のタブ(&amp;P)</translation>
     </message>
@@ -515,6 +639,12 @@
         <translation type="unfinished">保存の実行中です。保存が終わってからタブを閉じ直してください。</translation>
     </message>
     <message>
+        <source>저장하지 않은 편집이 있는 탭이 있습니다. 먼저 저장하거나 닫으십시오:
+%1</source>
+        <translation type="unfinished">保存していない編集があるタブがあります。先に保存するか閉じてください:
+%1</translation>
+    </message>
+    <message>
         <source>적용</source>
         <translation type="unfinished">適用</translation>
     </message>
@@ -549,6 +679,12 @@
     <message>
         <source>지금 재시작</source>
         <translation type="unfinished">今すぐ再起動</translation>
+    </message>
+    <message>
+        <source>지울 수 없습니다:
+%1</source>
+        <translation type="unfinished">削除できません:
+%1</translation>
     </message>
     <message>
         <source>지원하지 않는 파일 형식입니다:
@@ -643,6 +779,10 @@
         </translation>
     </message>
     <message>
+        <source>파일 관리자에서 보기(&amp;E)</source>
+        <translation type="unfinished">ファイルマネージャーで表示(&amp;E)</translation>
+    </message>
+    <message>
         <source>파일 여는 중...</source>
         <translation type="unfinished">ファイルを開いています...</translation>
     </message>
@@ -651,13 +791,31 @@
         <translation type="unfinished">ファイルを開く</translation>
     </message>
     <message>
+        <source>파일 이름으로 쓸 수 없는 글자가 있습니다.</source>
+        <translation type="unfinished">ファイル名に使えない文字が含まれています。</translation>
+    </message>
+    <message>
         <source>파일(&amp;F)</source>
         <translation type="unfinished">ファイル(&amp;F)</translation>
+    </message>
+    <message>
+        <source>파일을 만들 수 없습니다:
+%1</source>
+        <translation type="unfinished">ファイルを作れません:
+%1</translation>
     </message>
     <message>
         <source>파일을 열 수 없습니다:
 %1</source>
         <translation type="unfinished">ファイルを開けません:
+%1</translation>
+    </message>
+    <message>
+        <source>파일을 지웁니다. 되돌릴 수 없습니다.
+
+%1</source>
+        <translation type="unfinished">ファイルを削除します。元に戻せません。
+
 %1</translation>
     </message>
     <message>
@@ -685,6 +843,24 @@
         <translation type="unfinished">編集(&amp;E)</translation>
     </message>
     <message>
+        <source>폴더 이름으로 쓸 수 없는 글자가 있습니다.</source>
+        <translation type="unfinished">フォルダー名に使えない文字が含まれています。</translation>
+    </message>
+    <message>
+        <source>폴더를 만들 수 없습니다:
+%1</source>
+        <translation type="unfinished">フォルダーを作れません:
+%1</translation>
+    </message>
+    <message>
+        <source>폴더와 그 안의 모든 것을 지웁니다. 되돌릴 수 없습니다.
+
+%1</source>
+        <translation type="unfinished">フォルダーと中身をすべて削除します。元に戻せません。
+
+%1</translation>
+    </message>
+    <message>
         <source>프로젝트</source>
         <translation type="unfinished">プロジェクト</translation>
     </message>
@@ -695,6 +871,14 @@
     <message>
         <source>프리뷰 전체 화면(&amp;L)</source>
         <translation type="unfinished">プレビューを全画面表示(&amp;L)</translation>
+    </message>
+    <message>
+        <source>필터 (부분 일치)</source>
+        <translation type="unfinished">フィルター (部分一致)</translation>
+    </message>
+    <message>
+        <source>필터 (부분 일치, * ? 가능)</source>
+        <translation type="unfinished">フィルター (部分一致、* ? 可)</translation>
     </message>
     <message numerus="yes">
         <source>하위 %n개 항목이 개요 깊이 설정에 걸려 빠졌습니다.</source>
@@ -1689,6 +1873,47 @@ Markdown の本文を描く変換器はプログラムに内蔵されている�
     <message>
         <source>환경 디렉터리:</source>
         <translation type="unfinished">環境ディレクトリ:</translation>
+    </message>
+</context>
+<context>
+    <name>QSphinxBuildDialog</name>
+    <message>
+        <source>목록에 없는 빌더는 직접 입력할 수 있습니다. 출력 위치가 없으면 만들어집니다.
+latexpdf · info 는 빌더가 아니라 make 목표라 산출물이 출력 위치 아래의 하위 폴더에 놓입니다. PDF 는 LaTeX 도구체인이 설치돼 있어야 합니다.</source>
+        <translation type="unfinished">一覧にないビルダーは直接入力できます。出力先がなければ作成します。
+latexpdf · info はビルダーではなく make ターゲットなので、成果物は出力先の下のサブフォルダーに置かれます。PDF には LaTeX ツールチェーンが必要です。</translation>
+    </message>
+    <message>
+        <source>빌더(&amp;B):</source>
+        <translation type="unfinished">ビルダー(&amp;B):</translation>
+    </message>
+    <message>
+        <source>빌드</source>
+        <translation type="unfinished">ビルド</translation>
+    </message>
+    <message>
+        <source>빌드 — %1</source>
+        <translation type="unfinished">ビルド — %1</translation>
+    </message>
+    <message>
+        <source>빌드 결과를 놓을 폴더</source>
+        <translation type="unfinished">ビルド結果を置くフォルダー</translation>
+    </message>
+    <message>
+        <source>빌드가 끝나면 그 폴더를 탐색기로 열기</source>
+        <translation type="unfinished">ビルドが終わったらそのフォルダーをファイルマネージャーで開く</translation>
+    </message>
+    <message>
+        <source>찾아보기…</source>
+        <translation type="unfinished">参照…</translation>
+    </message>
+    <message>
+        <source>출력 위치(&amp;O):</source>
+        <translation type="unfinished">出力先(&amp;O):</translation>
+    </message>
+    <message>
+        <source>취소</source>
+        <translation type="unfinished">キャンセル</translation>
     </message>
 </context>
 <context>
@@ -3380,6 +3605,34 @@ Markdown の本文を描く変換器はプログラムに内蔵されている�
         <translation type="unfinished">Sphinx プロジェクトを検索しています...</translation>
     </message>
     <message>
+        <source>빌더 이름이나 출력 위치가 올바르지 않습니다.</source>
+        <translation type="unfinished">ビルダー名か出力先が正しくありません。</translation>
+    </message>
+    <message>
+        <source>빌드 시작: %1 → %2</source>
+        <translation type="unfinished">ビルド開始: %1 → %2</translation>
+    </message>
+    <message>
+        <source>빌드 실패 (종료 코드 %1). 로그를 확인하십시오.</source>
+        <translation type="unfinished">ビルド失敗 (終了コード %1)。ログを確認してください。</translation>
+    </message>
+    <message>
+        <source>빌드 완료: %1</source>
+        <translation type="unfinished">ビルド完了: %1</translation>
+    </message>
+    <message>
+        <source>빌드가 이미 돌고 있습니다. 끝난 뒤에 다시 요청하십시오.</source>
+        <translation type="unfinished">ビルドがすでに走っています。終わってから再度お試しください。</translation>
+    </message>
+    <message>
+        <source>빌드를 취소했습니다.</source>
+        <translation type="unfinished">ビルドを取り消しました。</translation>
+    </message>
+    <message>
+        <source>빌드할 프로젝트를 찾을 수 없습니다 [%1].</source>
+        <translation type="unfinished">ビルドするプロジェクトが見つかりません [%1]。</translation>
+    </message>
+    <message>
         <source>열린 문서가 없습니다.</source>
         <translation type="unfinished">開いているドキュメントがありません。</translation>
     </message>
@@ -3396,6 +3649,10 @@ Markdown の本文を描く変換器はプログラムに内蔵されている�
         <translation type="unfinished">初期化しました</translation>
     </message>
     <message>
+        <source>출력 위치를 만들 수 없습니다: %1</source>
+        <translation type="unfinished">出力先を作れません: %1</translation>
+    </message>
+    <message>
         <source>치환 %1개 [%2]</source>
         <translation type="unfinished">置換 %1 件 [%2]</translation>
     </message>
@@ -3404,12 +3661,20 @@ Markdown の本文を描く変換器はプログラムに内蔵されている�
         <translation type="unfinished">クライアントを作成しました</translation>
     </message>
     <message>
+        <source>파이썬 런타임이 아직 준비되지 않았습니다. 잠시 뒤에 다시 요청하십시오.</source>
+        <translation type="unfinished">Python ランタイムがまだ準備できていません。少し待ってから再度お試しください。</translation>
+    </message>
+    <message>
         <source>프로젝트 개요: 문서가 많아 %1개만 표시합니다 (%2개 생략).</source>
         <translation type="unfinished">プロジェクトアウトライン: ドキュメントが多いため %1 件のみ表示します (%2 件を省略)。</translation>
     </message>
     <message>
         <source>프로젝트 재배정: %1 -&gt; %2</source>
         <translation type="unfinished">プロジェクトを再割り当て: %1 -&gt; %2</translation>
+    </message>
+    <message>
+        <source>프로젝트 환경에 Sphinx 가 없어 내장 환경으로 다시 시도합니다.</source>
+        <translation type="unfinished">プロジェクト環境に Sphinx がないため内蔵環境で再試行します。</translation>
     </message>
     <message>
         <source>프리뷰 HTML 로드 실패</source>
