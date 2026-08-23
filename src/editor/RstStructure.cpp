@@ -9,9 +9,12 @@ namespace {
 
 // ── 동아시아 폭 표 ───────────────────────────────────────
 //
-// unicodedata 15.0.0 기준으로 east_asian_width 가 W 또는 F 인 구간이다.
+// UCD 15.0.0 의 EastAsianWidth.txt 에서 W 또는 F 인 구간을 뽑았다(182,516자).
 // docutils 의 column_width() 가 이 분류로 두 칸을 센다.
-// 생성:  python -c "import unicodedata; ..."  (docs/RST-LEXER-PHASE1-PLAN.md 참조)
+//
+// 다시 만들려면 unicode.org/Public/15.0.0/ucd/EastAsianWidth.txt 를 받아 두 번째
+// 칸이 W·F 인 코드포인트를 모아 연속 구간으로 묶는다. 아래 kCombiningRanges 도
+// 같은 판(UnicodeData.txt)에서 나왔으므로 판을 올릴 때는 둘을 함께 올린다.
 struct CodepointRange
 {
     std::uint32_t first;
