@@ -817,6 +817,14 @@
         <translation type="unfinished">BOM あり</translation>
     </message>
     <message>
+        <source>Sphinx 기본 치환</source>
+        <translation type="unfinished">Sphinx 標準の置換</translation>
+    </message>
+    <message>
+        <source>Sphinx 기본 치환 · %1</source>
+        <translation type="unfinished">Sphinx 標準の置換 · %1</translation>
+    </message>
+    <message>
         <source>내장 환경</source>
         <translation type="unfinished">内蔵環境</translation>
     </message>
@@ -831,6 +839,10 @@
     <message>
         <source>원본 파일 경로가 비어 있습니다.</source>
         <translation type="unfinished">元のファイルパスが空です。</translation>
+    </message>
+    <message>
+        <source>이 문서</source>
+        <translation type="unfinished">この文書</translation>
     </message>
     <message>
         <source>일부 핫 엑시트 백업 파일을 삭제할 수 없습니다: %1</source>
@@ -2161,6 +2173,21 @@ Markdown の本文を描く変換器はプログラムに内蔵されている�
     </message>
 </context>
 <context>
+    <name>RstSubstitutions</name>
+    <message>
+        <source>conf.py 의 release</source>
+        <translation type="unfinished">conf.py の release</translation>
+    </message>
+    <message>
+        <source>conf.py 의 version</source>
+        <translation type="unfinished">conf.py の version</translation>
+    </message>
+    <message>
+        <source>빌드한 날짜</source>
+        <translation type="unfinished">ビルド日</translation>
+    </message>
+</context>
+<context>
     <name>SphinxDiagnostics</name>
     <message>
         <source>Error</source>
@@ -3367,6 +3394,10 @@ Markdown の本文を描く変換器はプログラムに内蔵されている�
     <message>
         <source>초기화됨</source>
         <translation type="unfinished">初期化しました</translation>
+    </message>
+    <message>
+        <source>치환 %1개 [%2]</source>
+        <translation type="unfinished">置換 %1 件 [%2]</translation>
     </message>
     <message>
         <source>클라이언트 생성됨</source>
