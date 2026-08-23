@@ -65,6 +65,13 @@ QJsonObject sessionToJson( const WorkspaceSession& session )
     };
 }
 
+QString activeDocumentPath( const WorkspaceSession& session )
+{
+    if( session.activeIndex < 0 || session.activeIndex >= session.documents.size() )
+        return {};
+    return session.documents.at( session.activeIndex ).path;
+}
+
 WorkspaceSession sessionFromJson( const QJsonObject& object )
 {
     if( object.value( QStringLiteral( "schema" ) ).toInt() != kSchema )

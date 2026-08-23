@@ -4584,8 +4584,19 @@ void MainWindow::restoreLastSession()
     };
     previewSplitFromSession_ = restoreSizes( Ui.splitter_2, session.previewSplitterSizes );
 
-    if( session.activeIndex >= 0 && session.activeIndex < m_tabWidget->count() )
-        m_tabWidget->setCurrentIndex( session.activeIndex );
+    // activeIndex 는 **세션 문서 목록**의 번호다. 탭 위젯의 번호로 쓰면 안 된다.
+    //
+    // 두 목록은 어긋난다. 핫 엑시트 스냅샷이 우리보다 먼저 탭을 열어 두고
+    // (restoreHotExitSnapshots 가 advanceStartupPhase 에서 앞선다), 그 사이 사라진
+    // 파일은 위에서 건너뛴다. 밀린 자리를 그대로 고르면 엉뚱한 문서가 활성이 되고,
+    // 그 자리가 이름 없는 버퍼면 경로가 없어 **프리뷰가 아예 만들어지지 않는다**
+    // (requestPreviewBuild 의 `context->path.isEmpty()` 조기 반환).
+    // 그래서 번호가 아니라 경로로 찾는다.
+    if( QTextView* view = textViewForPath( mrst::activeDocumentPath( session ) ); view != nullptr )
+    {
+        if( const int tab = m_tabWidget->indexOf( view ); tab >= 0 )
+            m_tabWidget->setCurrentIndex( tab );
+    }
 
     // setCurrentIndex() 가 인덱스를 바꾸지 않으면(활성 탭이 이미 0번) onTabChanged 가
     // 나지 않는다. 그러면 배치가 기억한 대상이 마지막으로 열린 탭에 머무르므로,
@@ -4598,13 +4609,15 @@ void MainWindow::restoreLastSession()
     }
 
     // 캐럿 복원은 파일 로드가 비동기라 지금 하면 덮인다. 로드가 끝난 뒤에 옮긴다.
-    for( int index = 0; index < m_tabWidget->count() && index < session.documents.size(); ++index )
+    //
+    // 짝짓기는 탭 번호가 아니라 **경로**로 한다. 위와 같은 이유로 두 목록의 번호가
+    // 어긋나서, 번호로 짝지으면 A 문서의 캐럿이 B 문서로 간다.
+    for( const mrst::OpenDocumentState& state : session.documents )
     {
-        QTextView* view = textViewOf( qobject_cast< QBaseView* >( m_tabWidget->widget( index ) ) );
+        QTextView* view = textViewForPath( state.path );
         if( view == nullptr )
-            continue;
+            continue;   // 사라졌거나 열지 못한 문서
 
-        const mrst::OpenDocumentState state = session.documents.at( index );
         connect( view, &QBaseView::sigFileOpened, this,
                 [view, state]( const QString& ) {
                     view->goToPosition( state.caretLine, state.caretColumn );
