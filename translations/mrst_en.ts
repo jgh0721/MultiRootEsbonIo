@@ -175,6 +175,14 @@
         <translation type="unfinished">%1 is ready to install. It will be applied the next time you start the app.</translation>
     </message>
     <message>
+        <source>%1 에 만들 파일 이름:</source>
+        <translation type="unfinished">File name to create in %1:</translation>
+    </message>
+    <message>
+        <source>%1 에 만들 폴더 이름:</source>
+        <translation type="unfinished">Folder name to create in %1:</translation>
+    </message>
+    <message>
         <source>(없음)</source>
         <translation type="unfinished">(none)</translation>
     </message>
@@ -212,8 +220,22 @@
         </translation>
     </message>
     <message>
+        <source>같은 이름이 이미 있습니다:
+%1</source>
+        <translation type="unfinished">That name already exists:
+%1</translation>
+    </message>
+    <message>
         <source>검색</source>
         <translation type="unfinished">Search</translation>
+    </message>
+    <message>
+        <source>고른 항목 삭제</source>
+        <translation type="unfinished">Delete the selected item</translation>
+    </message>
+    <message>
+        <source>고른 항목의 이름 바꾸기</source>
+        <translation type="unfinished">Rename the selected item</translation>
     </message>
     <message>
         <source>공백 %1</source>
@@ -287,6 +309,10 @@
     <message>
         <source>마크다운</source>
         <translation type="unfinished">Markdown</translation>
+    </message>
+    <message>
+        <source>먼저 워크스페이스를 여십시오.</source>
+        <translation type="unfinished">Open a workspace first.</translation>
     </message>
     <message>
         <source>메시지</source>
@@ -371,6 +397,42 @@
         <translation type="unfinished">&amp;Paste</translation>
     </message>
     <message>
+        <source>빌드</source>
+        <translation type="unfinished">Build</translation>
+    </message>
+    <message>
+        <source>빌드 완료: %1</source>
+        <translation type="unfinished">Build finished: %1</translation>
+    </message>
+    <message>
+        <source>빌드(&amp;B)…</source>
+        <translation type="unfinished">&amp;Build…</translation>
+    </message>
+    <message>
+        <source>빌드가 이미 돌고 있습니다. 끝난 뒤에 다시 요청하십시오.</source>
+        <translation type="unfinished">A build is already running. Try again once it finishes.</translation>
+    </message>
+    <message>
+        <source>빌드에 실패했습니다. 로그 탭을 확인하십시오.</source>
+        <translation type="unfinished">The build failed. Check the Log tab.</translation>
+    </message>
+    <message>
+        <source>삭제</source>
+        <translation type="unfinished">Delete</translation>
+    </message>
+    <message>
+        <source>삭제(&amp;D)…</source>
+        <translation type="unfinished">&amp;Delete…</translation>
+    </message>
+    <message>
+        <source>삭제: %1</source>
+        <translation type="unfinished">Deleted: %1</translation>
+    </message>
+    <message>
+        <source>새 문서.rst</source>
+        <translation type="unfinished">new document.rst</translation>
+    </message>
+    <message>
         <source>새 버전 %1 을 설치할 준비가 되었습니다.
 
 앱을 닫고 파일을 교체한 뒤 다시 실행합니다.
@@ -385,8 +447,44 @@ You will be asked about any unsaved documents first. Continue?</translation>
         <translation type="unfinished">Version %1 is available (about %2 MB).</translation>
     </message>
     <message>
+        <source>새 이름:</source>
+        <translation type="unfinished">New name:</translation>
+    </message>
+    <message>
+        <source>새 파일</source>
+        <translation type="unfinished">New file</translation>
+    </message>
+    <message>
+        <source>새 파일 만들기</source>
+        <translation type="unfinished">Create a new file</translation>
+    </message>
+    <message>
         <source>새 파일(&amp;N)</source>
         <translation type="unfinished">&amp;New file</translation>
+    </message>
+    <message>
+        <source>새 파일(&amp;N)…</source>
+        <translation type="unfinished">&amp;New file…</translation>
+    </message>
+    <message>
+        <source>새 파일: %1</source>
+        <translation type="unfinished">New file: %1</translation>
+    </message>
+    <message>
+        <source>새 폴더</source>
+        <translation type="unfinished">New folder</translation>
+    </message>
+    <message>
+        <source>새 폴더 만들기</source>
+        <translation type="unfinished">Create a new folder</translation>
+    </message>
+    <message>
+        <source>새 폴더(&amp;F)…</source>
+        <translation type="unfinished">New &amp;folder…</translation>
+    </message>
+    <message>
+        <source>새 폴더: %1</source>
+        <translation type="unfinished">New folder: %1</translation>
     </message>
     <message>
         <source>설정(&amp;I)...</source>
@@ -483,6 +581,32 @@ You will be asked about any unsaved documents first. Continue?</translation>
         <translation type="unfinished">This file looks like binary data.</translation>
     </message>
     <message>
+        <source>이름 바꾸기</source>
+        <translation type="unfinished">Rename</translation>
+    </message>
+    <message>
+        <source>이름 바꾸기(&amp;M)…</source>
+        <translation type="unfinished">Rena&amp;me…</translation>
+    </message>
+    <message>
+        <source>이름 바꾸기: %1 → %2</source>
+        <translation type="unfinished">Renamed: %1 → %2</translation>
+    </message>
+    <message>
+        <source>이름으로 쓸 수 없는 글자가 있습니다.</source>
+        <translation type="unfinished">The name contains characters that cannot be used.</translation>
+    </message>
+    <message>
+        <source>이름을 바꿀 수 없습니다:
+%1</source>
+        <translation type="unfinished">Could not rename:
+%1</translation>
+    </message>
+    <message>
+        <source>이름의 일부를 치면 걸러집니다. `*` 나 `?` 를 넣으면 와일드카드로 봅니다.</source>
+        <translation type="unfinished">Type part of a name to filter. Adding `*` or `?` makes it a wildcard.</translation>
+    </message>
+    <message>
         <source>이전 탭(&amp;P)</source>
         <translation type="unfinished">&amp;Previous Tab</translation>
     </message>
@@ -519,6 +643,12 @@ You will be asked about any unsaved documents first. Continue?</translation>
         <translation type="unfinished">A save is in progress. Please close the tab again once it finishes.</translation>
     </message>
     <message>
+        <source>저장하지 않은 편집이 있는 탭이 있습니다. 먼저 저장하거나 닫으십시오:
+%1</source>
+        <translation type="unfinished">Some tabs have unsaved edits. Save or close them first:
+%1</translation>
+    </message>
+    <message>
         <source>적용</source>
         <translation type="unfinished">Apply</translation>
     </message>
@@ -553,6 +683,12 @@ You will be asked about any unsaved documents first. Continue?</translation>
     <message>
         <source>지금 재시작</source>
         <translation type="unfinished">Restart now</translation>
+    </message>
+    <message>
+        <source>지울 수 없습니다:
+%1</source>
+        <translation type="unfinished">Could not delete:
+%1</translation>
     </message>
     <message>
         <source>지원하지 않는 파일 형식입니다:
@@ -649,6 +785,10 @@ Open it as text anyway?
         </translation>
     </message>
     <message>
+        <source>파일 관리자에서 보기(&amp;E)</source>
+        <translation type="unfinished">Show in fil&amp;e manager</translation>
+    </message>
+    <message>
         <source>파일 여는 중...</source>
         <translation type="unfinished">Opening file...</translation>
     </message>
@@ -657,13 +797,31 @@ Open it as text anyway?
         <translation type="unfinished">Open file</translation>
     </message>
     <message>
+        <source>파일 이름으로 쓸 수 없는 글자가 있습니다.</source>
+        <translation type="unfinished">The file name contains characters that cannot be used.</translation>
+    </message>
+    <message>
         <source>파일(&amp;F)</source>
         <translation type="unfinished">&amp;File</translation>
+    </message>
+    <message>
+        <source>파일을 만들 수 없습니다:
+%1</source>
+        <translation type="unfinished">Could not create the file:
+%1</translation>
     </message>
     <message>
         <source>파일을 열 수 없습니다:
 %1</source>
         <translation type="unfinished">The file could not be opened:
+%1</translation>
+    </message>
+    <message>
+        <source>파일을 지웁니다. 되돌릴 수 없습니다.
+
+%1</source>
+        <translation type="unfinished">This deletes the file. It cannot be undone.
+
 %1</translation>
     </message>
     <message>
@@ -691,6 +849,24 @@ Open it as text anyway?
         <translation type="unfinished">&amp;Edit</translation>
     </message>
     <message>
+        <source>폴더 이름으로 쓸 수 없는 글자가 있습니다.</source>
+        <translation type="unfinished">The folder name contains characters that cannot be used.</translation>
+    </message>
+    <message>
+        <source>폴더를 만들 수 없습니다:
+%1</source>
+        <translation type="unfinished">Could not create the folder:
+%1</translation>
+    </message>
+    <message>
+        <source>폴더와 그 안의 모든 것을 지웁니다. 되돌릴 수 없습니다.
+
+%1</source>
+        <translation type="unfinished">This deletes the folder and everything in it. It cannot be undone.
+
+%1</translation>
+    </message>
+    <message>
         <source>프로젝트</source>
         <translation type="unfinished">Project</translation>
     </message>
@@ -701,6 +877,14 @@ Open it as text anyway?
     <message>
         <source>프리뷰 전체 화면(&amp;L)</source>
         <translation type="unfinished">Ful&amp;l Screen Preview</translation>
+    </message>
+    <message>
+        <source>필터 (부분 일치)</source>
+        <translation type="unfinished">Filter (substring)</translation>
+    </message>
+    <message>
+        <source>필터 (부분 일치, * ? 가능)</source>
+        <translation type="unfinished">Filter (substring, * ? allowed)</translation>
     </message>
     <message numerus="yes">
         <source>하위 %n개 항목이 개요 깊이 설정에 걸려 빠졌습니다.</source>
@@ -1696,6 +1880,47 @@ The converter that draws Markdown body text is built into the program, so it alw
     <message>
         <source>환경 디렉터리:</source>
         <translation type="unfinished">Environment directory:</translation>
+    </message>
+</context>
+<context>
+    <name>QSphinxBuildDialog</name>
+    <message>
+        <source>목록에 없는 빌더는 직접 입력할 수 있습니다. 출력 위치가 없으면 만들어집니다.
+latexpdf · info 는 빌더가 아니라 make 목표라 산출물이 출력 위치 아래의 하위 폴더에 놓입니다. PDF 는 LaTeX 도구체인이 설치돼 있어야 합니다.</source>
+        <translation type="unfinished">Builders not in the list can be typed in. The output location is created if it does not exist.
+latexpdf and info are make targets rather than builders, so their output lands in a subfolder of the output location. PDF needs a LaTeX toolchain installed.</translation>
+    </message>
+    <message>
+        <source>빌더(&amp;B):</source>
+        <translation type="unfinished">&amp;Builder:</translation>
+    </message>
+    <message>
+        <source>빌드</source>
+        <translation type="unfinished">Build</translation>
+    </message>
+    <message>
+        <source>빌드 — %1</source>
+        <translation type="unfinished">Build — %1</translation>
+    </message>
+    <message>
+        <source>빌드 결과를 놓을 폴더</source>
+        <translation type="unfinished">Folder for the build output</translation>
+    </message>
+    <message>
+        <source>빌드가 끝나면 그 폴더를 탐색기로 열기</source>
+        <translation type="unfinished">Open that folder in the file manager when the build finishes</translation>
+    </message>
+    <message>
+        <source>찾아보기…</source>
+        <translation type="unfinished">Browse…</translation>
+    </message>
+    <message>
+        <source>출력 위치(&amp;O):</source>
+        <translation type="unfinished">&amp;Output location:</translation>
+    </message>
+    <message>
+        <source>취소</source>
+        <translation type="unfinished">Cancel</translation>
     </message>
 </context>
 <context>
@@ -3387,6 +3612,34 @@ Please download it from the release page.</translation>
         <translation type="unfinished">Searching for Sphinx projects...</translation>
     </message>
     <message>
+        <source>빌더 이름이나 출력 위치가 올바르지 않습니다.</source>
+        <translation type="unfinished">The builder name or output location is not valid.</translation>
+    </message>
+    <message>
+        <source>빌드 시작: %1 → %2</source>
+        <translation type="unfinished">Build started: %1 → %2</translation>
+    </message>
+    <message>
+        <source>빌드 실패 (종료 코드 %1). 로그를 확인하십시오.</source>
+        <translation type="unfinished">Build failed (exit code %1). Check the log.</translation>
+    </message>
+    <message>
+        <source>빌드 완료: %1</source>
+        <translation type="unfinished">Build finished: %1</translation>
+    </message>
+    <message>
+        <source>빌드가 이미 돌고 있습니다. 끝난 뒤에 다시 요청하십시오.</source>
+        <translation type="unfinished">A build is already running. Try again once it finishes.</translation>
+    </message>
+    <message>
+        <source>빌드를 취소했습니다.</source>
+        <translation type="unfinished">The build was cancelled.</translation>
+    </message>
+    <message>
+        <source>빌드할 프로젝트를 찾을 수 없습니다 [%1].</source>
+        <translation type="unfinished">Cannot find the project to build [%1].</translation>
+    </message>
+    <message>
         <source>열린 문서가 없습니다.</source>
         <translation type="unfinished">No document is open.</translation>
     </message>
@@ -3403,6 +3656,10 @@ Please download it from the release page.</translation>
         <translation type="unfinished">Initialized</translation>
     </message>
     <message>
+        <source>출력 위치를 만들 수 없습니다: %1</source>
+        <translation type="unfinished">Could not create the output location: %1</translation>
+    </message>
+    <message>
         <source>치환 %1개 [%2]</source>
         <translation type="unfinished">%1 substitutions [%2]</translation>
     </message>
@@ -3411,12 +3668,20 @@ Please download it from the release page.</translation>
         <translation type="unfinished">Client created</translation>
     </message>
     <message>
+        <source>파이썬 런타임이 아직 준비되지 않았습니다. 잠시 뒤에 다시 요청하십시오.</source>
+        <translation type="unfinished">The Python runtime is not ready yet. Try again in a moment.</translation>
+    </message>
+    <message>
         <source>프로젝트 개요: 문서가 많아 %1개만 표시합니다 (%2개 생략).</source>
         <translation type="unfinished">Project outline: too many documents, showing only %1 (%2 omitted).</translation>
     </message>
     <message>
         <source>프로젝트 재배정: %1 -&gt; %2</source>
         <translation type="unfinished">Project reassigned: %1 -&gt; %2</translation>
+    </message>
+    <message>
+        <source>프로젝트 환경에 Sphinx 가 없어 내장 환경으로 다시 시도합니다.</source>
+        <translation type="unfinished">The project environment has no Sphinx; retrying with the bundled environment.</translation>
     </message>
     <message>
         <source>프리뷰 HTML 로드 실패</source>

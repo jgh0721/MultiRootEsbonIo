@@ -148,7 +148,65 @@
         <number>0</number>
        </property>
        <item>
+        <!-- 필터 + 파일 조작. 글자와 도구 설명은 코드에서 넣는다(번역 대상). -->
+        <layout class="QHBoxLayout" name="pnlFolderTreeToolRow">
+         <property name="spacing">
+          <number>2</number>
+         </property>
+         <property name="leftMargin">
+          <number>3</number>
+         </property>
+         <property name="topMargin">
+          <number>3</number>
+         </property>
+         <property name="rightMargin">
+          <number>3</number>
+         </property>
+         <property name="bottomMargin">
+          <number>1</number>
+         </property>
+         <item>
+          <widget class="QLineEdit" name="edtExplorerFilter">
+           <property name="clearButtonEnabled">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QToolButton" name="btnExplorerNewFile">
+           <property name="autoRaise">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QToolButton" name="btnExplorerNewFolder">
+           <property name="autoRaise">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QToolButton" name="btnExplorerRename">
+           <property name="autoRaise">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QToolButton" name="btnExplorerDelete">
+           <property name="autoRaise">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
         <widget class="QTreeView" name="treLeftSideFolterTree">
+         <property name="contextMenuPolicy">
+          <enum>Qt::CustomContextMenu</enum>
+         </property>
          <property name="indentation">
           <number>15</number>
          </property>
@@ -180,6 +238,13 @@
         <number>0</number>
        </property>
        <item>
+        <widget class="QLineEdit" name="edtOutlineDocumentFilter">
+         <property name="clearButtonEnabled">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QTreeWidget" name="treOutlineDocument">
          <column>
           <property name="text">
@@ -207,6 +272,13 @@
        <property name="bottomMargin">
         <number>0</number>
        </property>
+       <item>
+        <widget class="QLineEdit" name="edtOutlineProjectFilter">
+         <property name="clearButtonEnabled">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
        <item>
         <widget class="QTreeWidget" name="treOutlineProject">
          <column>

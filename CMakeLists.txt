@@ -170,6 +170,8 @@ add_executable(${PROJECT_NAME}
         src/core/solRstPathIndex.hpp
         src/core/solRstSubstitutionIndex.cpp
         src/core/solRstSubstitutionIndex.hpp
+        src/core/solSphinxBuilders.cpp
+        src/core/solSphinxBuilders.hpp
         src/core/solSphinxProjectRegistry.cpp
         src/core/solSphinxProjectRegistry.hpp
         src/core/solVirtualProjectMgr.cpp
@@ -189,6 +191,12 @@ add_executable(${PROJECT_NAME}
         src/uis/dlgSettings.cpp
         src/uis/dlgSettings.hpp
         src/uis/dlgSettings.ui
+        src/uis/dlgSphinxBuild.cpp
+        src/uis/dlgSphinxBuild.hpp
+        src/uis/FileTreeFilterProxy.cpp
+        src/uis/FileTreeFilterProxy.hpp
+        src/uis/PanelActionIcons.cpp
+        src/uis/PanelActionIcons.hpp
         src/uis/TabSwitcherPopup.cpp
         src/uis/TabSwitcherPopup.hpp
         src/editor/ScintillaEditorSettings.cpp
@@ -360,6 +368,8 @@ if(MRST_BUILD_TESTS)
             tests/tst_WorkspaceSearch.cpp
             tests/tst_GlossaryParsing.cpp
             tests/tst_RstSubstitutions.cpp
+            tests/tst_FileTreeFilter.cpp
+            tests/tst_SphinxBuilders.cpp
             tests/tst_UpdateVersioning.cpp
             tests/tst_AuthenticodeVerifier.cpp
             tests/tst_ExternalChangeWatch.cpp
@@ -372,6 +382,8 @@ if(MRST_BUILD_TESTS)
             src/core/solRstPathCompletion.cpp
             src/core/solRstPathIndex.cpp
             src/core/solRstSubstitutionIndex.cpp
+            src/core/solSphinxBuilders.cpp
+            src/uis/FileTreeFilterProxy.cpp
             src/core/solUpdateManifest.cpp
             src/core/solFileKinds.cpp
             src/core/solGlossaryIndex.cpp
@@ -436,7 +448,10 @@ if(MRST_BUILD_TESTS)
             tests/ui/tst_ThemeColorKeys.cpp
             tests/ui/tst_ScintillaTextMetrics.cpp
             tests/ui/tst_ScintillaDocumentLoad.cpp
+            tests/ui/tst_PanelActionIcons.cpp
 
+            src/uis/PanelActionIcons.cpp
+            src/uis/PanelActionIcons.hpp
             src/editor/CompletionPopupWidget.cpp
             src/editor/CompletionPopupWidget.hpp
             src/editor/CompletionDetailPopup.cpp

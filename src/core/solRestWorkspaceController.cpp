@@ -15,8 +15,10 @@
 #include "solRestOutlineService.hpp"
 #include "solPythonEnvMgr.hpp"
 #include "solPythonEnvResolver.hpp"
+#include "solSphinxBuilders.hpp"
 #include "solSphinxPreviewController.hpp"
 #include "solSphinxProjectRegistry.hpp"
+#include "solUvTaskRunner.hpp"
 #include "solVirtualProjectMgr.hpp"
 #include "editor/QBaseEditor.hpp"
 #include "utils/solPhaseTrace.hpp"
@@ -1678,6 +1680,145 @@ void WorkspaceController::refreshSubstitutions( const bool force )
     substitutions_->refresh( activeProjectId_, toQString( project->sourcePath ),
                             QString::fromStdString( project->rootDoc ),
                             toQString( project->confPath ), force );
+}
+
+// ── 사용자가 요청한 1회성 빌드 ────────────────────────────
+
+bool WorkspaceController::isProjectBuildRunning() const
+{
+    return !projectBuildTask_.isNull() && projectBuildTask_->isRunning();
+}
+
+void WorkspaceController::cancelProjectBuild()
+{
+    if( !projectBuildTask_.isNull() )
+        projectBuildTask_->cancel();
+}
+
+bool WorkspaceController::buildProject( const QString& projectId, const QString& builder,
+                                        const QString& outputDirectory )
+{
+    if( shuttingDown_ )
+        return false;
+
+    if( isProjectBuildRunning() )
+    {
+        emit logMessage( tr( "빌드가 이미 돌고 있습니다. 끝난 뒤에 다시 요청하십시오." ) );
+        return false;
+    }
+    if( !isValidSphinxBuilderName( builder ) || outputDirectory.trimmed().isEmpty() )
+    {
+        emit logMessage( tr( "빌더 이름이나 출력 위치가 올바르지 않습니다." ) );
+        return false;
+    }
+
+    const SphinxProject* project = lookupProject( projectId );
+    if( project == nullptr )
+    {
+        emit logMessage( tr( "빌드할 프로젝트를 찾을 수 없습니다 [%1]." ).arg( projectId ) );
+        return false;
+    }
+    if( pythonEnv_ == nullptr || !pythonEnv_->isReady() )
+    {
+        emit logMessage( tr( "파이썬 런타임이 아직 준비되지 않았습니다. 잠시 뒤에 다시 요청하십시오." ) );
+        return false;
+    }
+
+    projectBuild_ = {};
+    projectBuild_.projectId = projectId;
+    projectBuild_.builder = builder.trimmed();
+    projectBuild_.outputDirectory = QDir::cleanPath( outputDirectory.trimmed() );
+    projectBuild_.sourceDir = toQString( project->sourcePath );
+    projectBuild_.confDir = toQString( project->rootPath );
+    // make 모드는 `<출력 위치>/<하위 폴더>` 아래에 쓴다. 그 이름은 목표 이름과
+    // 같지 않다 (latexpdf → latex/, info → texinfo/).
+    const QString makeSubdirectory = sphinxMakeModeSubdirectory( projectBuild_.builder );
+    projectBuild_.resultDirectory =
+        makeSubdirectory.isEmpty()
+            ? projectBuild_.outputDirectory
+            : QDir( projectBuild_.outputDirectory ).absoluteFilePath( makeSubdirectory );
+
+    if( !QDir().mkpath( projectBuild_.outputDirectory ) )
+    {
+        emit logMessage( tr( "출력 위치를 만들 수 없습니다: %1" ).arg( projectBuild_.outputDirectory ) );
+        return false;
+    }
+
+    // 프리뷰와 같은 규칙이다 — 프로젝트가 정한 인터프리터로 돌려야 그 venv 의
+    // 테마와 확장이 그대로 반영된다. 거기 Sphinx 가 없으면 내장 환경으로 한 번
+    // 물러선다 (SphinxPreviewController::finishBuild 와 같은 판단).
+    const ResolvedPythonEnv env = envResolver_->resolve( *project );
+    projectBuild_.fallbackPython = pythonEnv_->pythonExe();
+
+    emit projectBuildStarted( projectId, projectBuild_.builder );
+    startProjectBuild( env.pythonExe.isEmpty() ? pythonEnv_->pythonExe() : env.pythonExe );
+    return true;
+}
+
+void WorkspaceController::startProjectBuild( const QString& pythonExe )
+{
+    const bool makeMode = isSphinxMakeModeTarget( projectBuild_.builder );
+
+    UvTask::Request request;
+    request.program = pythonExe;
+    request.arguments = { QStringLiteral( "-X" ), QStringLiteral( "utf8" ),
+                         QStringLiteral( "-m" ), QStringLiteral( "sphinx" ),
+                         makeMode ? QStringLiteral( "-M" ) : QStringLiteral( "-b" ),
+                         projectBuild_.builder };
+    // srcdir 과 confdir 이 갈리는 배치(원본이 conf.py 옆이 아닌 경우)에서는
+    // 알려 주어야 한다. 기본값은 srcdir 이라 그대로 두면 conf.py 를 못 찾는다.
+    if( !projectBuild_.confDir.isEmpty() && projectBuild_.confDir != projectBuild_.sourceDir )
+        request.arguments << QStringLiteral( "-c" ) << projectBuild_.confDir;
+    request.arguments << projectBuild_.sourceDir << projectBuild_.outputDirectory;
+    request.workingDirectory = projectBuild_.confDir;
+    request.tag = QStringLiteral( "sphinx %1 %2" )
+                      .arg( makeMode ? QStringLiteral( "-M" ) : QStringLiteral( "-b" ),
+                           projectBuild_.builder );
+
+    emit logMessage( tr( "빌드 시작: %1 → %2" )
+                        .arg( projectBuild_.builder, projectBuild_.outputDirectory ) );
+
+    auto* task = new UvTask( request, this );
+    projectBuildTask_ = task;
+    connect( task, &UvTask::outputLine, this, &WorkspaceController::logMessage );
+    connect( task, &UvTask::failedToStart, this, [ this, task ]( const QString& message ) {
+        emit logMessage( message );
+        task->deleteLater();
+        finishProjectBuild( -1, true, false, QString{} );
+    } );
+    connect( task, &UvTask::finished, this, [ this, task ]( const int exitCode, const bool crashed ) {
+        const bool    cancelled = task->wasCancelled();
+        const QString output = task->collectedOutput();
+        task->deleteLater();
+        finishProjectBuild( exitCode, crashed, cancelled, output );
+    } );
+    task->start();
+}
+
+void WorkspaceController::finishProjectBuild( const int exitCode, const bool crashed,
+                                              const bool cancelled, const QString& output )
+{
+    // 프로젝트 venv 가 문서용이 아니라 애플리케이션용이면 Sphinx 가 없다.
+    // 종료 코드로는 구분되지 않아(그냥 1이다) 출력을 본다.
+    if( !cancelled && !projectBuild_.usedFallback && !projectBuild_.fallbackPython.isEmpty()
+        && output.contains( QLatin1String( "No module named sphinx" ) ) )
+    {
+        projectBuild_.usedFallback = true;
+        emit logMessage( tr( "프로젝트 환경에 Sphinx 가 없어 내장 환경으로 다시 시도합니다." ) );
+        startProjectBuild( projectBuild_.fallbackPython );
+        return;
+    }
+
+    const bool ok = !crashed && !cancelled && exitCode == 0;
+    if( cancelled )
+        emit logMessage( tr( "빌드를 취소했습니다." ) );
+    else if( ok )
+        emit logMessage( tr( "빌드 완료: %1" ).arg( projectBuild_.resultDirectory ) );
+    else
+        emit logMessage( tr( "빌드 실패 (종료 코드 %1). 로그를 확인하십시오." ).arg( exitCode ) );
+
+    emit projectBuildFinished( projectBuild_.projectId, projectBuild_.builder,
+                              projectBuild_.resultDirectory, ok, cancelled );
 }
 
 void WorkspaceController::requestCompletion()
