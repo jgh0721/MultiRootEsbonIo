@@ -39,6 +39,15 @@ struct WorkspaceSession
     [[nodiscard]] bool isEmpty() const { return workspaceRoot.isEmpty() && documents.isEmpty(); }
 };
 
+/// 마지막으로 보고 있던 문서의 경로. 없으면 빈 문자열.
+///
+/// **activeIndex 는 documents 의 번호이지 탭 위젯의 번호가 아니다.** 복원 쪽에서
+/// 그것을 곧바로 setCurrentIndex() 에 넣었다가 물렸다 — 핫 엑시트 스냅샷이 먼저
+/// 탭을 열어 두고 사라진 파일은 건너뛰므로 두 번호가 어긋나고, 밀린 자리가 이름
+/// 없는 버퍼면 경로가 없어 프리뷰가 아예 만들어지지 않는다. 그래서 "번호" 가
+/// 아니라 "경로" 를 돌려주는 이름 있는 함수로 못 박는다.
+[[nodiscard]] QString activeDocumentPath( const WorkspaceSession& session );
+
 /// `<root>/.multiroot/workspace.json`
 [[nodiscard]] QString sessionFilePath( const QString& workspaceRoot );
 

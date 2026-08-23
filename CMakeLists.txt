@@ -370,6 +370,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_RstSubstitutions.cpp
             tests/tst_FileTreeFilter.cpp
             tests/tst_SphinxBuilders.cpp
+            tests/tst_WorkspaceSessionActive.cpp
             tests/tst_UpdateVersioning.cpp
             tests/tst_AuthenticodeVerifier.cpp
             tests/tst_ExternalChangeWatch.cpp
