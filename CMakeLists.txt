@@ -168,6 +168,8 @@ add_executable(${PROJECT_NAME}
         src/core/solRstPathCompletion.hpp
         src/core/solRstPathIndex.cpp
         src/core/solRstPathIndex.hpp
+        src/core/solRstSubstitutionIndex.cpp
+        src/core/solRstSubstitutionIndex.hpp
         src/core/solSphinxProjectRegistry.cpp
         src/core/solSphinxProjectRegistry.hpp
         src/core/solVirtualProjectMgr.cpp
@@ -357,6 +359,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_RstOutline.cpp
             tests/tst_WorkspaceSearch.cpp
             tests/tst_GlossaryParsing.cpp
+            tests/tst_RstSubstitutions.cpp
             tests/tst_UpdateVersioning.cpp
             tests/tst_AuthenticodeVerifier.cpp
             tests/tst_ExternalChangeWatch.cpp
@@ -368,6 +371,7 @@ if(MRST_BUILD_TESTS)
             src/core/solRstOfflineCompletions.cpp
             src/core/solRstPathCompletion.cpp
             src/core/solRstPathIndex.cpp
+            src/core/solRstSubstitutionIndex.cpp
             src/core/solUpdateManifest.cpp
             src/core/solFileKinds.cpp
             src/core/solGlossaryIndex.cpp

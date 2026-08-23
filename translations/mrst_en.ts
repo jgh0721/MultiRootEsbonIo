@@ -824,6 +824,14 @@ Open it as text anyway?
         <translation type="unfinished">With BOM</translation>
     </message>
     <message>
+        <source>Sphinx 기본 치환</source>
+        <translation type="unfinished">Sphinx built-in substitution</translation>
+    </message>
+    <message>
+        <source>Sphinx 기본 치환 · %1</source>
+        <translation type="unfinished">Sphinx built-in substitution · %1</translation>
+    </message>
+    <message>
         <source>내장 환경</source>
         <translation type="unfinished">Bundled environment</translation>
     </message>
@@ -838,6 +846,10 @@ Open it as text anyway?
     <message>
         <source>원본 파일 경로가 비어 있습니다.</source>
         <translation type="unfinished">The original file path is empty.</translation>
+    </message>
+    <message>
+        <source>이 문서</source>
+        <translation type="unfinished">This document</translation>
     </message>
     <message>
         <source>일부 핫 엑시트 백업 파일을 삭제할 수 없습니다: %1</source>
@@ -2168,6 +2180,21 @@ For example: 42 or 42:5</translation>
     </message>
 </context>
 <context>
+    <name>RstSubstitutions</name>
+    <message>
+        <source>conf.py 의 release</source>
+        <translation type="unfinished">release in conf.py</translation>
+    </message>
+    <message>
+        <source>conf.py 의 version</source>
+        <translation type="unfinished">version in conf.py</translation>
+    </message>
+    <message>
+        <source>빌드한 날짜</source>
+        <translation type="unfinished">Build date</translation>
+    </message>
+</context>
+<context>
     <name>SphinxDiagnostics</name>
     <message>
         <source>Error</source>
@@ -3374,6 +3401,10 @@ Please download it from the release page.</translation>
     <message>
         <source>초기화됨</source>
         <translation type="unfinished">Initialized</translation>
+    </message>
+    <message>
+        <source>치환 %1개 [%2]</source>
+        <translation type="unfinished">%1 substitutions [%2]</translation>
     </message>
     <message>
         <source>클라이언트 생성됨</source>

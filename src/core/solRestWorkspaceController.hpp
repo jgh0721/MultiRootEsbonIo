@@ -32,6 +32,7 @@ class PythonEnvManager;
 class PythonEnvResolver;
 struct ResolvedPythonEnv;
 class SphinxPreviewController;
+class SubstitutionIndex;
 class VirtualProjectManager;
 struct PreviewBuildResult;
 struct PreviewBuildRequest;
@@ -239,6 +240,11 @@ private:
     /// force=false 면 같은 프로젝트에 대해 다시 돌지 않는다.
     void                                refreshGlossary( bool force );
 
+    // ── 치환 ──
+    /// 활성 프로젝트의 conf.py(rst_prolog/rst_epilog)와 문서의 `.. |name| ...` 를
+    /// 다시 훑는다. force=false 면 같은 프로젝트에 대해 다시 돌지 않는다.
+    void                                refreshSubstitutions( bool force );
+
     // ── 스크롤 동기화 ──
     // 에디터 -> 프리뷰, 프리뷰 -> 에디터 양방향. 어느 쪽이든 "기준 비율 위치에
     // 있는 줄" 을 상대편의 같은 비율 위치로 보낸다.
@@ -262,6 +268,8 @@ private:
     LspServerPool*                      lspPool_ = nullptr;
     CompletionCoordinator*              completions_ = nullptr;
     GlossaryIndex*                      glossary_ = nullptr;
+    /// 활성 프로젝트의 치환 목록. `|` 자동완성이 여기서 나온다.
+    SubstitutionIndex*                  substitutions_ = nullptr;
     /// 워크스페이스 전역 경로 인덱스. 경로 완성이 처음 필요할 때 채워진다.
     PathIndex*                          pathIndex_ = nullptr;
     QString                             lspState_;

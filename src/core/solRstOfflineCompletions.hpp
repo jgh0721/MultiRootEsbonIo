@@ -15,6 +15,7 @@ enum class ContextKind
     DirectiveOption,///< directive 블록 안의 ":옵션:"
     RoleTarget,     ///< :ref:`...` 안 — 참조 대상
     Path,           ///< image/include 등의 경로 인자
+    Substitution,   ///< `|` 뒤 — 치환 참조(`|name|`) 이름
 };
 
 /// Path 컨텍스트에서 경로가 문법의 어느 자리에 있는가.
@@ -55,6 +56,13 @@ struct Context
 
     /// ".. image::" 처럼 인자 앞 공백이 아직 없다. 삽입 문자열 앞에 공백을 붙인다.
     bool                                argumentNeedsSpace = false;
+
+    /// Directive 컨텍스트가 **치환 정의**의 자리인가 (".. |logo| ").
+    ///
+    /// docutils 는 치환 정의 안에서 아무 directive 나 받지 않는다. 인라인으로
+    /// 펼칠 수 있는 것만 된다 — replace / image / unicode / date / raw. 전체 표를
+    /// 그대로 띄우면 목록 대부분이 그 자리에서 오류가 되는 후보다.
+    bool                                substitutionDefinition = false;
 };
 
 /// 부분 일치(subsequence) 검사와 점수 매기기.
@@ -75,6 +83,9 @@ struct Context
 /// 바로 알아볼 수 있게 하기 위해서다. 팝업 위젯과 후보 생성기 양쪽이 쓰므로
 /// 둘 다 이미 아는 이 헤더에 둔다 (core 가 editor 를 include 하면 안 된다).
 inline constexpr int kKindImageFile = 1001;
+
+/// 치환 참조 후보. 목록에서 `|` 배지로 바로 알아볼 수 있게 따로 나눈다.
+inline constexpr int kKindSubstitution = 1002;
 
 struct Item
 {
@@ -100,6 +111,12 @@ struct Item
 /// 표에 들어 있는 directive / role 이름 (테스트와 메타데이터 초기화용).
 [[nodiscard]] QStringList knownDirectives();
 [[nodiscard]] QStringList knownRoles();
+
+/// 치환 정의(".. |name| ...") 안에 쓸 수 있는 directive 이름.
+///
+/// docutils 는 이 자리에 **인라인으로 펼쳐지는** directive 만 허용한다
+/// (docutils/parsers/rst/states.py 의 substitution_def 처리).
+[[nodiscard]] QStringList substitutionDirectives();
 
 // ── LSP 응답 다듬기 ────────────────────────────────────────
 // Esbonio 가 돌려주는 것을 그대로 넣으면 문서가 깨진다. 아래 셋은 순수 함수라

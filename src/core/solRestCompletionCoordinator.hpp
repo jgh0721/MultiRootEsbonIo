@@ -6,6 +6,7 @@
 #include "solEsbonioLspClient.hpp"
 #include "solRstOfflineCompletions.hpp"
 #include "solRstPathCompletion.hpp"
+#include "solRstSubstitutionIndex.hpp"
 
 #include <QObject>
 #include <QPointer>
@@ -58,6 +59,12 @@ public:
     void                                setGlossaryIndex( GlossaryIndex* glossary );
     /// 용어집 수집이 끝났다. 지금 `:term:` 후보를 띄우고 있으면 다시 채운다.
     void                                notifyGlossaryReady( const QString& projectId );
+
+    /// 치환 인덱스를 주입한다. 소유권 없음.
+    /// `|name|` 후보와 상세 패널의 정의 본문이 여기서 온다.
+    void                                setSubstitutionIndex( SubstitutionIndex* substitutions );
+    /// 치환 수집이 끝났다. 지금 `|` 후보를 띄우고 있으면 다시 채운다.
+    void                                notifySubstitutionsReady( const QString& projectId );
 
     /// 본문 호버로 뜨는 상세 팝업. 자동완성이 떠 있으면 무시한다.
     void                                showHoverDetail( const QString& role, const QString& target,
@@ -137,6 +144,9 @@ private:
     /// insertText 를 키로 남겨 둔다.
     [[nodiscard]] QList< CompletionDisplayItem >
                                         pathCandidatesFor( const rstcomplete::Context& context );
+    /// 치환 후보를 모은다. **지금 편집 중인 버퍼를 먼저 읽는다** — 방금 정의한
+    /// `|x|` 는 아직 디스크에 없고, 그것이 가장 쓰고 싶은 후보다.
+    [[nodiscard]] QList< CompletionDisplayItem > substitutionCandidates();
     /// 경로 컨텍스트에서 글자가 하나 더 들어왔을 때 후보를 다시 만든다.
     void                                recollectPathItems();
     /// 후보 생성기에 넘길 바깥 사정(문서 디렉터리·소스 루트·워크스페이스 루트).
@@ -158,6 +168,7 @@ private:
     QPointer< CompletionDetailPopup >   detail_;
     GlossaryIndex*                      glossary_ = nullptr;
     PathIndex*                          pathIndex_ = nullptr;
+    SubstitutionIndex*                  substitutions_ = nullptr;
     QTimer*                             debounce_ = nullptr;
     QPointer< QTextView >               activeView_;
     QString                             activeProjectId_;
@@ -168,6 +179,9 @@ private:
     /// 지금 팝업에 올라간 경로 후보. insertText -> 후보.
     /// 상세 패널이 절대 경로와 종류를 여기서 가져간다.
     QHash< QString, rstpath::Candidate > pathCandidates_;
+    /// 지금 팝업에 올라간 치환 후보. insertText -> 정의.
+    /// 상세 패널이 정의 본문과 출처를 여기서 가져간다.
+    QHash< QString, SubstitutionEntry > substitutionCandidates_;
     /// Esc 로 닫은 경로 컨텍스트. null 이면 닫은 적이 없다.
     QString                             dismissedPathPrefix_;
     int                                 dismissedPathLine_ = 0;

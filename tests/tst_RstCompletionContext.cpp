@@ -60,6 +60,18 @@ private slots:
     void detectsPathWithSpaces();
     void detectsPathRightAfterDoubleColon();
     void detectsSubstitutionImagePath();
+
+    // ── 치환 참조 |name| ──
+    void detectsSubstitutionReference_data();
+    void detectsSubstitutionReference();
+    void rejectsSubstitutionStart_data();
+    void rejectsSubstitutionStart();
+    void skipsGridTableRow();
+    void skipsLineBlock();
+    void allowsSubstitutionAtStartOfParagraph();
+    void noContextWhileNamingSubstitution();
+    void marksSubstitutionDefinitionDirective();
+    void substitutionDefinitionNarrowsDirectiveList();
 };
 
 void TestRstCompletionContext::detectsDirective_data()
@@ -480,6 +492,126 @@ void TestRstCompletionContext::detectsSubstitutionImagePath()
     QCOMPARE( int( context.kind ), int( ContextKind::Path ) );
     QCOMPARE( context.directiveName, QStringLiteral( "image" ) );
     QCOMPARE( context.filterPrefix, QStringLiteral( "l" ) );
+}
+
+// ── 치환 참조 |name| ───────────────────────────────────────
+
+void TestRstCompletionContext::detectsSubstitutionReference_data()
+{
+    QTest::addColumn< QString >( "line" );
+    QTest::addColumn< QString >( "prefix" );
+
+    QTest::newRow( "문장 안" ) << "see |lo" << "lo";
+    QTest::newRow( "방금 연 것" ) << "see |" << "";
+    QTest::newRow( "여는 괄호 뒤" ) << "text (|lo" << "lo";
+    QTest::newRow( "앞 참조를 닫은 뒤" ) << "|a| and |b" << "b";
+    QTest::newRow( "하이픈 뒤" ) << "pre-|lo" << "lo";
+}
+
+void TestRstCompletionContext::detectsSubstitutionReference()
+{
+    QFETCH( QString, line );
+    QFETCH( QString, prefix );
+
+    const Context context = detectContext( line, static_cast< int >( line.length() ) + 1 );
+    QCOMPARE( int( context.kind ), int( ContextKind::Substitution ) );
+    QCOMPARE( context.prefix, prefix );
+    QCOMPARE( context.filterPrefix, prefix );
+    QCOMPARE( context.replaceLength, static_cast< int >( prefix.length() ) );
+}
+
+void TestRstCompletionContext::rejectsSubstitutionStart_data()
+{
+    QTest::addColumn< QString >( "line" );
+
+    // docutils 의 시작 문자열 규칙. 이 규칙 하나가 "손으로 닫은 |foo|" 에서
+    // 목록이 다시 뜨는 것을 막는다 — 닫는 `|` 앞은 공백이 아니기 때문이다.
+    QTest::newRow( "참조를 닫았다" ) << "see |logo|";
+    QTest::newRow( "낱말 안" ) << "abc|d";
+    QTest::newRow( "이스케이프" ) << "a \\|b";
+    QTest::newRow( "빈 참조" ) << "see ||";
+    QTest::newRow( "바로 뒤가 공백" ) << "see | ";
+}
+
+void TestRstCompletionContext::rejectsSubstitutionStart()
+{
+    QFETCH( QString, line );
+
+    const Context context = detectContext( line, static_cast< int >( line.length() ) + 1 );
+    QVERIFY( int( context.kind ) != int( ContextKind::Substitution ) );
+}
+
+void TestRstCompletionContext::skipsGridTableRow()
+{
+    // 격자 표는 칸마다 `|` 를 친다. 거기서 목록이 뜨면 표 하나를 그리는 동안
+    // 팝업이 수십 번 튀어나온다.
+    const QStringList previous{ QStringLiteral( "+-------+-------+" ) };
+    QCOMPARE( int( detectContext( QStringLiteral( "|" ), 2, previous ).kind ),
+             int( ContextKind::None ) );
+
+    // 첫 칸을 채운 뒤 다음 칸을 여는 `|` 도 마찬가지다.
+    QCOMPARE( int( detectContext( QStringLiteral( "| 이름 |" ), 7, previous ).kind ),
+             int( ContextKind::None ) );
+}
+
+void TestRstCompletionContext::skipsLineBlock()
+{
+    const QStringList previous{ QStringLiteral( "| 첫 줄입니다" ) };
+    QCOMPARE( int( detectContext( QStringLiteral( "|" ), 2, previous ).kind ),
+             int( ContextKind::None ) );
+
+    // 줄머리 `|` 뒤가 공백이면 그 줄은 줄 블록이다 (앞 줄을 볼 것도 없다).
+    QCOMPARE( int( detectContext( QStringLiteral( "| 둘째 |" ), 7 ).kind ),
+             int( ContextKind::None ) );
+}
+
+void TestRstCompletionContext::allowsSubstitutionAtStartOfParagraph()
+{
+    // 표도 줄 블록도 아니면 줄머리 `|` 는 평범한 치환 참조다.
+    const QStringList previous{ QStringLiteral( "앞 문단입니다." ) };
+    const Context     context = detectContext( QStringLiteral( "|lo" ), 4, previous );
+    QCOMPARE( int( context.kind ), int( ContextKind::Substitution ) );
+    QCOMPARE( context.prefix, QStringLiteral( "lo" ) );
+}
+
+void TestRstCompletionContext::noContextWhileNamingSubstitution()
+{
+    // ".. |na" 는 **새 이름을 짓는 중**이다. 있는 이름을 들이밀 자리가 아니다.
+    QCOMPARE( int( detectContext( QStringLiteral( ".. |na" ), 7 ).kind ), int( ContextKind::None ) );
+    QCOMPARE( int( detectContext( QStringLiteral( ".. |" ), 5 ).kind ), int( ContextKind::None ) );
+}
+
+void TestRstCompletionContext::marksSubstitutionDefinitionDirective()
+{
+    const Context definition = detectContext( QStringLiteral( ".. |logo| im" ), 13 );
+    QCOMPARE( int( definition.kind ), int( ContextKind::Directive ) );
+    QCOMPARE( definition.prefix, QStringLiteral( "im" ) );
+    QVERIFY( definition.substitutionDefinition );
+
+    const Context plain = detectContext( QStringLiteral( ".. im" ), 6 );
+    QCOMPARE( int( plain.kind ), int( ContextKind::Directive ) );
+    QCOMPARE( plain.prefix, QStringLiteral( "im" ) );
+    QVERIFY( !plain.substitutionDefinition );
+}
+
+void TestRstCompletionContext::substitutionDefinitionNarrowsDirectiveList()
+{
+    Context context;
+    context.kind = ContextKind::Directive;
+    context.substitutionDefinition = true;
+
+    QStringList labels;
+    for( const Item& item : candidatesFor( context ) )
+        labels << item.label;
+
+    // docutils 가 치환 정의 안에서 받는 것만 남아야 한다.
+    const QStringList allowed = substitutionDirectives();
+    QCOMPARE( QSet< QString >( labels.cbegin(), labels.cend() ),
+             QSet< QString >( allowed.cbegin(), allowed.cend() ) );
+
+    // 정의 자리가 아니면 표 전체가 그대로 나온다.
+    context.substitutionDefinition = false;
+    QVERIFY( candidatesFor( context ).size() > labels.size() );
 }
 
 MRST_REGISTER_TEST( TestRstCompletionContext );
