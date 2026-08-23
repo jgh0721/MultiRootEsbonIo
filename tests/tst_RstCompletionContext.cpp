@@ -5,7 +5,37 @@
 #include <QSet>
 #include <QTest>
 
+#include <optional>
+
 using namespace mrst::rstcomplete;
+
+namespace {
+
+int leadingSpaces( const QString& line )
+{
+    int index = 0;
+    while( index < line.length() && line.at( index ).isSpace() )
+        ++index;
+    return index;
+}
+
+/// 호출부가 하는 일을 그대로 흉내 낸다 — 블록 경계까지 거슬러 올라가 창을 만들고
+/// 그 창으로 문맥을 판정한다.
+Context contextInDocument( const QStringList& document, const QString& caretLine,
+                           const int absoluteLimit = 2000 )
+{
+    const QStringList previous = collectPreviousLines(
+        static_cast< int >( document.size() ), leadingSpaces( caretLine ),
+        [ &document ]( const int line ) -> std::optional< QString > {
+            if( line < 0 || line >= document.size() )
+                return std::nullopt;
+            return document.at( line );
+        },
+        absoluteLimit );
+    return detectContext( caretLine, static_cast< int >( caretLine.length() ) + 1, previous );
+}
+
+}   // namespace
 
 /// 자동완성에서 실제로 틀리기 쉬운 건 후보 목록이 아니라 "지금 무엇을 완성해야
 /// 하는가" 판정이다. 잘못 판정하면 엉뚱한 목록이 뜨거나 아예 안 뜬다.
@@ -16,6 +46,17 @@ class TestRstCompletionContext : public QObject
 private slots:
     void detectsDirective_data();
     void detectsDirective();
+    /// directive 머리와 캐럿 사이가 아무리 멀어도 소유 directive 를 찾아야 한다.
+    ///
+    /// 예전에는 앞 12줄만 봤다. reST 문법상 옵션은 머리에 붙으므로 대개 충분했지만
+    /// toctree 본문은 그렇지 않다 — 실사용 문서(iMonAIT index.rst, Honzuki 4건)에서
+    /// 13번째 항목부터 경로 자동완성이 조용히 멈췄다.
+    void longDirectiveBodyKeepsOwner_data();
+    void longDirectiveBodyKeepsOwner();
+    /// 블록 경계를 넘어가면 안 된다. 위쪽 문단은 소유 directive 가 아니다.
+    void blockBoundaryStopsTheWalk();
+    /// 절대 상한에 걸리면 예전과 같이 판정을 포기한다.
+    void absoluteLimitGivesUp();
     void detectsRole();
     void detectsDirectiveOption();
     void directiveOptionNeedsEnclosingDirective();
@@ -612,6 +653,61 @@ void TestRstCompletionContext::substitutionDefinitionNarrowsDirectiveList()
     // 정의 자리가 아니면 표 전체가 그대로 나온다.
     context.substitutionDefinition = false;
     QVERIFY( candidatesFor( context ).size() > labels.size() );
+}
+
+void TestRstCompletionContext::longDirectiveBodyKeepsOwner_data()
+{
+    QTest::addColumn< int >( "gap" );
+    QTest::newRow( "붙어 있음" ) << 0;
+    QTest::newRow( "11줄" ) << 11;
+    QTest::newRow( "12줄 (예전 경계)" ) << 12;
+    QTest::newRow( "30줄" ) << 30;
+    QTest::newRow( "200줄" ) << 200;
+}
+
+void TestRstCompletionContext::longDirectiveBodyKeepsOwner()
+{
+    QFETCH( int, gap );
+
+    QStringList document;
+    document << QStringLiteral( ".. toctree::" );
+    document << QStringLiteral( "   :maxdepth: 2" );
+    document << QString{};
+    for( int i = 0; i < gap; ++i )
+        document << QStringLiteral( "   앞선-항목-%1" ).arg( i );
+
+    const Context context = contextInDocument( document, QStringLiteral( "   int" ) );
+    QCOMPARE( context.kind, ContextKind::Path );
+    QCOMPARE( context.directiveName, QStringLiteral( "toctree" ) );
+    QCOMPARE( context.prefix, QStringLiteral( "int" ) );
+}
+
+void TestRstCompletionContext::blockBoundaryStopsTheWalk()
+{
+    // 위쪽에 directive 가 있어도 그 사이에 더 얕은 문단이 있으면 그 블록이 아니다.
+    QStringList document;
+    document << QStringLiteral( ".. toctree::" );
+    document << QString{};
+    document << QStringLiteral( "   항목 하나" );
+    document << QString{};
+    document << QStringLiteral( "평범한 문단이다" );
+    document << QString{};
+
+    const Context context = contextInDocument( document, QStringLiteral( "   int" ) );
+    QVERIFY2( context.kind != ContextKind::Path,
+              "블록 밖의 directive 를 소유자로 잡으면 안 된다" );
+}
+
+void TestRstCompletionContext::absoluteLimitGivesUp()
+{
+    QStringList document;
+    document << QStringLiteral( ".. toctree::" );
+    for( int i = 0; i < 50; ++i )
+        document << QStringLiteral( "   항목-%1" ).arg( i );
+
+    // 상한을 10 으로 낮추면 머리에 닿기 전에 멈춘다 — 예전 12줄 창과 같은 상황이다.
+    const Context context = contextInDocument( document, QStringLiteral( "   int" ), 10 );
+    QVERIFY( context.kind != ContextKind::Path );
 }
 
 MRST_REGISTER_TEST( TestRstCompletionContext );

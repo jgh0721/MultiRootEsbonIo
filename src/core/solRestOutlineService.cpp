@@ -4,6 +4,7 @@
 #include "core/solFileKinds.hpp"
 #include "utils/solBackgroundWork.hpp"
 #include "editor/MarkdownStructure.hpp"
+#include "editor/RstStructure.hpp"
 
 #include <QDir>
 #include <QDirIterator>
@@ -15,84 +16,44 @@
 namespace mrst {
 namespace {
 
-/// docutils 가 섹션 밑줄로 인정하는 문자.
-const QString& adornmentChars()
-{
-    static const QString characters = QStringLiteral( R"(=-`:'"~^_*+#<>)" );
-    return characters;
-}
-
 /// LSP SymbolKind::Number. 파이썬 원본과 맞춘다 (섹션에 딱 맞는 kind 가 없다).
 constexpr int kSectionKind = 12;
-
-/// 전부 같은 장식 문자로 이루어진 두 글자 이상의 줄인가.
-QChar adornmentChar( const QStringView line )
-{
-    if( line.length() < 2 )
-        return {};
-
-    const QChar first = line.at( 0 );
-    if( !adornmentChars().contains( first ) )
-        return {};
-
-    for( const QChar character : line )
-    {
-        if( character != first )
-            return {};
-    }
-    return first;
-}
 
 struct Heading
 {
     QString                             name;
-    int                                 line = 1;   ///< 1-based, 제목 줄
+    int                                 line = 1;   ///< 1-based, 제목 글자 줄
     QString                             style;      ///< "over:=" / "under:-"
 };
 
+/// 제목 판정은 rst::titleScanAt 이 한다 — 렉서·접기와 같은 규칙이다.
+///
+/// 예전에는 여기에 판정이 한 벌 더 있었고 렉서와 다섯 축(문자 집합·동질성·최소
+/// 길이·들여쓰기·길이 비교 단위)에서 갈라져 있었다. 그래서 개요에는 나오는데
+/// 화면에는 색도 접기 마커도 없는 섹션이 실제로 생겼다.
 QVector< Heading > sectionHeadings( const QString& text )
 {
-    const QStringList lines = text.split( QLatin1Char( '\n' ) );
+    const QByteArray     utf8 = text.toUtf8();
+    const rst::LineIndex lines( std::string_view( utf8.constData(),
+                                                  static_cast< std::size_t >( utf8.size() ) ) );
+
     QVector< Heading > headings;
-
-    for( qsizetype index = 0; index < lines.size(); )
+    for( std::size_t index = 0; index < lines.size(); )
     {
-        const QString stripped = lines.at( index ).trimmed();
-
-        // 윗줄+아랫줄 형식:
-        //   =====
-        //   제목
-        //   =====
-        if( const QChar over = adornmentChar( stripped ); !over.isNull() && index + 2 < lines.size() )
+        const rst::TitleScan scan = rst::titleScanAt( lines, index );
+        if( scan.title )
         {
-            const QString title = lines.at( index + 1 ).trimmed();
-            const QString under = lines.at( index + 2 ).trimmed();
-            if( !title.isEmpty() && adornmentChar( under ) == over && under.length() >= title.length() )
-            {
-                headings.push_back( { title, static_cast< int >( index + 2 ),
-                                     QStringLiteral( "over:%1" ).arg( over ) } );
-                index += 3;
-                continue;
-            }
+            headings.push_back(
+                { QString::fromUtf8( scan.title->text.data(),
+                                     static_cast< qsizetype >( scan.title->text.size() ) ),
+                  static_cast< int >( scan.title->textLine ) + 1,
+                  QStringLiteral( "%1:%2" )
+                      .arg( scan.title->overlined ? QStringLiteral( "over" )
+                                                  : QStringLiteral( "under" ) )
+                      .arg( QLatin1Char( scan.title->adornChar ) ) } );
         }
-
-        // 아랫줄만 있는 형식:
-        //   제목
-        //   =====
-        if( !stripped.isEmpty() && adornmentChar( stripped ).isNull() && index + 1 < lines.size() )
-        {
-            const QString under = lines.at( index + 1 ).trimmed();
-            const QChar character = adornmentChar( under );
-            if( !character.isNull() && under.length() >= stripped.length() )
-            {
-                headings.push_back( { stripped, static_cast< int >( index + 1 ),
-                                     QStringLiteral( "under:%1" ).arg( character ) } );
-                index += 2;
-                continue;
-            }
-        }
-
-        ++index;
+        // 제목이 아니어도 docutils 가 통째로 소비하는 구간이면 그만큼 건너뛴다.
+        index += ( scan.span > 0 ) ? scan.span : 1;
     }
     return headings;
 }

@@ -4,6 +4,9 @@
 #include <QStringList>
 #include <QVector>
 
+#include <functional>
+#include <optional>
+
 namespace mrst::rstcomplete {
 
 /// 커서 위치에서 무엇을 완성해야 하는가.
@@ -99,6 +102,23 @@ struct Item
 ///
 /// lineText 는 현재 줄 전체, column 은 1-based 캐럿 열.
 /// previousLines 는 directive 블록 안인지 판단하는 데 쓴다 (역순: 바로 앞 줄이 [0]).
+/// 캐럿을 감싸는 블록의 시작까지 거슬러 올라가며 앞줄을 모은다.
+///
+/// 예전에는 호출부가 무조건 12줄로 잘랐다. reST 문법상 옵션은 directive 머리에
+/// 붙으므로 대개 충분했지만 `toctree` 본문은 그렇지 않다 — 항목이 12개를 넘으면
+/// 머리가 창 밖으로 밀려나 경로 자동완성이 조용히 멈췄다. 실사용 문서에서
+/// 발현하던 결함이다.
+///
+/// directive 본문은 반드시 연속 들여쓰기이므로, 캐럿보다 얕게 들여쓴 비어 있지
+/// 않은 줄을 만나면 거기가 블록 경계다. **그 줄까지** 담아 돌려준다 — 그것이
+/// directive 인지는 enclosingDirective 가 본다.
+///
+/// lineAt 은 0-based 줄 번호로 본문을 돌려주고, 범위를 벗어나면 nullopt 를 낸다.
+/// 문서 전체가 한 블록인 병리 사례를 위해 절대 상한을 둔다.
+[[nodiscard]] QStringList collectPreviousLines(
+    int caretLine, int caretIndent,
+    const std::function< std::optional< QString >( int ) >& lineAt, int absoluteLimit = 2000 );
+
 [[nodiscard]] Context detectContext( const QString& lineText, int column,
                                      const QStringList& previousLines = {} );
 

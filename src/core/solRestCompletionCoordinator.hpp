@@ -159,7 +159,7 @@ private:
     [[nodiscard]] bool                  shouldRearmForPath();
 
     [[nodiscard]] rstcomplete::Context  contextAtCaret() const;
-    [[nodiscard]] QStringList           previousLinesAtCaret( int count ) const;
+    [[nodiscard]] QStringList           previousLinesAtCaret() const;
     [[nodiscard]] QString               editorPath() const;
 
     /// 편집기 창의 자식이 되므로 창이 먼저 죽을 수 있다.

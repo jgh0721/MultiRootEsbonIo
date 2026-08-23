@@ -11,6 +11,7 @@
 #include "TextLexerRegistry.hpp"
 #include "TextSaveDialog.hpp"
 #include "ScintillaQtDirectBackend.hpp"
+#include "RstStructure.hpp"
 
 #include "utils/FileLoadHelper.hpp"
 #include "uniqueLibs/solEncodingDetector.hpp"
@@ -1422,7 +1423,7 @@ void QTextView::feedRstCompletionVocabulary( const QStringList& directives, cons
     }
 
     if( changed )
-        m_editor->restyleDocument();
+        m_editor->invalidateStyling();
 }
 
 QString QTextView::diagnosticTooltipAt( int position ) const
@@ -1442,32 +1443,39 @@ void QTextView::handleDwellStart( int position, const QPoint& viewportPos )
         return;
     }
 
-    // 롤 형태는 렉서(RstContainerLexer)가 쓰는 것과 같다.
-    // 도메인 표기(:py:func:`x`)까지 한 번에 잡는다.
-    static const QRegularExpression roleRe(
-        QStringLiteral( R"(:([a-zA-Z0-9_.-]+(?::[a-zA-Z0-9_.-]+)?):`([^`]*)`)" ) );
+    // 롤 판정은 공용 스캐너가 한다 — 예전에는 렉서의 정규식이 여기 축자 복제되어
+    // 있었다. 덤으로 바이트↔문자 인덱스 환산이 사라진다. Scintilla 위치가 UTF-8
+    // 바이트 오프셋이고 스캐너도 바이트로 답하기 때문이다.
+    const int        line = m_editor->lineFromPosition( position );
+    const int        lineStart = m_editor->positionFromLine( line );
+    const QByteArray lineUtf8 = m_editor->lineText( line ).toUtf8();
+    const int        byteOffset = qMax( 0, position - lineStart );
 
-    const int line = m_editor->lineFromPosition( position );
-    const int lineStart = m_editor->positionFromLine( line );
-    const QString text = m_editor->lineText( line );
+    std::vector< mrst::rst::InlineToken > tokens;
+    mrst::rst::scanInline(
+        std::string_view( lineUtf8.constData(), static_cast< std::size_t >( lineUtf8.size() ) ),
+        tokens );
 
-    // Scintilla 위치는 UTF-8 바이트 오프셋이다. 한글이 섞인 줄에서 문자 인덱스와
-    // 어긋나므로, 줄 앞부분의 바이트 길이로 문자 인덱스를 되돌린다.
-    const int byteOffset = qMax( 0, position - lineStart );
-    const QByteArray lineUtf8 = text.toUtf8();
-    const int charIndex = QString::fromUtf8( lineUtf8.left( qMin( byteOffset, lineUtf8.size() ) ) ).size();
-
-    QRegularExpressionMatchIterator it = roleRe.globalMatch( text );
-    while( it.hasNext() )
+    for( const mrst::rst::InlineToken& token : tokens )
     {
-        const QRegularExpressionMatch match = it.next();
-        if( charIndex < match.capturedStart() || charIndex >= match.capturedEnd() )
+        if( token.kind != mrst::rst::InlineKind::Role )
             continue;
+        if( byteOffset < static_cast< int >( token.start )
+            || byteOffset >= static_cast< int >( token.end ) )
+            continue;
+
+        // `:name:` + 백틱 + 대상 + 백틱. 대상은 이름 뒤 두 바이트부터 끝 하나 앞까지다.
+        const auto nameLength = static_cast< qsizetype >( token.nameEnd - token.nameStart );
+        const auto targetStart = static_cast< qsizetype >( token.nameEnd ) + 2;
+        const auto targetLength = static_cast< qsizetype >( token.end ) - 1 - targetStart;
 
         const QPoint globalPos = m_editor->widget() != nullptr
                                      ? m_editor->widget()->mapToGlobal( viewportPos )
                                      : mapToGlobal( viewportPos );
-        emit sigRoleHovered( match.captured( 1 ), match.captured( 2 ), globalPos );
+        emit sigRoleHovered(
+            QString::fromUtf8( lineUtf8.constData() + token.nameStart, nameLength ),
+            QString::fromUtf8( lineUtf8.constData() + targetStart, qMax( qsizetype( 0 ), targetLength ) ),
+            globalPos );
         return;
     }
 
@@ -2093,6 +2101,15 @@ bool QTextView::ensureEditorBackend()
 
         emit sigTextEdited();
     } );
+    // 편집 구간 중계. 파일을 채우는 중에는 사용자의 편집이 아니므로 보내지 않는다 —
+    // 그 경우는 didOpen 이 전문을 다시 실어 나른다.
+    connect( m_editor, &ScintillaQtDirectBackend::documentEdited, this,
+             [ this ]( int startLine, int startColumn, int oldEndLine, int oldEndColumn,
+                       const QByteArray& newText ) {
+                 if( m_applyingFileContent )
+                     return;
+                 emit sigDocumentEdited( startLine, startColumn, oldEndLine, oldEndColumn, newText );
+             } );
     connect( m_editor, &ScintillaQtDirectBackend::selectionChanged, this, [this] {
         updateMetrics();
         emit statusChanged();

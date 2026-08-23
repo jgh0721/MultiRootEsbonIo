@@ -2,6 +2,7 @@
 #include "solRstOfflineCompletions.hpp"
 
 #include "core/solRstPathCompletion.hpp"
+#include "editor/RstStructure.hpp"
 
 #include <QCoreApplication>
 #include <QObject>
@@ -157,7 +158,11 @@ QStringList optionsFor( const QString& directiveName )
     return {};
 }
 
-/// 줄 앞쪽 공백 문자 수.
+/// 줄 앞쪽 공백 **문자 수**.
+///
+/// rst::indentWidth 와 달리 탭을 8칸으로 펴지 않는다. 아래 캐스케이드가
+/// `match.captured(1).length()` 로 같은 단위를 쓰기 때문이며, 한쪽만 바꾸면
+/// 탭이 섞인 문서에서 조용히 어긋난다.
 int leadingIndent( const QString& line )
 {
     int index = 0;
@@ -173,9 +178,6 @@ int leadingIndent( const QString& line )
 /// 아니면 블록 밖이다.
 QString enclosingDirective( const QStringList& previousLines, const int currentIndent )
 {
-    static const QRegularExpression directiveRe(
-        QStringLiteral( R"(^(\s*)\.\.\s+(?:\|[^|]+\|\s+)?([a-zA-Z0-9_.-]+(?::[a-zA-Z0-9_.-]+)?)::)" ) );
-
     for( const QString& line : previousLines )
     {
         if( line.trimmed().isEmpty() )
@@ -186,8 +188,16 @@ QString enclosingDirective( const QStringList& previousLines, const int currentI
             continue;   // 같은 블록 안의 다른 줄. 계속 위로 본다.
 
         // 더 얕게 들여쓴 첫 줄. 이게 directive 여야 우리가 그 블록 안이다.
-        const QRegularExpressionMatch match = directiveRe.match( line );
-        return match.hasMatch() ? match.captured( 2 ) : QString{};
+        //
+        // 판정은 공용 파서에 맡긴다. 예전에는 여기에 정규식이 한 벌 더 있었고
+        // 다섯 벌 중 이것만 이름의 `+` 를 막고 있었다.
+        const QByteArray utf8 = line.toUtf8();
+        const std::optional< rst::DirectiveParts > parts = rst::parseDirective(
+            std::string_view( utf8.constData(), static_cast< std::size_t >( utf8.size() ) ) );
+        if( !parts )
+            return {};
+        return QString::fromUtf8( utf8.constData() + parts->nameStart,
+                                  static_cast< qsizetype >( parts->nameEnd - parts->nameStart ) );
     }
     return {};
 }
@@ -376,6 +386,25 @@ QStringList substitutionDirectives()
     // 것이 정확히 `.. |br| raw:: html` 이다.
     return { QStringLiteral( "replace" ), QStringLiteral( "image" ),
             QStringLiteral( "unicode" ), QStringLiteral( "date" ), QStringLiteral( "raw" ) };
+}
+
+QStringList collectPreviousLines( const int caretLine, const int caretIndent,
+                                  const std::function< std::optional< QString >( int ) >& lineAt,
+                                  const int absoluteLimit )
+{
+    QStringList lines;
+    for( int line = caretLine - 1; line >= 0 && lines.size() < absoluteLimit; --line )
+    {
+        const std::optional< QString > text = lineAt( line );
+        if( !text )
+            break;
+        lines << *text;
+        if( text->trimmed().isEmpty() )
+            continue;
+        if( leadingIndent( *text ) < caretIndent )
+            break;   // 블록 경계
+    }
+    return lines;   // 역순: 바로 앞 줄이 [0]
 }
 
 Context detectContext( const QString& lineText, const int column, const QStringList& previousLines )

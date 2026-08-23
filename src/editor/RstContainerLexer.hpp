@@ -2,7 +2,9 @@
 
 #include <cstddef>
 #include <set>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mrst::rst {
@@ -21,6 +23,9 @@ enum Style : int
     STYLE_ROLE_VALID = 7,
     STYLE_ROLE_INVALID = 8,
     STYLE_ROLE_UNKNOWN = 9,
+    /// 리터럴 블록(`::` 뒤의 들여쓴 블록). **아직 산출하지 않는다** — 줄 사이 상태를
+    /// 들고 있어야 하는데 렉서는 창 단위로 불려 그 상태를 잇지 못한다. 테마 색은
+    /// 이미 배정되어 있으므로 문서 스캔이 줄별 분류를 유지하게 되면 그 위에 얹는다.
     STYLE_LITERAL = 10,
     STYLE_EMPHASIS = 11,
     STYLE_STRONG = 12,
@@ -84,11 +89,12 @@ struct FoldLine
 /// reST 문서 구조를 접기 깊이로 옮긴다.
 ///
 /// 두 가지 축을 함께 쓴다.
-///  * **섹션**: 제목 장식 문자가 처음 나온 순서가 곧 깊이다 (docutils 규칙).
+///  * **섹션**: 제목 장식 양식이 처음 나온 순서가 곧 깊이다 (docutils 규칙).
 ///    문서마다 `#`, `*`, `=` 중 무엇을 1단계로 쓸지 자유롭기 때문에 문자 자체에
 ///    고정 깊이를 줄 수 없다.
 ///  * **들여쓰기**: directive 본문, 리스트 계속 줄, 리터럴 블록이 여기 걸린다.
 ///
+/// 제목 판정은 RstStructure::titleScanAt 이 한다 — 개요·자동완성과 같은 규칙이다.
 /// Lexilla 에 reST 렉서가 없어 이 계산도 우리가 한다. Qt 비의존이라 단위
 /// 테스트에서 그대로 돌릴 수 있다.
 [[nodiscard]] std::vector< FoldLine > computeFoldLevels( const std::string& utf8Text );
@@ -101,28 +107,34 @@ public:
     [[nodiscard]] const RstMetadataCache& metadataCache() const;
     [[nodiscard]] RstMetadataCache& metadataCache();
 
+    /// 바이트당 스타일 1개를 out 에 채운다. out.size() 는 utf8Text.size() 와 같아야
+    /// 한다 — SCI_SETSTYLINGEX 가 바이트 단위로 요구하기 때문이다.
+    ///
+    /// **힙 할당을 하지 않는다.** 호출자가 버퍼를 재사용하면 화면 한 장을 칠하는
+    /// 경로에서 할당이 사라진다. styleBytes()/styleText() 는 이 함수의 어댑터다.
+    void styleInto( std::string_view utf8Text, std::span< unsigned char > out ) const;
+
     /// lineAfterNext 는 윗줄/아랫줄로 감싼 제목(overline)을 알아보는 데 쓴다.
     ///     ########
     ///     제목
     ///     ########
     /// 첫 줄만 보면 단독 구분선과 구별할 수 없어 두 줄 아래까지 필요하다.
+    ///
+    /// 네 줄짜리 작은 문서를 만들어 styleInto() 로 칠한 뒤 가운데 줄만 잘라 낸다.
+    /// 판정 규칙을 여기 한 벌 더 두면 그것이 곧 갈라지는 지점이 되기 때문이다.
     [[nodiscard]] std::vector< Span > tokenizeLine( const std::string& line,
                                                     const std::string& previousLine,
                                                     const std::string& nextLine,
                                                     const std::string& lineAfterNext = {} ) const;
 
+    /// 문서 전체를 스팬 목록으로. 기본 스타일 구간도 빠짐없이 들어간다.
     [[nodiscard]] std::vector< Span > styleText( const std::string& utf8Text ) const;
 
-    /// 바이트당 스타일 1개. 길이는 항상 utf8Text.size() 와 같다 (Scintilla
-    /// SCI_SETSTYLINGEX 가 바이트 단위로 요구하기 때문).
+    /// 바이트당 스타일 1개. 길이는 항상 utf8Text.size() 와 같다.
     [[nodiscard]] std::vector< unsigned char > styleBytes( const std::string& utf8Text ) const;
 
 private:
     RstMetadataCache cache_;
-
-    [[nodiscard]] std::vector< Span > styleDirectiveLine( const std::string& line ) const;
-    [[nodiscard]] std::vector< Span > styleFieldLine( const std::string& line ) const;
-    [[nodiscard]] std::vector< Span > styleInline( const std::string& line ) const;
 };
 
 }  // namespace mrst::rst
