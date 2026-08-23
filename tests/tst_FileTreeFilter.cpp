@@ -2,6 +2,7 @@
 
 #include "uis/FileTreeFilterProxy.hpp"
 
+#include <QSet>
 #include <QStandardItemModel>
 #include <QStringList>
 #include <QTest>
@@ -36,6 +37,32 @@ QStandardItemModel* makeTree( QObject* parent )
     return model;
 }
 
+/// QFileSystemModel 의 게으름을 흉내 낸 모델.
+///
+/// ⚠ 진짜 QFileSystemModel 의 canFetchMore() 는 **디렉터리인지 보지 않는다** —
+///   아직 훑지 않은 노드면 파일이라도 true 다(Qt 구현이 populatedChildren 만
+///   본다). 그 성질이 이 클래스가 있는 이유다. 그것을 "자식이 더 있을지 모른다"
+///   로 읽으면 필터가 모든 파일을 통과시킨다.
+class LazyModel final : public QStandardItemModel
+{
+public:
+    /// 자식이 아직 모델에 없어도 디렉터리로 볼 이름들.
+    QSet< QString > lazyDirectories;
+
+    bool canFetchMore( const QModelIndex& ) const override { return true; }
+    void fetchMore( const QModelIndex& ) override {}
+
+    bool hasChildren( const QModelIndex& parent ) const override
+    {
+        if( parent.isValid()
+            && lazyDirectories.contains( parent.data( Qt::DisplayRole ).toString() ) )
+        {
+            return true;
+        }
+        return QStandardItemModel::hasChildren( parent );
+    }
+};
+
 /// 프록시가 남긴 이름을 전위 순회로 늘어놓는다.
 QStringList visibleNames( const FileTreeFilterProxy& proxy, const QModelIndex& parent = {} )
 {
@@ -67,6 +94,10 @@ private slots:
     void wildcardIsNotSubstring();
     void filterIsCaseInsensitive();
     void sortsNumbersAsNumbers();
+
+    // ── 게으른 모델 (QFileSystemModel) ──
+    void lazyModelDoesNotLeakFiles();
+    void keepsUnreadDirectory();
 };
 
 void TestFileTreeFilter::emptyFilterKeepsEverything()
@@ -195,6 +226,49 @@ void TestFileTreeFilter::sortsNumbersAsNumbers()
     QCOMPARE( visibleNames( proxy ),
              ( QStringList{ QStringLiteral( "part1.rst" ), QStringLiteral( "part2.rst" ),
                            QStringLiteral( "part10.rst" ) } ) );
+}
+
+// ── 게으른 모델 (QFileSystemModel) ─────────────────────────
+
+void TestFileTreeFilter::lazyModelDoesNotLeakFiles()
+{
+    // 실측 회귀: `.md` 로 걸렀는데 말단의 .py · .txt 가 그대로 남았다.
+    // "아직 안 읽었으면 남긴다" 예외가 canFetchMore() 만 보았기 때문이다.
+    auto* model = new LazyModel;
+    auto* docs = new QStandardItem( QStringLiteral( "docs" ) );
+    docs->appendRow( new QStandardItem( QStringLiteral( "guide.md" ) ) );
+    docs->appendRow( new QStandardItem( QStringLiteral( "build.py" ) ) );
+    docs->appendRow( new QStandardItem( QStringLiteral( "notes.txt" ) ) );
+    model->appendRow( docs );
+
+    FileTreeFilterProxy proxy;
+    model->setParent( &proxy );
+    proxy.setSourceModel( model );
+    proxy.setFilterText( QStringLiteral( ".md" ) );
+
+    const QStringList names = visibleNames( proxy );
+    QVERIFY( names.contains( QStringLiteral( "guide.md" ) ) );
+    QVERIFY( !names.contains( QStringLiteral( "build.py" ) ) );
+    QVERIFY( !names.contains( QStringLiteral( "notes.txt" ) ) );
+}
+
+void TestFileTreeFilter::keepsUnreadDirectory()
+{
+    // 반대쪽 벽. 아직 읽지 않은 디렉터리까지 지우면 뷰가 펼칠 수 없고, 펼치지
+    // 않으면 모델이 읽지 않는다 — 그 안의 일치 항목에 닿을 길이 영영 막힌다.
+    auto* model = new LazyModel;
+    model->lazyDirectories << QStringLiteral( "unread" );
+    model->appendRow( new QStandardItem( QStringLiteral( "unread" ) ) );
+    model->appendRow( new QStandardItem( QStringLiteral( "plain.py" ) ) );
+
+    FileTreeFilterProxy proxy;
+    model->setParent( &proxy );
+    proxy.setSourceModel( model );
+    proxy.setFilterText( QStringLiteral( ".md" ) );
+
+    const QStringList names = visibleNames( proxy );
+    QVERIFY( names.contains( QStringLiteral( "unread" ) ) );
+    QVERIFY( !names.contains( QStringLiteral( "plain.py" ) ) );
 }
 
 MRST_REGISTER_TEST( TestFileTreeFilter );

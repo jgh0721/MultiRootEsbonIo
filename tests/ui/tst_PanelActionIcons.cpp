@@ -130,7 +130,11 @@ void TestPanelActionIcons::drawsSomethingAtEverySize()
     for( const int size : { 16, 20, 24, 32 } )
     {
         const QPixmap pixmap = icon.pixmap( size, size );
-        QCOMPARE( pixmap.size(), QSize( size, size ) );
+        QVERIFY( !pixmap.isNull() );
+        // **논리** 크기로 본다. QIcon::pixmap() 은 화면 배율만큼 키운 것을
+        // 돌려주므로(125% 화면에서 16 을 청하면 20x20 이 온다) 픽셀 수로 비교하면
+        // 이 테스트가 검사원의 모니터 설정에 달라붙는다.
+        QCOMPARE( pixmap.deviceIndependentSize(), QSizeF( size, size ) );
         // 빈 도안은 없어야 한다. 경로를 잘못 닫으면 아무것도 안 그려진다.
         QVERIFY2( opaquePixelCount( pixmap ) > size, allIcons().at( index ).name );
     }

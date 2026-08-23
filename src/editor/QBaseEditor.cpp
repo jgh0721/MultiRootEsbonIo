@@ -643,6 +643,18 @@ bool QTextView::opensFileAsynchronously() const
     return true;
 }
 
+void QTextView::focusContent()
+{
+    // 이 뷰는 껍데기다. 글자를 받는 것은 Scintilla 위젯이라 여기에 포커스를
+    // 주면 키가 어디로도 가지 않는다.
+    if( m_editor != nullptr && m_editor->widget() != nullptr )
+    {
+        m_editor->widget()->setFocus( Qt::OtherFocusReason );
+        return;
+    }
+    QBaseView::focusContent();
+}
+
 // ═══════════════════════════════════════════════════════════
 // 인코딩
 // ═══════════════════════════════════════════════════════════

@@ -1,7 +1,6 @@
 ﻿#include "stdafx.h"
 #include "uis/FileTreeFilterProxy.hpp"
 
-#include <QFileSystemModel>
 #include <QRegularExpression>
 
 namespace mrst {
@@ -65,8 +64,11 @@ bool FileTreeFilterProxy::matches( const QModelIndex& sourceIndex ) const
 
 bool FileTreeFilterProxy::isDirectory( const QModelIndex& sourceIndex ) const
 {
-    const auto* files = qobject_cast< const QFileSystemModel* >( sourceModel() );
-    return files != nullptr && files->isDir( sourceIndex );
+    // QFileSystemModel::hasChildren() 은 그대로 isDir() 이다 — 빈 디렉터리에도
+    // true 를 돌려준다. 그래서 qobject_cast 로 그 클래스를 못 박지 않아도 되고,
+    // 덕분에 이 규칙을 파일 시스템 없이 검증할 수 있다.
+    const QAbstractItemModel* source = sourceModel();
+    return source != nullptr && source->hasChildren( sourceIndex );
 }
 
 bool FileTreeFilterProxy::filterAcceptsRow( const int sourceRow, const QModelIndex& sourceParent ) const
@@ -84,14 +86,19 @@ bool FileTreeFilterProxy::filterAcceptsRow( const int sourceRow, const QModelInd
     if( matches( index ) )
         return true;
 
-    // 아직 읽지 않은 디렉터리는 남긴다.
+    // 아직 읽지 않은 **디렉터리**는 남긴다.
     //
     // QFileSystemModel 은 게을러서 펼치기 전에는 자식이 모델에 없다. 그것을
     // "걸린 자손이 없다" 로 보고 지우면 그 안을 들여다볼 길이 **영영** 막힌다 —
     // 뷰가 펼쳐야 모델이 읽고, 읽어야 자손을 판정할 수 있는데 지워진 항목은
     // 펼칠 수 없기 때문이다. 읽고 나면 canFetchMore 가 false 가 되어 아래의
     // 평범한 규칙으로 돌아간다. 그래서 이 예외는 스스로 끝난다.
-    if( source->canFetchMore( index ) )
+    //
+    // ⚠ hasChildren() 검사를 빼면 안 된다. QFileSystemModel::canFetchMore() 는
+    //   디렉터리인지 보지 않고 "아직 훑지 않았는가" 만 보므로 **파일에도 true** 다.
+    //   그것만 믿으면 예외가 모든 파일을 통과시킨다 — `.md` 로 걸렀는데 .py 와
+    //   .txt 가 그대로 남는 것이 정확히 그 증상이었다.
+    if( source->hasChildren( index ) && source->canFetchMore( index ) )
         return true;
 
     // 이름이 맞은 디렉터리 **아래**는 통째로 보여 준다. 폴더 이름을 쳤는데 그
