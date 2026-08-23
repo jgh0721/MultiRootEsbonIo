@@ -35,6 +35,9 @@ public:
     bool        isModified() const override;
     QStringList supportedExtensions() const override;
     bool        opensFileAsynchronously() const override;
+    /// 키보드 포커스를 Scintilla 위젯으로 보낸다. 껍데기인 이 뷰가 받으면
+    /// 글자가 어디로도 가지 않는다.
+    void        focusContent() override;
 
     // ── 인코딩 ──
     QString       detectedEncoding() const;

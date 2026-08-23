@@ -65,6 +65,13 @@ public:
     void                                setToolBarVisible( bool visible );
     bool                                isToolBarVisible() const { return m_toolBarVisible; }
 
+    /// 이 뷰에서 **실제로 글자를 받는 위젯**에 키보드 포커스를 준다.
+    ///
+    /// setFocus() 로는 모자란다. 뷰는 껍데기이고 입력을 받는 것은 그 안의
+    /// Scintilla 위젯이라, 껍데기에 포커스를 주면 키가 어디로도 가지 않는다.
+    /// 기본 구현은 자기 자신이고, 안쪽에 진짜 입력 위젯이 있는 뷰가 덮는다.
+    virtual void                        focusContent() { setFocus( Qt::OtherFocusReason ); }
+
     // ── 테마 ──
     virtual void                        setTheme( Theme theme );
     Theme                               currentTheme() const { return m_theme; }

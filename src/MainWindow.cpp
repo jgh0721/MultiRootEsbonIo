@@ -570,6 +570,31 @@ void MainWindow::advanceStartupPhase()
     // 도크도 같은 이유로 여기서 비율을 정한다. 세션이 배치를 복원했으면
     // applyDefaultDockSizes() 가 스스로 물러난다.
     QTimer::singleShot( 0, this, &MainWindow::applyDefaultDockSizes );
+    // 탭이 다 열린 뒤에 포커스를 문서로 보낸다. 이것이 없으면 Qt 가 탭 순서의
+    // 첫 위젯(지금은 탐색기 필터칸)에 포커스를 주어, 창이 뜨자마자 친 글자가
+    // 문서가 아니라 필터로 들어간다.
+    QTimer::singleShot( 0, this, &MainWindow::focusActiveEditor );
+}
+
+void MainWindow::focusActiveEditor()
+{
+    if( m_shuttingDown )
+        return;
+    // 프리뷰 전체 화면에서는 프리뷰가 포커스를 쥐고 있어야 PageDown 으로 읽어
+    // 내려갈 수 있다. 그 상태를 여기서 뺏지 않는다.
+    if( previewFullScreen_.active )
+        return;
+
+    if( QBaseView* view = currentView(); view != nullptr )
+    {
+        view->focusContent();
+        return;
+    }
+
+    // 열린 문서가 없다. 그래도 필터칸에 두지는 않는다 — 글자를 입력하는 칸이라
+    // 무심코 친 키가 문서를 찾는 대신 필터를 채운다. 트리가 자연스러운 자리다.
+    if( Ui.treLeftSideFolterTree != nullptr )
+        Ui.treLeftSideFolterTree->setFocus( Qt::OtherFocusReason );
 }
 
 void MainWindow::ensureVisiblePreviewSplit()
