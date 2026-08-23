@@ -14,8 +14,12 @@
 #include "core/solShadowBackupStore.hpp"
 #include "core/solUpdateService.hpp"
 #include "editor/QBaseEditor.hpp"
+#include "core/solSphinxProjectRegistry.hpp"
 #include "uis/dlgAbout.hpp"
 #include "uis/dlgSettings.hpp"
+#include "uis/dlgSphinxBuild.hpp"
+#include "uis/FileTreeFilterProxy.hpp"
+#include "uis/PanelActionIcons.hpp"
 #include "uis/TabSwitcherPopup.hpp"
 #include "utils/DwmTitleBar.hpp"
 #include "utils/solBackgroundWork.hpp"
@@ -393,23 +397,7 @@ MainWindow::MainWindow( QWidget* parent )
     // 직접 건드리지 않는다 — 부모가 도크 위젯이다.
     setupDockLayout();
 
-    treLeftFolderTreeModel_ = new QFileSystemModel( this );
-    treLeftFolderTreeModel_->setRootPath( "" );
-    treLeftFolderTreeModel_->setNameFilters( QStringList() << "*.rst" << "*.md" << "*.py" << "*.json" << "*.txt" );
-    treLeftFolderTreeModel_->setNameFilterDisables( false );
-    Ui.treLeftSideFolterTree->setModel( treLeftFolderTreeModel_ );
-    Ui.treLeftSideFolterTree->header()->hideSection( 1 );
-    Ui.treLeftSideFolterTree->header()->hideSection( 2 );
-    Ui.treLeftSideFolterTree->header()->hideSection( 3 );
-    Ui.treLeftSideFolterTree->setIndentation( 15 );
-
-    connect( Ui.treLeftSideFolterTree, &QTreeView::doubleClicked, this, [this]( const QModelIndex& index ) {
-        const QFileInfo fileInfo = treLeftFolderTreeModel_->fileInfo( index );
-        if( !fileInfo.isFile() )
-            return;
-
-        openFile( fileInfo.absoluteFilePath() );
-    } );
+    setupExplorerPanel();
 
     m_tabWidget = Ui.tabEditor;
     m_tabWidget->setAcceptDrops( true );
@@ -910,6 +898,12 @@ void MainWindow::retranslateUi()
     }
 
     retranslateWorkspaceSearchTab();
+    retranslateExplorerPanel();
+
+    if( Ui.edtOutlineDocumentFilter != nullptr )
+        Ui.edtOutlineDocumentFilter->setPlaceholderText( tr( "필터 (부분 일치)" ) );
+    if( Ui.edtOutlineProjectFilter != nullptr )
+        Ui.edtOutlineProjectFilter->setPlaceholderText( tr( "필터 (부분 일치)" ) );
 
     // 개요 트리는 플레이스홀더를 보여 주는 중일 때만 손댄다. 실제 심볼이
     // 들어 있으면 그건 문서 내용이라 번역 대상이 아니다.
@@ -1523,6 +1517,10 @@ void MainWindow::applyCurrentTheme()
     // 건드리지 않고, initialisePreview() 가 같은 색을 칠한다.
     if( previewInitialised_ && Ui.webEngineView != nullptr )
         Ui.webEngineView->page()->setBackgroundColor( themeManager.backgroundColor() );
+
+    // 패널 아이콘은 그려서 만든 것이라 팔레트를 따라가지 않는다. 테마가 바뀌면
+    // 다시 그려야 어두운 테마에 검은 아이콘이 남는 일이 없다.
+    applyExplorerIcons();
 
     for( int i = 0; i < m_tabWidget->count(); ++i )
     {
@@ -3121,6 +3119,10 @@ void MainWindow::shutdownUi()
     {
         if( Ui.treLeftSideFolterTree != nullptr )
             Ui.treLeftSideFolterTree->setModel( nullptr );
+        // 프록시도 놓아야 한다. 뷰에서만 떼면 프록시가 여전히 원본을 붙들고
+        // 있어 모델의 수집 스레드가 계속 돈다.
+        if( explorerProxy_ != nullptr )
+            explorerProxy_->setSourceModel( nullptr );
         treLeftFolderTreeModel_->setRootPath( QString{} );
     }
 
@@ -3254,7 +3256,20 @@ void MainWindow::setWorkspace( const QString& Folder )
     //    } );
     //}
     treLeftFolderTreeModel_->setRootPath( workspaceRoot );
-    Ui.treLeftSideFolterTree->setRootIndex( treLeftFolderTreeModel_->index( workspaceRoot ) );
+
+    const QModelIndex sourceRoot = treLeftFolderTreeModel_->index( workspaceRoot );
+    if( explorerProxy_ != nullptr )
+    {
+        // 프록시가 조상 검사를 멈출 자리다. 이것이 없으면 워크스페이스 폴더
+        // 이름이 우연히 필터와 맞는 순간 필터가 통째로 무력해진다.
+        explorerProxy_->setRootSourceIndex( sourceRoot );
+        Ui.treLeftSideFolterTree->setRootIndex( explorerProxy_->mapFromSource( sourceRoot ) );
+    }
+    else
+    {
+        Ui.treLeftSideFolterTree->setRootIndex( sourceRoot );
+    }
+
     for( int column = 1; column < treLeftFolderTreeModel_->columnCount(); ++column )
         Ui.treLeftSideFolterTree->hideColumn( column );
 
@@ -3317,6 +3332,660 @@ void MainWindow::setupDiagnosticsTable()
     {
         connect( store, &mrst::DiagnosticsStore::changed, this, &MainWindow::refreshDiagnosticsTable );
     }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 탐색기 패널
+// ═══════════════════════════════════════════════════════════
+namespace {
+
+/// 필터가 걸린 동안 한 번에 펼칠 폴더 수의 상한.
+///
+/// QFileSystemModel 은 게을러서 펼쳐야 읽는다. 상한이 없으면 사용자가 드라이브
+/// 루트를 워크스페이스로 열었을 때 한 글자에 디스크 전체를 훑는다. 예산이
+/// 떨어지면 거기서 멈추고, 폴더가 뒤늦게 읽히면 다시 한 바퀴 돈다.
+constexpr int kExplorerExpandBudget = 3000;
+
+/// 필터 한 글자마다 트리를 다시 펼치지 않도록.
+constexpr int kExplorerFilterDebounceMs = 180;
+
+/// 파일 이름으로 쓸 수 있는가.
+///
+/// 경로 구분자와 Windows 가 금지하는 글자를 막는다. `..` 을 막는 것이 핵심이다 —
+/// 사용자가 고른 폴더 밖에 파일을 만드는 길이 되기 때문이다.
+bool isSafeEntryName( const QString& name )
+{
+    if( name.isEmpty() || name == QLatin1String( "." ) || name == QLatin1String( ".." ) )
+        return false;
+    if( name.endsWith( QLatin1Char( ' ' ) ) || name.endsWith( QLatin1Char( '.' ) ) )
+        return false;   // Windows 가 조용히 잘라낸다
+
+    static const QString forbidden = QStringLiteral( R"(<>:"/\|?*)" );
+    for( const QChar ch : name )
+    {
+        if( ch.unicode() < 0x20 || forbidden.contains( ch ) )
+            return false;
+    }
+    return true;
+}
+
+/// 입력칸 앞머리의 돋보기. 이미 붙어 있으면 아이콘만 갈아 끼운다.
+///
+/// 테마가 바뀔 때마다 액션을 새로 붙이면 돋보기가 쌓인다.
+void setSearchIcon( QLineEdit* edit, const QIcon& icon )
+{
+    if( edit == nullptr )
+        return;
+
+    const QList< QAction* > existing = edit->actions();
+    for( QAction* action : existing )
+    {
+        if( action->property( "mrstSearchIcon" ).toBool() )
+        {
+            action->setIcon( icon );
+            return;
+        }
+    }
+
+    QAction* action = edit->addAction( icon, QLineEdit::LeadingPosition );
+    action->setProperty( "mrstSearchIcon", true );
+}
+
+}  // namespace
+
+void MainWindow::setupExplorerPanel()
+{
+    QTreeView* tree = Ui.treLeftSideFolterTree;
+    if( tree == nullptr )
+        return;
+
+    treLeftFolderTreeModel_ = new QFileSystemModel( this );
+    treLeftFolderTreeModel_->setRootPath( QString{} );
+    treLeftFolderTreeModel_->setNameFilters( { QStringLiteral( "*.rst" ), QStringLiteral( "*.md" ),
+                                              QStringLiteral( "*.py" ), QStringLiteral( "*.json" ),
+                                              QStringLiteral( "*.txt" ) } );
+    treLeftFolderTreeModel_->setNameFilterDisables( false );
+
+    explorerProxy_ = new mrst::FileTreeFilterProxy( this );
+    explorerProxy_->setSourceModel( treLeftFolderTreeModel_ );
+
+    tree->setModel( explorerProxy_ );
+    tree->setIndentation( 15 );
+    for( int column = 1; column < explorerProxy_->columnCount(); ++column )
+        tree->header()->hideSection( column );
+
+    // 헤더의 화살표를 살린다. .ui 는 headerShowSortIndicator 만 켜 두었는데 그것은
+    // "그린다" 는 뜻일 뿐이라, 눌러도 아무 일이 없는 화살표가 오래 떠 있었다.
+    // 정렬 규칙(폴더 먼저, 숫자는 수로)은 프록시의 lessThan 이 정한다.
+    tree->setSortingEnabled( true );
+    tree->header()->setSectionsClickable( true );
+    tree->header()->setSortIndicatorShown( true );
+    tree->sortByColumn( 0, Qt::AscendingOrder );
+
+    connect( tree, &QTreeView::customContextMenuRequested, this,
+            &MainWindow::onExplorerContextMenu );
+    connect( tree, &QTreeView::doubleClicked, this, [ this ]( const QModelIndex& index ) {
+        const QFileInfo info = explorerFileInfo( index );
+        if( info.isFile() )
+            openFile( info.absoluteFilePath() );
+    } );
+
+    explorerFilterDebounce_ = new QTimer( this );
+    explorerFilterDebounce_->setSingleShot( true );
+    explorerFilterDebounce_->setInterval( kExplorerFilterDebounceMs );
+    connect( explorerFilterDebounce_, &QTimer::timeout, this, &MainWindow::refreshExplorerFilter );
+    if( Ui.edtExplorerFilter != nullptr )
+    {
+        connect( Ui.edtExplorerFilter, &QLineEdit::textChanged, this,
+                [ this ] { explorerFilterDebounce_->start(); } );
+    }
+
+    // 폴더를 뒤늦게 읽으면 그 안까지 걸러 볼 수 있게 된다. 필터가 걸려 있는
+    // 동안에만 다시 돈다 — 평소에는 워크스페이스를 훑을 이유가 없다.
+    connect( treLeftFolderTreeModel_, &QFileSystemModel::directoryLoaded, this,
+            [ this ]( const QString& ) {
+                if( explorerProxy_ != nullptr && explorerProxy_->isFiltering() )
+                    explorerFilterDebounce_->start();
+            } );
+
+    for( QToolButton* button : { Ui.btnExplorerNewFile, Ui.btnExplorerNewFolder,
+                                Ui.btnExplorerRename, Ui.btnExplorerDelete } )
+    {
+        if( button == nullptr )
+            continue;
+        button->setToolButtonStyle( Qt::ToolButtonIconOnly );
+        button->setIconSize( QSize( 16, 16 ) );
+        // 탭 순서에서 빠진다. 필터칸에서 Tab 을 치면 트리로 가야지 단추 넷을
+        // 지나가야 하는 것이 아니다.
+        button->setFocusPolicy( Qt::NoFocus );
+    }
+
+    connect( Ui.btnExplorerNewFile, &QToolButton::clicked, this, &MainWindow::onExplorerNewFile );
+    connect( Ui.btnExplorerNewFolder, &QToolButton::clicked, this, &MainWindow::onExplorerNewFolder );
+    connect( Ui.btnExplorerRename, &QToolButton::clicked, this, &MainWindow::onExplorerRename );
+    connect( Ui.btnExplorerDelete, &QToolButton::clicked, this, &MainWindow::onExplorerDelete );
+
+    applyExplorerIcons();
+    retranslateExplorerPanel();
+}
+
+void MainWindow::applyExplorerIcons()
+{
+    if( Ui.btnExplorerNewFile == nullptr )
+        return;
+
+    // 팔레트가 곧 테마다. 색을 상수로 두지 않았으므로 라이트/다크가 저절로 갈린다.
+    const QPalette palette = Ui.btnExplorerNewFile->palette();
+    Ui.btnExplorerNewFile->setIcon( mrst::panelicons::newFile( palette ) );
+    Ui.btnExplorerNewFolder->setIcon( mrst::panelicons::newFolder( palette ) );
+    Ui.btnExplorerRename->setIcon( mrst::panelicons::rename( palette ) );
+    Ui.btnExplorerDelete->setIcon( mrst::panelicons::remove( palette ) );
+
+    const QIcon magnifier = mrst::panelicons::filter( palette );
+    setSearchIcon( Ui.edtExplorerFilter, magnifier );
+    setSearchIcon( Ui.edtOutlineDocumentFilter, magnifier );
+    setSearchIcon( Ui.edtOutlineProjectFilter, magnifier );
+}
+
+void MainWindow::retranslateExplorerPanel()
+{
+    if( Ui.edtExplorerFilter != nullptr )
+    {
+        Ui.edtExplorerFilter->setPlaceholderText( tr( "필터 (부분 일치, * ? 가능)" ) );
+        Ui.edtExplorerFilter->setToolTip(
+            tr( "이름의 일부를 치면 걸러집니다. `*` 나 `?` 를 넣으면 와일드카드로 봅니다." ) );
+    }
+
+    const auto label = []( QToolButton* button, const QString& text, const QString& tip ) {
+        if( button == nullptr )
+            return;
+        button->setText( text );
+        button->setToolTip( tip );
+    };
+    label( Ui.btnExplorerNewFile, tr( "새 파일" ), tr( "새 파일 만들기" ) );
+    label( Ui.btnExplorerNewFolder, tr( "새 폴더" ), tr( "새 폴더 만들기" ) );
+    label( Ui.btnExplorerRename, tr( "이름 바꾸기" ), tr( "고른 항목의 이름 바꾸기" ) );
+    label( Ui.btnExplorerDelete, tr( "삭제" ), tr( "고른 항목 삭제" ) );
+}
+
+QFileInfo MainWindow::explorerFileInfo( const QModelIndex& proxyIndex ) const
+{
+    if( !proxyIndex.isValid() || explorerProxy_ == nullptr || treLeftFolderTreeModel_ == nullptr )
+        return {};
+    return treLeftFolderTreeModel_->fileInfo( explorerProxy_->mapToSource( proxyIndex ) );
+}
+
+QFileInfo MainWindow::explorerCurrentFileInfo() const
+{
+    return Ui.treLeftSideFolterTree == nullptr
+               ? QFileInfo{}
+               : explorerFileInfo( Ui.treLeftSideFolterTree->currentIndex() );
+}
+
+QString MainWindow::explorerTargetDirectory() const
+{
+    const QFileInfo info = explorerCurrentFileInfo();
+    if( info.isDir() )
+        return info.absoluteFilePath();
+    if( info.isFile() )
+        return info.absolutePath();
+
+    // 고른 것이 없으면 워크스페이스 뿌리에 만든다.
+    if( explorerProxy_ == nullptr || treLeftFolderTreeModel_ == nullptr )
+        return {};
+    return treLeftFolderTreeModel_->filePath(
+        explorerProxy_->mapToSource( Ui.treLeftSideFolterTree->rootIndex() ) );
+}
+
+// ── 필터 ──────────────────────────────────────────────────
+
+void MainWindow::refreshExplorerFilter()
+{
+    QTreeView* tree = Ui.treLeftSideFolterTree;
+    if( tree == nullptr || explorerProxy_ == nullptr || Ui.edtExplorerFilter == nullptr )
+        return;
+
+    const bool wasFiltering = explorerProxy_->isFiltering();
+    if( !wasFiltering )
+    {
+        // 필터를 걸기 직전의 펼침 상태를 기억해 둔다. 필터를 지웠을 때 트리가
+        // 통째로 펼쳐진 채 남으면 그 전에 보고 있던 자리를 다시 찾아야 한다.
+        explorerExpandedBeforeFilter_ = expandedExplorerPaths();
+    }
+
+    explorerProxy_->setFilterText( Ui.edtExplorerFilter->text() );
+
+    if( explorerProxy_->isFiltering() )
+    {
+        expandExplorerForFilter();
+        return;
+    }
+
+    if( wasFiltering )
+    {
+        tree->collapseAll();
+        restoreExplorerExpansion( explorerExpandedBeforeFilter_ );
+        explorerExpandedBeforeFilter_.clear();
+    }
+}
+
+void MainWindow::expandExplorerForFilter()
+{
+    QTreeView* tree = Ui.treLeftSideFolterTree;
+    if( tree == nullptr || explorerProxy_ == nullptr )
+        return;
+
+    int budget = kExplorerExpandBudget;
+    const std::function< void( const QModelIndex& ) > walk = [ & ]( const QModelIndex& parent ) {
+        const int rows = explorerProxy_->rowCount( parent );
+        for( int row = 0; row < rows && budget > 0; ++row )
+        {
+            const QModelIndex index = explorerProxy_->index( row, 0, parent );
+            if( !explorerProxy_->hasChildren( index ) )
+                continue;
+            --budget;
+            // 아직 읽지 않은 폴더면 여기서 읽기가 시작되고, 끝나면
+            // directoryLoaded 가 우리를 다시 부른다.
+            tree->expand( index );
+            walk( index );
+        }
+    };
+    walk( tree->rootIndex() );
+}
+
+QStringList MainWindow::expandedExplorerPaths() const
+{
+    QTreeView* tree = Ui.treLeftSideFolterTree;
+    if( tree == nullptr || explorerProxy_ == nullptr || treLeftFolderTreeModel_ == nullptr )
+        return {};
+
+    QStringList paths;
+    const std::function< void( const QModelIndex& ) > walk = [ & ]( const QModelIndex& parent ) {
+        const int rows = explorerProxy_->rowCount( parent );
+        for( int row = 0; row < rows; ++row )
+        {
+            const QModelIndex index = explorerProxy_->index( row, 0, parent );
+            if( !tree->isExpanded( index ) )
+                continue;
+            paths << treLeftFolderTreeModel_->filePath( explorerProxy_->mapToSource( index ) );
+            walk( index );
+        }
+    };
+    walk( tree->rootIndex() );
+    return paths;
+}
+
+void MainWindow::restoreExplorerExpansion( const QStringList& paths )
+{
+    QTreeView* tree = Ui.treLeftSideFolterTree;
+    if( tree == nullptr || explorerProxy_ == nullptr || treLeftFolderTreeModel_ == nullptr )
+        return;
+
+    // 얕은 것부터 펼쳐야 한다 — 부모가 닫혀 있으면 자식 인덱스가 없다.
+    // expandedExplorerPaths() 가 전위 순회로 모으므로 순서가 이미 그렇다.
+    for( const QString& path : paths )
+    {
+        const QModelIndex source = treLeftFolderTreeModel_->index( path );
+        if( !source.isValid() )
+            continue;
+        const QModelIndex index = explorerProxy_->mapFromSource( source );
+        if( index.isValid() )
+            tree->expand( index );
+    }
+}
+
+void MainWindow::selectExplorerPath( const QString& path )
+{
+    QTreeView* tree = Ui.treLeftSideFolterTree;
+    if( tree == nullptr || explorerProxy_ == nullptr || treLeftFolderTreeModel_ == nullptr )
+        return;
+
+    const QModelIndex source = treLeftFolderTreeModel_->index( path );
+    if( !source.isValid() )
+        return;   // 모델이 아직 그 폴더를 읽지 않았다. 최선을 다한 것으로 둔다
+
+    const QModelIndex index = explorerProxy_->mapFromSource( source );
+    if( !index.isValid() )
+        return;   // 지금 필터에 걸리지 않는다
+
+    tree->setCurrentIndex( index );
+    tree->scrollTo( index );
+}
+
+// ── 컨텍스트 메뉴 ─────────────────────────────────────────
+
+QString MainWindow::projectIdForDirectory( const QString& dirPath ) const
+{
+    if( controller_ == nullptr || dirPath.isEmpty() )
+        return {};
+
+    mrst::ProjectRegistry* registry = controller_->projectRegistry();
+    if( registry == nullptr )
+        return {};
+
+    const QString wanted = QDir( dirPath ).absolutePath();
+    for( const mrst::SphinxProject& project : registry->projects() )
+    {
+        const QString root = QDir( mrst::toQString( project.rootPath ) ).absolutePath();
+        if( root.compare( wanted, Qt::CaseInsensitive ) == 0 )
+            return QString::fromStdWString( project.projectId );
+    }
+    return {};
+}
+
+void MainWindow::onExplorerContextMenu( const QPoint& pos )
+{
+    QTreeView* tree = Ui.treLeftSideFolterTree;
+    if( tree == nullptr )
+        return;
+
+    const QModelIndex index = tree->indexAt( pos );
+    if( index.isValid() )
+        tree->setCurrentIndex( index );
+
+    const QFileInfo info = explorerFileInfo( index );
+    QMenu           menu( tree );
+
+    // 빌드는 **실제** Sphinx 프로젝트의 루트에서만 연다. 가상 프로젝트는 산출물이
+    // 임시 디렉터리라 사용자가 고른 자리에 놓을 것이 애초에 없다.
+    if( info.isDir() )
+    {
+        const QString root = info.absoluteFilePath();
+        if( const QString projectId = projectIdForDirectory( root ); !projectId.isEmpty() )
+        {
+            QAction* build = menu.addAction( tr( "빌드(&B)…" ) );
+            build->setEnabled( controller_ != nullptr && !controller_->isProjectBuildRunning() );
+            connect( build, &QAction::triggered, this,
+                    [ this, projectId, root ] { onExplorerBuild( projectId, root ); } );
+            menu.addSeparator();
+        }
+    }
+
+    QAction* newFile = menu.addAction( tr( "새 파일(&N)…" ) );
+    QAction* newFolder = menu.addAction( tr( "새 폴더(&F)…" ) );
+    menu.addSeparator();
+    QAction* rename = menu.addAction( tr( "이름 바꾸기(&M)…" ) );
+    QAction* remove = menu.addAction( tr( "삭제(&D)…" ) );
+    menu.addSeparator();
+    QAction* reveal = menu.addAction( tr( "파일 관리자에서 보기(&E)" ) );
+
+    const bool hasTarget = info.exists();
+    rename->setEnabled( hasTarget );
+    remove->setEnabled( hasTarget );
+    reveal->setEnabled( hasTarget );
+
+    connect( newFile, &QAction::triggered, this, &MainWindow::onExplorerNewFile );
+    connect( newFolder, &QAction::triggered, this, &MainWindow::onExplorerNewFolder );
+    connect( rename, &QAction::triggered, this, &MainWindow::onExplorerRename );
+    connect( remove, &QAction::triggered, this, &MainWindow::onExplorerDelete );
+    connect( reveal, &QAction::triggered, this,
+            [ this, path = info.absoluteFilePath() ] { revealInFileManager( path ); } );
+
+    menu.exec( tree->viewport()->mapToGlobal( pos ) );
+}
+
+// ── 파일 조작 ─────────────────────────────────────────────
+
+void MainWindow::onExplorerNewFile()
+{
+    const QString directory = explorerTargetDirectory();
+    if( directory.isEmpty() )
+    {
+        QMessageBox::information( this, tr( "새 파일" ), tr( "먼저 워크스페이스를 여십시오." ) );
+        return;
+    }
+
+    bool          accepted = false;
+    const QString name = QInputDialog::getText( this, tr( "새 파일" ),
+                                               tr( "%1 에 만들 파일 이름:" ).arg( directory ),
+                                               QLineEdit::Normal,
+                                               tr( "새 문서.rst" ), &accepted ).trimmed();
+    if( !accepted || name.isEmpty() )
+        return;
+    if( !isSafeEntryName( name ) )
+    {
+        QMessageBox::warning( this, tr( "새 파일" ), tr( "파일 이름으로 쓸 수 없는 글자가 있습니다." ) );
+        return;
+    }
+
+    const QString path = QDir( directory ).absoluteFilePath( name );
+    if( QFileInfo::exists( path ) )
+    {
+        QMessageBox::warning( this, tr( "새 파일" ), tr( "같은 이름이 이미 있습니다:\n%1" ).arg( path ) );
+        return;
+    }
+
+    QFile file( path );
+    if( !file.open( QIODevice::WriteOnly ) )
+    {
+        QMessageBox::warning( this, tr( "새 파일" ),
+                             tr( "파일을 만들 수 없습니다:\n%1" ).arg( file.errorString() ) );
+        return;
+    }
+    file.close();
+
+    appendLog( tr( "새 파일: %1" ).arg( path ) );
+    openFile( path );
+    selectExplorerPath( path );
+}
+
+void MainWindow::onExplorerNewFolder()
+{
+    const QString directory = explorerTargetDirectory();
+    if( directory.isEmpty() )
+    {
+        QMessageBox::information( this, tr( "새 폴더" ), tr( "먼저 워크스페이스를 여십시오." ) );
+        return;
+    }
+
+    bool          accepted = false;
+    const QString name = QInputDialog::getText( this, tr( "새 폴더" ),
+                                               tr( "%1 에 만들 폴더 이름:" ).arg( directory ),
+                                               QLineEdit::Normal, tr( "새 폴더" ), &accepted ).trimmed();
+    if( !accepted || name.isEmpty() )
+        return;
+    if( !isSafeEntryName( name ) )
+    {
+        QMessageBox::warning( this, tr( "새 폴더" ), tr( "폴더 이름으로 쓸 수 없는 글자가 있습니다." ) );
+        return;
+    }
+
+    const QString path = QDir( directory ).absoluteFilePath( name );
+    if( QFileInfo::exists( path ) )
+    {
+        QMessageBox::warning( this, tr( "새 폴더" ), tr( "같은 이름이 이미 있습니다:\n%1" ).arg( path ) );
+        return;
+    }
+    if( !QDir().mkpath( path ) )
+    {
+        QMessageBox::warning( this, tr( "새 폴더" ), tr( "폴더를 만들 수 없습니다:\n%1" ).arg( path ) );
+        return;
+    }
+
+    appendLog( tr( "새 폴더: %1" ).arg( path ) );
+    selectExplorerPath( path );
+}
+
+void MainWindow::onExplorerRename()
+{
+    const QFileInfo info = explorerCurrentFileInfo();
+    if( !info.exists() )
+        return;
+
+    const QString oldPath = info.absoluteFilePath();
+
+    // 열려 있는 탭의 경로가 어긋난다. QBaseView 는 파일 경로를 밖에서 바꿀 길을
+    // 주지 않으므로(setter 가 없다), 저장된 탭은 닫았다 새 이름으로 다시 연다.
+    // 편집 중인 탭은 손대지 않는다 — 여기서 닫으면 저장 여부를 묻는 대화상자가
+    // 이름 바꾸기 한복판에 끼어든다.
+    QStringList affected;
+    QStringList modified;
+    for( int index = 0; m_tabWidget != nullptr && index < m_tabWidget->count(); ++index )
+    {
+        auto* view = qobject_cast< QBaseView* >( m_tabWidget->widget( index ) );
+        if( view == nullptr )
+            continue;
+        const QString path = view->currentFilePath();
+        if( path.isEmpty() )
+            continue;
+        const bool underTarget = info.isDir()
+                                     ? path.startsWith( oldPath + QLatin1Char( '/' ), Qt::CaseInsensitive )
+                                     : path.compare( oldPath, Qt::CaseInsensitive ) == 0;
+        if( !underTarget )
+            continue;
+        ( view->isModified() ? modified : affected ) << path;
+    }
+
+    if( !modified.isEmpty() )
+    {
+        QMessageBox::warning( this, tr( "이름 바꾸기" ),
+                             tr( "저장하지 않은 편집이 있는 탭이 있습니다. 먼저 저장하거나 닫으십시오:\n%1" )
+                                 .arg( modified.join( QStringLiteral( "\n" ) ) ) );
+        return;
+    }
+
+    bool          accepted = false;
+    const QString name = QInputDialog::getText( this, tr( "이름 바꾸기" ), tr( "새 이름:" ),
+                                               QLineEdit::Normal, info.fileName(), &accepted ).trimmed();
+    if( !accepted || name.isEmpty() || name == info.fileName() )
+        return;
+    if( !isSafeEntryName( name ) )
+    {
+        QMessageBox::warning( this, tr( "이름 바꾸기" ), tr( "이름으로 쓸 수 없는 글자가 있습니다." ) );
+        return;
+    }
+
+    const QString newPath = QDir( info.absolutePath() ).absoluteFilePath( name );
+    if( QFileInfo::exists( newPath ) )
+    {
+        QMessageBox::warning( this, tr( "이름 바꾸기" ),
+                             tr( "같은 이름이 이미 있습니다:\n%1" ).arg( newPath ) );
+        return;
+    }
+
+    // 딸린 탭을 먼저 닫는다. 파일이 열려 있으면 Windows 가 이름 바꾸기를 막는다.
+    for( const QString& path : std::as_const( affected ) )
+    {
+        if( QTextView* view = textViewForPath( path ); view != nullptr )
+        {
+            if( const int index = m_tabWidget->indexOf( view ); index >= 0 )
+                onCloseTab( index );
+        }
+    }
+
+    if( !QDir().rename( oldPath, newPath ) )
+    {
+        QMessageBox::warning( this, tr( "이름 바꾸기" ),
+                             tr( "이름을 바꿀 수 없습니다:\n%1" ).arg( oldPath ) );
+        return;
+    }
+
+    appendLog( tr( "이름 바꾸기: %1 → %2" ).arg( oldPath, newPath ) );
+
+    // 닫아 두었던 탭을 새 경로로 되돌린다.
+    for( const QString& path : std::as_const( affected ) )
+    {
+        QString moved = path;
+        moved.replace( 0, oldPath.length(), newPath );
+        openFile( moved );
+    }
+    selectExplorerPath( newPath );
+}
+
+void MainWindow::onExplorerDelete()
+{
+    const QFileInfo info = explorerCurrentFileInfo();
+    if( !info.exists() )
+        return;
+
+    const QString path = info.absoluteFilePath();
+    const QString question =
+        info.isDir() ? tr( "폴더와 그 안의 모든 것을 지웁니다. 되돌릴 수 없습니다.\n\n%1" ).arg( path )
+                     : tr( "파일을 지웁니다. 되돌릴 수 없습니다.\n\n%1" ).arg( path );
+    if( QMessageBox::question( this, tr( "삭제" ), question,
+                              QMessageBox::Yes | QMessageBox::No, QMessageBox::No ) != QMessageBox::Yes )
+    {
+        return;
+    }
+
+    // 열려 있는 탭은 닫지 않는다. 외부 변경 감시가 "사라졌다" 를 받아 버퍼를
+    // 그대로 둔 채 수정됨으로 표시하므로, 그 버퍼가 마지막 사본으로 남는다.
+    const bool ok = info.isDir() ? QDir( path ).removeRecursively() : QFile::remove( path );
+    if( !ok )
+    {
+        QMessageBox::warning( this, tr( "삭제" ), tr( "지울 수 없습니다:\n%1" ).arg( path ) );
+        return;
+    }
+    appendLog( tr( "삭제: %1" ).arg( path ) );
+}
+
+void MainWindow::revealInFileManager( const QString& path )
+{
+    if( path.isEmpty() || !QFileInfo::exists( path ) )
+        return;
+
+#ifdef Q_OS_WIN
+    const QFileInfo info( path );
+    const QString   native = QDir::toNativeSeparators( info.absoluteFilePath() );
+    // 파일이면 그것을 고른 채로 연다. `/select,` 는 쉼표까지가 한 인자다.
+    const QStringList arguments = info.isDir()
+                                      ? QStringList{ native }
+                                      : QStringList{ QStringLiteral( "/select," ) + native };
+    QProcess::startDetached( QStringLiteral( "explorer.exe" ), arguments );
+#else
+    const QFileInfo info( path );
+    QDesktopServices::openUrl(
+        QUrl::fromLocalFile( info.isDir() ? info.absoluteFilePath() : info.absolutePath() ) );
+#endif
+}
+
+// ── 빌드 ──────────────────────────────────────────────────
+
+void MainWindow::onExplorerBuild( const QString& projectId, const QString& projectRoot )
+{
+    if( controller_ == nullptr )
+        return;
+    if( controller_->isProjectBuildRunning() )
+    {
+        QMessageBox::information( this, tr( "빌드" ),
+                                 tr( "빌드가 이미 돌고 있습니다. 끝난 뒤에 다시 요청하십시오." ) );
+        return;
+    }
+
+    QSphinxBuildDialog dialog( projectId, projectRoot, this );
+    if( dialog.exec() != QDialog::Accepted )
+        return;
+
+    const bool openWhenDone = dialog.openWhenDone();
+
+    // 한 번만 받는다. 연결을 남겨 두면 다음 빌드에서도 탐색기가 열린다.
+    const QMetaObject::Connection once =
+        connect( controller_, &mrst::WorkspaceController::projectBuildFinished, this,
+                [ this, openWhenDone ]( const QString&, const QString&,
+                                        const QString& resultDirectory, const bool ok,
+                                        const bool cancelled ) {
+                    if( cancelled )
+                        return;
+                    if( !ok )
+                    {
+                        QMessageBox::warning( this, tr( "빌드" ),
+                                             tr( "빌드에 실패했습니다. 로그 탭을 확인하십시오." ) );
+                        return;
+                    }
+                    statusBar()->showMessage( tr( "빌드 완료: %1" ).arg( resultDirectory ), 8000 );
+                    if( openWhenDone )
+                        revealInFileManager( resultDirectory );
+                },
+                Qt::SingleShotConnection );
+
+    // 진행 상황이 로그로 흐르므로 그 탭을 앞으로 꺼내 준다.
+    if( dockLog_ != nullptr )
+        dockLog_->setAsCurrentTab();
+
+    // 시작하지 못했으면 연결을 거둔다. 남겨 두면 **다음** 빌드가 끝날 때
+    // 이번에 고른 "탐색기로 열기" 로 반응한다.
+    if( !controller_->buildProject( projectId, dialog.builder(), dialog.outputDirectory() ) )
+        disconnect( once );
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3430,6 +4099,17 @@ void MainWindow::setupOutlineTrees()
         connect( tree, &QTreeWidget::itemActivated, this, &MainWindow::onOutlineItemActivated );
         connect( tree, &QTreeWidget::itemDoubleClicked, this, &MainWindow::onOutlineItemActivated );
     }
+    // 필터는 프록시가 아니라 항목 감추기로 한다. QTreeWidget 은 자기 모델을
+    // 밖에 내주지 않아(setModel 이 private 이다) 프록시를 끼울 자리가 없다.
+    // 화면에 보이는 결과는 같다 — 자손이 걸리면 조상도 남고 그 가지가 펼쳐진다.
+    for( QLineEdit* edit : { Ui.edtOutlineDocumentFilter, Ui.edtOutlineProjectFilter } )
+    {
+        if( edit == nullptr )
+            continue;
+        edit->setPlaceholderText( tr( "필터 (부분 일치)" ) );
+        connect( edit, &QLineEdit::textChanged, this, &MainWindow::refreshOutlineFilters );
+    }
+
     outlineMaxDepth_ = outlineDepthSetting();
     setOutlinePlaceholder( Ui.treOutlineDocument, tr( "열린 문서가 없습니다." ), "noDocument" );
     setOutlinePlaceholder( Ui.treOutlineProject, tr( "활성 Sphinx 프로젝트가 없습니다." ), "noProject" );
@@ -3478,6 +4158,8 @@ void MainWindow::redrawDocumentOutlineTree()
     addOutlineSymbols( nullptr, tree, outlineDocumentSymbols_,
                       outlineDepthBudget( outlineMaxDepth_ ) );
     tree->expandToDepth( 1 );
+    // 트리를 다시 만들었으니 걸려 있던 필터도 다시 걸어야 한다.
+    refreshOutlineFilters();
 }
 
 void MainWindow::redrawProjectOutlineTree()
@@ -3508,6 +4190,44 @@ void MainWindow::redrawProjectOutlineTree()
             QStringList{ tr( "… %n개 문서 생략", nullptr, outlineProjectTruncated_ ) } ) );
     }
     tree->expandToDepth( 0 );
+    refreshOutlineFilters();
+}
+
+bool MainWindow::applyOutlineFilter( QTreeWidget* tree, const QString& text )
+{
+    if( tree == nullptr )
+        return false;
+
+    const QString needle = text.trimmed();
+    const std::function< bool( QTreeWidgetItem* ) > walk = [ & ]( QTreeWidgetItem* item ) {
+        bool anyChild = false;
+        for( int row = 0; row < item->childCount(); ++row )
+        {
+            // `||` 를 앞에 두면 안 된다. 첫 자식이 걸린 순간 나머지를 걷지 않아
+            // 그 형제들이 감춰진 채로 남는다.
+            anyChild = walk( item->child( row ) ) || anyChild;
+        }
+
+        const bool self = needle.isEmpty() || item->text( 0 ).contains( needle, Qt::CaseInsensitive );
+        const bool keep = self || anyChild;
+        item->setHidden( !keep );
+        if( anyChild && !needle.isEmpty() )
+            item->setExpanded( true );
+        return keep;
+    };
+
+    bool any = false;
+    for( int row = 0; row < tree->topLevelItemCount(); ++row )
+        any = walk( tree->topLevelItem( row ) ) || any;
+    return any;
+}
+
+void MainWindow::refreshOutlineFilters()
+{
+    if( Ui.edtOutlineDocumentFilter != nullptr )
+        applyOutlineFilter( Ui.treOutlineDocument, Ui.edtOutlineDocumentFilter->text() );
+    if( Ui.edtOutlineProjectFilter != nullptr )
+        applyOutlineFilter( Ui.treOutlineProject, Ui.edtOutlineProjectFilter->text() );
 }
 
 void MainWindow::reloadOutlineDepth()

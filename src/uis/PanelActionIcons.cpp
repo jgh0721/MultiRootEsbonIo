@@ -1,0 +1,180 @@
+﻿#include "stdafx.h"
+#include "uis/PanelActionIcons.hpp"
+
+#include <QPainter>
+#include <QPainterPath>
+#include <QPixmap>
+
+#include <functional>
+
+namespace mrst::panelicons {
+
+namespace {
+
+/// 도안을 그리는 좌표계. 16 칸 격자에서 그리고 실제 크기로 늘린다.
+constexpr qreal kGrid = 16.0;
+
+/// 아이콘 하나가 담는 크기들.
+///
+/// 한 크기만 넣으면 Qt 가 그것을 늘리거나 줄여 흐려진다. 도구 단추는 보통
+/// 16 이지만 고DPI 화면과 큰 아이콘 설정에서 24·32 를 요구한다.
+constexpr int kSizes[] = { 16, 20, 24, 32 };
+
+using Draw = std::function< void( QPainter&, const QColor& ) >;
+
+QPixmap render( const Draw& draw, const QColor& color, const int size )
+{
+    QPixmap pixmap( size, size );
+    pixmap.fill( Qt::transparent );
+
+    QPainter painter( &pixmap );
+    painter.setRenderHint( QPainter::Antialiasing, true );
+    // 도안은 전부 선이다. 기본 브러시가 NoBrush 이긴 하지만, 채워진 도형이
+    // 하나 섞이면 다른 것들까지 검게 나오므로 여기서 못 박는다.
+    painter.setBrush( Qt::NoBrush );
+    painter.scale( size / kGrid, size / kGrid );
+    draw( painter, color );
+    painter.end();
+    return pixmap;
+}
+
+/// 팔레트의 두 그룹으로 Normal / Disabled 를 각각 만든다.
+///
+/// Qt 가 Normal 하나로 Disabled 를 유추해 주기는 하지만, 그 결과는 회색으로
+/// 눌러 칠한 것이라 다크 테마에서 배경과 붙어 사라진다. 테마가 이미 알고 있는
+/// 색(Disabled/ButtonText)을 쓰는 편이 두 테마 모두에서 맞다.
+QIcon build( const Draw& draw, const QPalette& palette )
+{
+    const QColor normal = palette.color( QPalette::Active, QPalette::ButtonText );
+    const QColor disabled = palette.color( QPalette::Disabled, QPalette::ButtonText );
+
+    QIcon icon;
+    for( const int size : kSizes )
+    {
+        icon.addPixmap( render( draw, normal, size ), QIcon::Normal );
+        icon.addPixmap( render( draw, disabled, size ), QIcon::Disabled );
+    }
+    return icon;
+}
+
+QPen strokePen( const QColor& color, const qreal width = 1.3 )
+{
+    QPen pen( color );
+    pen.setWidthF( width );
+    pen.setCapStyle( Qt::RoundCap );
+    pen.setJoinStyle( Qt::RoundJoin );
+    return pen;
+}
+
+/// 오른쪽 아래에 붙는 작은 `+`. "새로 만들기" 둘이 공유한다.
+void drawPlus( QPainter& painter, const QColor& color )
+{
+    painter.setPen( strokePen( color, 1.6 ) );
+    painter.drawLine( QPointF( 12.4, 10.0 ), QPointF( 12.4, 14.4 ) );
+    painter.drawLine( QPointF( 10.2, 12.2 ), QPointF( 14.6, 12.2 ) );
+}
+
+void drawNewFile( QPainter& painter, const QColor& color )
+{
+    painter.setPen( strokePen( color ) );
+
+    // 모서리가 접힌 문서. 오른쪽 아래는 `+` 자리라 열어 둔다.
+    QPainterPath page;
+    page.moveTo( 2.6, 1.4 );
+    page.lineTo( 7.0, 1.4 );
+    page.lineTo( 10.0, 4.4 );
+    page.lineTo( 10.0, 10.2 );
+    painter.drawPath( page );
+
+    QPainterPath body;
+    body.moveTo( 2.6, 1.4 );
+    body.lineTo( 2.6, 14.2 );
+    body.lineTo( 8.4, 14.2 );
+    painter.drawPath( body );
+
+    painter.drawPolyline( QPolygonF{ { 7.0, 1.4 }, { 7.0, 4.4 }, { 10.0, 4.4 } } );
+
+    drawPlus( painter, color );
+}
+
+void drawNewFolder( QPainter& painter, const QColor& color )
+{
+    painter.setPen( strokePen( color ) );
+
+    // 탭이 달린 폴더. 오른쪽 아래는 `+` 자리라 열어 둔다.
+    QPainterPath folder;
+    folder.moveTo( 9.6, 13.4 );
+    folder.lineTo( 1.6, 13.4 );
+    folder.lineTo( 1.6, 3.2 );
+    folder.lineTo( 5.6, 3.2 );
+    folder.lineTo( 7.1, 5.2 );
+    folder.lineTo( 13.4, 5.2 );
+    folder.lineTo( 13.4, 8.8 );
+    painter.drawPath( folder );
+
+    drawPlus( painter, color );
+}
+
+void drawRename( QPainter& painter, const QColor& color )
+{
+    painter.setPen( strokePen( color ) );
+
+    // 대각선으로 누운 연필. 몸통 · 촉 · 지우개 경계.
+    painter.drawPolygon( QPolygonF{
+        { 10.4, 1.9 }, { 13.6, 5.1 }, { 5.2, 13.5 }, { 1.9, 14.1 }, { 2.5, 10.8 } } );
+    painter.drawLine( QPointF( 8.6, 3.7 ), QPointF( 11.8, 6.9 ) );
+    painter.drawLine( QPointF( 2.5, 10.8 ), QPointF( 5.2, 13.5 ) );
+}
+
+void drawRemove( QPainter& painter, const QColor& color )
+{
+    painter.setPen( strokePen( color ) );
+
+    // 뚜껑과 손잡이.
+    painter.drawLine( QPointF( 2.2, 4.2 ), QPointF( 13.8, 4.2 ) );
+    painter.drawPolyline( QPolygonF{ { 6.2, 4.2 }, { 6.2, 2.2 }, { 9.8, 2.2 }, { 9.8, 4.2 } } );
+
+    // 몸통.
+    painter.drawPolyline(
+        QPolygonF{ { 3.6, 4.2 }, { 4.3, 14.0 }, { 11.7, 14.0 }, { 12.4, 4.2 } } );
+
+    // 안쪽 홈 둘.
+    painter.drawLine( QPointF( 6.7, 6.6 ), QPointF( 6.9, 11.8 ) );
+    painter.drawLine( QPointF( 9.3, 6.6 ), QPointF( 9.1, 11.8 ) );
+}
+
+void drawFilter( QPainter& painter, const QColor& color )
+{
+    painter.setPen( strokePen( color ) );
+    painter.drawEllipse( QPointF( 7.0, 7.0 ), 4.4, 4.4 );
+    painter.drawLine( QPointF( 10.3, 10.3 ), QPointF( 14.2, 14.2 ) );
+}
+
+}  // namespace
+
+QIcon newFile( const QPalette& palette )
+{
+    return build( drawNewFile, palette );
+}
+
+QIcon newFolder( const QPalette& palette )
+{
+    return build( drawNewFolder, palette );
+}
+
+QIcon rename( const QPalette& palette )
+{
+    return build( drawRename, palette );
+}
+
+QIcon remove( const QPalette& palette )
+{
+    return build( drawRemove, palette );
+}
+
+QIcon filter( const QPalette& palette )
+{
+    return build( drawFilter, palette );
+}
+
+}  // namespace mrst::panelicons

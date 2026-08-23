@@ -36,6 +36,7 @@ class CDockWidget;
 
 namespace mrst {
 class ExternalChangeWatcher;
+class FileTreeFilterProxy;
 class PythonEnvManager;
 class TabSwitcherPopup;
 class UpdateService;
@@ -225,8 +226,57 @@ private:
     /// 외부 변경 감시가 자기 저장을 남의 편집으로 오해하지 않게 뷰의 신호를 잇는다.
     void                                connectViewWatchSignals( QBaseView* view );
 
+    // ── 탐색기 패널 ──
+    /// 필터 줄 · 파일 조작 단추 · 정렬 · 컨텍스트 메뉴를 한자리에서 건다.
+    void                                setupExplorerPanel();
+    /// 도구 단추와 필터칸의 아이콘을 지금 팔레트로 다시 그린다.
+    /// 아이콘은 그려서 만들므로 테마가 바뀌면 다시 만들어야 한다.
+    void                                applyExplorerIcons();
+    void                                retranslateExplorerPanel();
+    /// 필터칸의 내용을 프록시에 넣고 펼침 상태를 맞춘다.
+    void                                refreshExplorerFilter();
+    /// 필터가 걸린 동안 트리를 예산 안에서 펼친다.
+    ///
+    /// QFileSystemModel 은 게을러서 펼치기 전에는 자식이 모델에 없다. 펼쳐야
+    /// 읽고, 읽어야 필터가 판정할 수 있다.
+    void                                expandExplorerForFilter();
+    void                                onExplorerContextMenu( const QPoint& pos );
+    /// 프록시 인덱스 -> 파일 정보. 유효하지 않으면 빈 QFileInfo.
+    [[nodiscard]] QFileInfo             explorerFileInfo( const QModelIndex& proxyIndex ) const;
+    [[nodiscard]] QFileInfo             explorerCurrentFileInfo() const;
+    /// 새 항목을 만들 자리. 고른 것이 파일이면 그것이 든 폴더다.
+    [[nodiscard]] QString               explorerTargetDirectory() const;
+    void                                onExplorerNewFile();
+    void                                onExplorerNewFolder();
+    void                                onExplorerRename();
+    void                                onExplorerDelete();
+    /// 방금 만들거나 이름을 바꾼 항목을 트리에서 골라 보여 준다.
+    void                                selectExplorerPath( const QString& path );
+    /// 지금 펼쳐져 있는 폴더들의 절대 경로.
+    [[nodiscard]] QStringList           expandedExplorerPaths() const;
+    void                                restoreExplorerExpansion( const QStringList& paths );
+    /// 이 디렉터리가 **실제** Sphinx 프로젝트의 루트면 그 projectId.
+    /// 가상 프로젝트와 그냥 폴더는 빈 문자열이다.
+    [[nodiscard]] QString               projectIdForDirectory( const QString& dirPath ) const;
+    void                                onExplorerBuild( const QString& projectId,
+                                                         const QString& projectRoot );
+    /// 파일 관리자에서 그 경로를 보여 준다 (파일이면 선택된 채로).
+    void                                revealInFileManager( const QString& path );
+
+    // ── 요약 탭 필터 ──
+    /// 트리 항목을 문구로 거른다. 자손이 걸리면 조상도 남기고 펼친다.
+    /// 남은 것이 하나도 없으면 false.
+    bool                                applyOutlineFilter( QTreeWidget* tree, const QString& text );
+    void                                refreshOutlineFilters();
+
     Ui::MainWindow                      Ui;
     QFileSystemModel*                   treLeftFolderTreeModel_ = nullptr;
+    /// 탐색기 트리의 필터 · 정렬. treLeftFolderTreeModel_ 위에 얹는다.
+    mrst::FileTreeFilterProxy*          explorerProxy_ = nullptr;
+    /// 한 글자마다 트리를 다시 펼치지 않도록.
+    QTimer*                             explorerFilterDebounce_ = nullptr;
+    /// 필터를 걸기 **직전**에 펼쳐져 있던 폴더들. 필터를 지우면 이대로 되돌린다.
+    QStringList                         explorerExpandedBeforeFilter_;
 
     QWidget*                            m_centralContainer = nullptr;
     /// .ui 의 centralwidget. setupCentralContainer() 가 떼어내 들고 있다가

@@ -33,6 +33,7 @@ class PythonEnvResolver;
 struct ResolvedPythonEnv;
 class SphinxPreviewController;
 class SubstitutionIndex;
+class UvTask;
 class VirtualProjectManager;
 struct PreviewBuildResult;
 struct PreviewBuildRequest;
@@ -135,6 +136,22 @@ public:
     /// Ctrl+Space. 트리거 문자 없이 지금 캐럿 위치에서 자동완성을 연다.
     void                                requestCompletion();
 
+    // ── 사용자가 요청한 1회성 빌드 ──
+    /// 탐색기에서 프로젝트 루트를 오른쪽 클릭해 부르는 빌드.
+    ///
+    /// 프리뷰 빌드와는 완전히 다른 길이다. 그쪽은 우리 빌더 스크립트를 우리
+    /// 산출물 디렉터리에 돌리고 결과를 프리뷰에 싣지만, 이쪽은 사용자가 고른
+    /// 빌더와 디렉터리로 `sphinx-build` 를 그대로 돌리고 출력만 로그에 흘린다.
+    ///
+    /// 실제로 시작했으면 true. 시작하지 못한 이유(프로젝트를 못 찾음, 런타임
+    /// 미준비 등)는 로그로 나간다. **돌려주는 값이 필요한 이유**: 부르는 쪽이
+    /// projectBuildFinished 를 한 번만 받으려고 연결해 두는데, 시작하지 않으면
+    /// 그 연결이 남아 **다음 빌드**의 결과에 반응한다.
+    [[nodiscard]] bool                  buildProject( const QString& projectId, const QString& builder,
+                                                      const QString& outputDirectory );
+    [[nodiscard]] bool                  isProjectBuildRunning() const;
+    void                                cancelProjectBuild();
+
 signals:
     void                                logMessage( const QString& text );
     void                                projectsChanged( int count );
@@ -146,6 +163,16 @@ signals:
                                                                      const QStringList& distributions,
                                                                      const QStringList& themes );
     void                                lspStatusChanged( const QString& projectId, const QString& state );
+
+    // ── 사용자가 요청한 1회성 빌드 ──
+    void                                projectBuildStarted( const QString& projectId,
+                                                             const QString& builder );
+    /// 산출물이 실제로 놓인 디렉터리를 함께 준다 — make 모드(`-M`)는 사용자가
+    /// 고른 자리 **아래**에 쓰므로 요청 값과 다를 수 있다.
+    void                                projectBuildFinished( const QString& projectId,
+                                                              const QString& builder,
+                                                              const QString& outputDirectory,
+                                                              bool ok, bool cancelled );
     /// 프리뷰가 준비되는 동안의 상태. busy=false 면 text 는 비어 있고 표시를 지운다.
     /// 빌드뿐 아니라 HTML 로드 구간까지 덮는다 — 큰 문서는 빌드가 끝난 뒤에도
     /// WebEngine 이 읽는 데 시간이 걸려서, 그 사이가 비어 있으면 고장으로 보인다.
@@ -245,6 +272,28 @@ private:
     /// 다시 훑는다. force=false 면 같은 프로젝트에 대해 다시 돌지 않는다.
     void                                refreshSubstitutions( bool force );
 
+    // ── 사용자가 요청한 1회성 빌드 ──
+    /// 지금 돌고 있는 빌드 한 벌. 한 번에 하나만 돈다.
+    struct ProjectBuildJob
+    {
+        QString                         projectId;
+        QString                         builder;
+        /// 사용자가 고른 자리.
+        QString                         outputDirectory;
+        /// 산출물이 실제로 놓이는 자리. make 모드면 outputDirectory 아래다.
+        QString                         resultDirectory;
+        QString                         sourceDir;
+        QString                         confDir;
+        /// 프로젝트 환경에 Sphinx 가 없을 때 물러설 인터프리터.
+        QString                         fallbackPython;
+        bool                            usedFallback = false;
+    };
+
+    /// 실제로 프로세스를 띄운다. buildProject() 와 폴백 재시도가 함께 쓴다.
+    void                                startProjectBuild( const QString& pythonExe );
+    void                                finishProjectBuild( int exitCode, bool crashed, bool cancelled,
+                                                            const QString& output );
+
     // ── 스크롤 동기화 ──
     // 에디터 -> 프리뷰, 프리뷰 -> 에디터 양방향. 어느 쪽이든 "기준 비율 위치에
     // 있는 줄" 을 상대편의 같은 비율 위치로 보낸다.
@@ -272,6 +321,9 @@ private:
     SubstitutionIndex*                  substitutions_ = nullptr;
     /// 워크스페이스 전역 경로 인덱스. 경로 완성이 처음 필요할 때 채워진다.
     PathIndex*                          pathIndex_ = nullptr;
+    ProjectBuildJob                     projectBuild_;
+    /// 돌고 있는 sphinx-build. 끝나면 스스로 deleteLater 한다.
+    QPointer< UvTask >                  projectBuildTask_;
     QString                             lspState_;
     /// 프리뷰의 원격 리소스 허용 상태. -1 은 아직 한 번도 적용하지 않은 것으로,
     /// 첫 적용에서 불필요한 리로드를 하지 않기 위해 구분한다.
