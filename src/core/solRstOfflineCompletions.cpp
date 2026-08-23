@@ -193,6 +193,80 @@ QString enclosingDirective( const QStringList& previousLines, const int currentI
 }
 
 
+/// Scintilla 의 lineText() 는 줄 끝 문자까지 준다. `$` 로 끝나는 검사에 그대로
+/// 넣으면 조용히 어긋나므로 여기서 뗀다.
+QString stripEol( QString line )
+{
+    while( !line.isEmpty()
+           && ( line.endsWith( QLatin1Char( '\n' ) ) || line.endsWith( QLatin1Char( '\r' ) ) ) )
+    {
+        line.chop( 1 );
+    }
+    return line;
+}
+
+/// 이 줄의 `|` 가 치환이 아니라 **표·줄 블록** 문법인가.
+///
+/// 격자 표(`| 칸 | 칸 |`)와 줄 블록(`| 한 줄`)은 줄머리에 `|` 를 쓴다. 거기서
+/// 후보를 띄우면 표 한 칸마다 목록이 튀어나온다. 가르는 규칙은 docutils 그대로다
+/// — 줄머리 `|` 뒤에 공백이 오면 치환 참조가 될 수 없다. 방금 친 `|` 뒤에 아직
+/// 아무것도 없어 그 규칙을 쓸 수 없을 때만 앞 줄을 본다.
+bool barIsBlockMarkup( const QString& rawLine, const QStringList& previousLines )
+{
+    const QString lineText = stripEol( rawLine );
+    const int     first = leadingIndent( lineText );
+    if( first >= lineText.length() || lineText.at( first ) != QLatin1Char( '|' ) )
+        return false;   // 줄머리가 `|` 가 아니면 표도 줄 블록도 아니다
+
+    if( first + 1 < lineText.length() && lineText.at( first + 1 ).isSpace() )
+        return true;
+
+    // **바로 위 한 줄만** 본다. 표 안이라면 그 줄이 이미 표이고, 빈 줄이면
+    // 표도 줄 블록도 거기서 끝난 것이다.
+    if( previousLines.isEmpty() )
+        return false;
+
+    const QString previous = stripEol( previousLines.constFirst() );
+    if( previous.trimmed().isEmpty() )
+        return false;
+
+    static const QRegularExpression gridRe( QStringLiteral( R"(^\s*\+[-=+]+\+\s*$)" ) );
+    static const QRegularExpression rowRe( QStringLiteral( R"(^\s*\|.*\|\s*$)" ) );
+    static const QRegularExpression lineBlockRe( QStringLiteral( R"(^\s*\|(\s|$))" ) );
+    return gridRe.match( previous ).hasMatch() || rowRe.match( previous ).hasMatch()
+        || lineBlockRe.match( previous ).hasMatch();
+}
+
+/// 캐럿 앞에서 치환 참조를 여는 `|` 의 위치. 없으면 -1.
+///
+/// docutils 의 인라인 마크업 규칙을 그대로 쓴다. 시작 문자열은 줄머리이거나
+/// 공백 또는 `-:/'"<([{` 뒤여야 하고, 백슬래시로 이스케이프되지 않아야 하며,
+/// 바로 뒤에 공백이 올 수 없다.
+///
+/// 이 규칙 하나가 `|foo|` 를 닫는 `|` 도 걸러 준다 — 닫는 쪽은 앞 글자가
+/// 공백이 아니기 때문이다. 그것이 없으면 참조를 손으로 닫는 순간 목록이 다시 뜬다.
+int substitutionBarIndex( const QString& lineText, const QString& before,
+                          const QStringList& previousLines )
+{
+    const int bar = static_cast< int >( before.lastIndexOf( QLatin1Char( '|' ) ) );
+    if( bar < 0 )
+        return -1;
+
+    // 이스케이프한 `\|` 는 문자 그대로의 세로줄이다.
+    if( bar > 0 && before.at( bar - 1 ) == QLatin1Char( '\\' ) )
+        return -1;
+
+    static const QString openers = QStringLiteral( " \t-:/'\"<([{" );
+    if( bar > 0 && !openers.contains( before.at( bar - 1 ) ) )
+        return -1;
+
+    const QString typed = before.mid( bar + 1 );
+    if( !typed.isEmpty() && typed.at( 0 ).isSpace() )
+        return -1;
+
+    return barIsBlockMarkup( lineText, previousLines ) ? -1 : bar;
+}
+
 /// prefix 가 정해진 컨텍스트를 마무리한다.
 ///
 /// replaceLength 는 언제나 **친 것 전체**다. 경로 항목의 insertText 를 문서 기준
@@ -295,6 +369,15 @@ QStringList knownRoles()
     return names;
 }
 
+QStringList substitutionDirectives()
+{
+    // docutils 가 치환 정의 안에서 받는 것 전부다. raw 가 여기 드는 것이
+    // 뜻밖으로 보이지만, 실사용 conf.py 의 rst_prolog 가 `|br|` 을 만들 때 쓰는
+    // 것이 정확히 `.. |br| raw:: html` 이다.
+    return { QStringLiteral( "replace" ), QStringLiteral( "image" ),
+            QStringLiteral( "unicode" ), QStringLiteral( "date" ), QStringLiteral( "raw" ) };
+}
+
 Context detectContext( const QString& lineText, const int column, const QStringList& previousLines )
 {
     Context context;
@@ -304,11 +387,13 @@ Context detectContext( const QString& lineText, const int column, const QStringL
 
     // ".. dir" / ".. |sub| dir" — directive 이름
     static const QRegularExpression directiveRe(
-        QStringLiteral( R"(^(\s*)\.\.\s+(?:\|[^|]+\|\s+)?([a-zA-Z0-9_.-]*)$)" ) );
+        QStringLiteral( R"(^(\s*)\.\.\s+(?:\|([^|]+)\|\s+)?([a-zA-Z0-9_.-]*)$)" ) );
     if( const QRegularExpressionMatch match = directiveRe.match( before ); match.hasMatch() )
     {
         context.kind = ContextKind::Directive;
-        context.prefix = match.captured( 2 );
+        context.prefix = match.captured( 3 );
+        // ".. |logo| " 는 치환 정의다. 그 자리에 올 수 있는 directive 는 몇 개뿐이다.
+        context.substitutionDefinition = match.capturedStart( 2 ) >= 0;
         return finish( std::move( context ) );
     }
 
@@ -412,6 +497,21 @@ Context detectContext( const QString& lineText, const int column, const QStringL
         return finish( std::move( context ) );
     }
 
+    // 치환 참조: "|logo"
+    //
+    // 정의 자리(".. |na" — 새 이름을 짓는 중)에는 완성할 것이 없다. 참조 검사보다
+    // 먼저 걸러 낸다. 닫는 `|` 가 이미 있으면 위의 directive 검사가 가져간다.
+    static const QRegularExpression substitutionNameRe( QStringLiteral( R"(^\s*\.\.\s+\|[^|]*$)" ) );
+    if( substitutionNameRe.match( before ).hasMatch() )
+        return context;   // ContextKind::None
+
+    if( const int bar = substitutionBarIndex( lineText, before, previousLines ); bar >= 0 )
+    {
+        context.kind = ContextKind::Substitution;
+        context.prefix = before.mid( bar + 1 );
+        return finish( std::move( context ) );
+    }
+
     // 인라인 role 이름: ":re"
     // 줄 맨 앞의 ":opt:" 필드는 위에서 이미 걸러졌다.
     static const QRegularExpression roleRe( QStringLiteral( R"((?:^|[\s(\[{])(:[a-zA-Z0-9_.-]*)$)" ) );
@@ -433,11 +533,17 @@ QVector< Item > candidatesFor( const Context& context )
     {
         case ContextKind::Directive:
         {
+            // 치환 정의(".. |logo| ") 안에서는 인라인으로 펼쳐지는 것만 쓸 수 있다.
+            const QStringList allowed =
+                context.substitutionDefinition ? substitutionDirectives() : QStringList{};
+
             QStringList seen;
             for( const DirectiveSpec& spec : directiveTable() )
             {
                 const QString name = QString::fromLatin1( spec.name );
                 if( seen.contains( name ) )
+                    continue;
+                if( !allowed.isEmpty() && !allowed.contains( name ) )
                     continue;
                 seen << name;
                 items.push_back( { name, name + QStringLiteral( ":: " ),
@@ -472,6 +578,11 @@ QVector< Item > candidatesFor( const Context& context )
 
         case ContextKind::Path:
             // 경로 후보는 호출 측이 파일 시스템에서 채운다.
+            break;
+
+        case ContextKind::Substitution:
+            // 치환 후보는 문서·conf.py 를 훑어야 나온다. 호출 측(SubstitutionIndex)이
+            // 채운다 — 이 표는 파일 시스템도 프로젝트도 모른다.
             break;
 
         case ContextKind::None:

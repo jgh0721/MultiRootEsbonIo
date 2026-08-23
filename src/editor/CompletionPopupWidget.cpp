@@ -66,6 +66,8 @@ KindIcon iconForKind( const int kind )
         case 19: return { QLatin1Char( '/' ), "#8b5cf6" };   // Folder — 'D' 보다 '/' 가 즉시 읽힌다
         case rstcomplete::kKindImageFile:
                  return { QChar( 0x25A3 ), "#10b981" };      // 상세에 프리뷰가 뜨는 이미지
+        case rstcomplete::kKindSubstitution:
+                 return { QLatin1Char( '|' ), "#0ea5e9" };   // 치환 참조 |name|
         case 21: return { QLatin1Char( 'C' ), "#22c55e" };   // Constant
         case 22: return { QLatin1Char( 'S' ), "#e8a838" };   // Struct
         default: return { QLatin1Char( 0x00b7 ), "#888888" };

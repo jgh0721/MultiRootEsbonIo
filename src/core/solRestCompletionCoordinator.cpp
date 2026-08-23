@@ -35,6 +35,7 @@ bool isTriggerCharacter( const int character )
         case '<':
         case '>':
         case ' ':
+        case '|':
             return true;
         default:
             return false;
@@ -44,6 +45,46 @@ bool isTriggerCharacter( const int character )
 CompletionDisplayItem toDisplay( const rstcomplete::Item& item )
 {
     return { item.label, item.insertText, item.detail, item.kind, item.label };
+}
+
+/// 치환 후보의 순서. 팝업은 프로젝트도 conf.py 도 모르므로 "이게 더 그럴듯하다"
+/// 는 판단은 여기서 해서 점수로 넘긴다.
+///
+/// docutils 의 치환은 문서 단위다. 다른 문서에서 정의한 것은 그 문서를
+/// include 하지 않았다면 못 쓰므로 맨 뒤에 둔다 — 빼지는 않는다. 공용 조각
+/// 파일 하나를 모든 문서에 include 하는 형태가 실사용에서 흔하기 때문이다.
+int substitutionScoreBias( const SubstitutionOrigin origin )
+{
+    switch( origin )
+    {
+        case SubstitutionOrigin::Document: return 40;
+        case SubstitutionOrigin::Conf:     return 30;
+        case SubstitutionOrigin::Builtin:  return 20;
+        case SubstitutionOrigin::Project:  return 0;
+    }
+    return 0;
+}
+
+/// 상세 패널 아래에 붙는 출처 줄.
+QString substitutionSource( const SubstitutionEntry& entry )
+{
+    const QString where =
+        entry.path.isEmpty()
+            ? QString{}
+            : QStringLiteral( "%1:%2" ).arg( QFileInfo( entry.path ).fileName() ).arg( entry.line );
+
+    switch( entry.origin )
+    {
+        case SubstitutionOrigin::Document:
+            return QObject::tr( "이 문서" );
+        case SubstitutionOrigin::Builtin:
+            return where.isEmpty() ? QObject::tr( "Sphinx 기본 치환" )
+                                   : QObject::tr( "Sphinx 기본 치환 · %1" ).arg( where );
+        case SubstitutionOrigin::Conf:
+        case SubstitutionOrigin::Project:
+            break;
+    }
+    return where;
 }
 
 rstcomplete::Item fromLsp( const LspCompletionItem& item )
@@ -119,6 +160,11 @@ void CompletionCoordinator::notifyPathIndexReady( const QString& root )
 void CompletionCoordinator::setGlossaryIndex( GlossaryIndex* glossary )
 {
     glossary_ = glossary;
+}
+
+void CompletionCoordinator::setSubstitutionIndex( SubstitutionIndex* substitutions )
+{
+    substitutions_ = substitutions;
 }
 
 void CompletionCoordinator::showPopupAtCaret()
@@ -227,6 +273,18 @@ bool CompletionCoordinator::buildDetailContent( const CompletionDisplayItem& ite
     *body = item.detail;
     source->clear();
 
+    // 치환 후보면 정의 전문과 정의한 자리를 보여 준다. 무엇으로 펼쳐지는지
+    // 모르면 `|br|` 과 `|pb|` 중 어느 쪽인지 이름만으로는 고를 수 없다.
+    if( const auto found = substitutionCandidates_.constFind( item.insertText );
+        found != substitutionCandidates_.constEnd() )
+    {
+        const SubstitutionEntry& entry = found.value();
+        *title = QStringLiteral( "|%1|" ).arg( entry.name );
+        *body = substitutionDetail( entry );
+        *source = substitutionSource( entry );
+        return !body->isEmpty() || !source->isEmpty();
+    }
+
     // 용어집 항목이면 정의 전문과 출처를 붙인다. 롤 대상 컨텍스트가 아니어도
     // 이름이 용어와 같으면 보여 준다 (LSP 가 준 후보도 마찬가지로 걸린다).
     const bool termContext = shownContext_.kind == rstcomplete::ContextKind::RoleTarget
@@ -254,9 +312,18 @@ CompletionCoordinator::localCandidatesFor( const rstcomplete::Context& context )
     // 경로 후보는 우리가 직접 만든다. Esbonio 는 4종 directive 만, 확장자
     // 필터 없이, 그것도 내부 Sphinx 빌드가 끝난 뒤에야 답한다.
     if( rstpath::slotFor( context ) != nullptr )
+    {
+        substitutionCandidates_.clear();
         return pathCandidatesFor( context );
+    }
 
     pathCandidates_.clear();
+
+    // 치환 후보도 우리 몫이다. Esbonio 는 `|` 자리에 아무것도 주지 않는다.
+    if( context.kind == rstcomplete::ContextKind::Substitution )
+        return substitutionCandidates();
+
+    substitutionCandidates_.clear();
 
     QList< CompletionDisplayItem > items;
     if( glossary_ == nullptr || context.kind != rstcomplete::ContextKind::RoleTarget )
@@ -279,6 +346,80 @@ CompletionCoordinator::localCandidatesFor( const rstcomplete::Context& context )
         items.push_back( item );
     }
     return items;
+}
+
+QList< CompletionDisplayItem > CompletionCoordinator::substitutionCandidates()
+{
+    substitutionCandidates_.clear();
+
+    // 지금 편집 중인 버퍼가 먼저다. 방금 위쪽에 정의한 `.. |x| replace::` 는
+    // 저장하기 전까지 디스크에도 인덱스에도 없는데, 그것이 바로 지금 쓰려는
+    // 후보다. 문서 하나를 훑는 비용은 목록을 한 번 여는 동안 한 번뿐이다.
+    QVector< SubstitutionEntry > entries;
+    if( !activeView_.isNull() )
+    {
+        entries = parseSubstitutions( activeView_->text(), editorPath(),
+                                     SubstitutionOrigin::Document );
+    }
+    if( substitutions_ != nullptr )
+        entries += substitutions_->entries();
+    // 인덱스가 아직 훑기 전이어도 |version| 셋은 낸다. 인덱스 쪽에 conf.py 값이
+    // 실린 같은 이름이 이미 있으면 아래 중복 제거에서 이쪽이 밀린다.
+    entries += builtinSubstitutions();
+
+    // 닫는 `|` 를 이미 쳐 두었으면 하나 더 넣지 않는다 (`|logo||` 가 된다).
+    bool closingBarTyped = false;
+    if( !activeView_.isNull() )
+    {
+        const QString line = activeView_->lineText( activeView_->caretLine() );
+        const int     caret = activeView_->caretColumn() - 1;
+        closingBarTyped = caret >= 0 && caret < line.length()
+                       && line.at( caret ) == QLatin1Char( '|' );
+    }
+
+    QList< CompletionDisplayItem > items;
+    items.reserve( static_cast< qsizetype >( entries.size() ) );
+
+    QSet< QString > seen;
+    seen.reserve( static_cast< int >( entries.size() ) );
+    for( const SubstitutionEntry& entry : std::as_const( entries ) )
+    {
+        // 같은 이름이 여럿이면 **먼저 온 출처**가 이긴다. 버퍼 → conf.py →
+        // Sphinx 기본 → 다른 문서 순으로 쌓아 두었다.
+        const QString key = entry.name.toCaseFolded();
+        if( seen.contains( key ) )
+            continue;
+        seen.insert( key );
+
+        CompletionDisplayItem item;
+        item.label = entry.name;
+        item.insertText = closingBarTyped ? entry.name : entry.name + QLatin1Char( '|' );
+        item.detail = substitutionSummary( entry );
+        item.kind = rstcomplete::kKindSubstitution;
+        item.filterText = entry.name;
+        item.scoreBias = substitutionScoreBias( entry.origin );
+        items.push_back( item );
+
+        substitutionCandidates_.insert( item.insertText, entry );
+    }
+    return items;
+}
+
+void CompletionCoordinator::notifySubstitutionsReady( const QString& projectId )
+{
+    if( projectId != activeProjectId_ || !isPopupVisible() || popup_.isNull() )
+        return;
+    if( shownContext_.kind != rstcomplete::ContextKind::Substitution )
+        return;
+
+    const QList< CompletionDisplayItem > local = substitutionCandidates();
+    if( local.isEmpty() )
+        return;
+
+    offlineItems_ = local;
+    popup_->setItems( offlineItems_ );
+    popup_->updateFilter( shownContext_.filterPrefix );
+    showOrRefreshPopup();
 }
 
 rstpath::Query CompletionCoordinator::pathQueryFor( const rstcomplete::Context& context ) const
@@ -685,6 +826,15 @@ void CompletionCoordinator::trigger( const QString& triggerCharacter, const bool
     {
         // 오프라인 후보가 없는 컨텍스트(:ref: 대상, 경로)는 LSP 응답을 기다린다.
         popup_->hide();
+    }
+
+    // 치환은 묻지 않는다. Esbonio 에는 `|` 자리를 아는 기능이 없어서, 물으면
+    // 그 자리와 무관한 목록(대개 directive 전체)이 돌아와 **우리 후보 위에
+    // 앉는다** — applyLspItems 는 LSP 를 우선으로 놓기 때문이다.
+    if( context.kind == rstcomplete::ContextKind::Substitution )
+    {
+        inFlight_ = {};   // 앞선 요청의 늦은 응답을 버린다
+        return;
     }
 
     askLsp( triggerCharacter );

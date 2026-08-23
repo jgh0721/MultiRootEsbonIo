@@ -8,6 +8,7 @@
 #include "solPreviewBridge.hpp"
 #include "solThemeManager.hpp"
 #include "solGlossaryIndex.hpp"
+#include "solRstSubstitutionIndex.hpp"
 #include "solMarkdownPreviewController.hpp"
 #include "solRstPathIndex.hpp"
 #include "solRestCompletionCoordinator.hpp"
@@ -97,6 +98,7 @@ WorkspaceController::WorkspaceController( QObject* parent )
     , lspPool_( new LspServerPool( this ) )
     , completions_( new CompletionCoordinator( this ) )
     , glossary_( new GlossaryIndex( this ) )
+    , substitutions_( new SubstitutionIndex( this ) )
     , pathIndex_( new PathIndex( this ) )
 {
     connect( virtualProjects_, &VirtualProjectManager::logMessage, this, &WorkspaceController::logMessage );
@@ -144,6 +146,17 @@ WorkspaceController::WorkspaceController( QObject* parent )
                 completions_->notifyGlossaryReady( projectId );
                 if( count > 0 )
                     emit logMessage( tr( "용어집 %1개 [%2]" ).arg( count ).arg( projectId ) );
+            } );
+
+    // 치환도 우리가 직접 훑는다. Esbonio 에는 `|name|` 자리를 아는 기능이 없고,
+    // 무엇보다 실사용에서 가장 많이 쓰이는 정의 자리인 conf.py 의 rst_prolog 는
+    // 애초에 .rst 파일이 아니라 파이썬 소스 안에 있다.
+    completions_->setSubstitutionIndex( substitutions_ );
+    connect( substitutions_, &SubstitutionIndex::ready, this,
+            [this]( const QString& projectId, int count ) {
+                completions_->notifySubstitutionsReady( projectId );
+                if( count > 0 )
+                    emit logMessage( tr( "치환 %1개 [%2]" ).arg( count ).arg( projectId ) );
             } );
 
     // 경로 후보의 "프로젝트 전역" 절반. 뿌리는 srcdir 이 아니라 워크스페이스
@@ -1378,6 +1391,7 @@ void WorkspaceController::endShutdown()
     // 강제로 한 번 다시 돌린다.
     refreshProjectOutline( true );
     refreshGlossary( true );
+    refreshSubstitutions( true );
 }
 
 void WorkspaceController::shutdown()
@@ -1632,6 +1646,7 @@ void WorkspaceController::setActiveDocument( QTextView* view )
     refreshDocumentOutline();
     refreshProjectOutline( false );
     refreshGlossary( false );
+    refreshSubstitutions( false );
 }
 
 void WorkspaceController::refreshGlossary( const bool force )
@@ -1647,6 +1662,22 @@ void WorkspaceController::refreshGlossary( const bool force )
 
     glossary_->refresh( activeProjectId_, toQString( project->sourcePath ),
                        QString::fromStdString( project->rootDoc ), force );
+}
+
+void WorkspaceController::refreshSubstitutions( const bool force )
+{
+    if( shuttingDown_ || substitutions_ == nullptr )
+        return;
+
+    substitutions_->setActiveProjectId( activeProjectId_ );
+
+    const SphinxProject* project = lookupProject( activeProjectId_ );
+    if( project == nullptr )
+        return;
+
+    substitutions_->refresh( activeProjectId_, toQString( project->sourcePath ),
+                            QString::fromStdString( project->rootDoc ),
+                            toQString( project->confPath ), force );
 }
 
 void WorkspaceController::requestCompletion()
@@ -1680,6 +1711,9 @@ void WorkspaceController::notifyDocumentSaved( QTextView* view )
     // 저장한 문서가 용어집일 수 있다. 파일 하나 때문에 전부 다시 훑지만
     // 프로젝트 개요 스캔과 같은 규모라 체감되지 않는다.
     refreshGlossary( true );
+    // 치환 정의도 마찬가지다. 편집 중인 문서의 정의는 버퍼에서 바로 읽지만
+    // **다른 문서**에 방금 정의한 것은 저장을 거쳐야 목록에 들어온다.
+    refreshSubstitutions( true );
 
     // 새 파일이 생겼을 수 있다. 스로틀이 있어 저장할 때마다 훑지는 않는다.
     if( pathIndex_ != nullptr && !registry_->workspaceRoot().isEmpty() )
