@@ -155,8 +155,15 @@ QVector< SubstitutionEntry > parseSubstitutions( const QString& text, const QStr
         return definition;
     };
 
-    // directive 옵션(`:format: html`)은 본문이 아니다.
-    static const QRegularExpression optionRe( QStringLiteral( R"(^[ \t]*:[a-zA-Z0-9_.-]+:)" ) );
+    // directive 옵션(`:format: html`)은 본문이 아니다. 판정은 공용 파서에 맡긴다 —
+    // 그쪽은 닫는 콜론 뒤에 공백이나 줄끝을 요구하므로, 본문 첫머리에 놓인
+    // `:ref:`대상`` 을 옵션으로 오인하지 않는다. 예전 정규식은 오인하였다.
+    const auto isOptionLine = []( const QString& line ) {
+        const QByteArray utf8 = line.toUtf8();
+        return rst::parseField(
+                   std::string_view( utf8.constData(), static_cast< std::size_t >( utf8.size() ) ) )
+            .has_value();
+    };
 
     const QStringList lines = splitLines( text );
 
@@ -203,7 +210,7 @@ QVector< SubstitutionEntry > parseSubstitutions( const QString& text, const QStr
             if( indentWidth( next ) <= directiveIndent )
                 break;
             // 옵션은 빈 줄 앞에만 온다. 그 뒤의 `:foo:` 는 본문 글이다.
-            if( !sawBlank && optionRe.match( next ).hasMatch() )
+            if( !sawBlank && isOptionLine( next ) )
                 continue;
 
             if( bodyIndent < 0 )

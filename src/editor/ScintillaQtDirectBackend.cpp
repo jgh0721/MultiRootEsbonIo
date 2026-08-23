@@ -1588,6 +1588,30 @@ void ScintillaQtDirectBackend::invalidateStyling()
 	m_editor->update();
 }
 
+int ScintillaQtDirectBackend::literalSeedLine(int contextFirstLine) const
+{
+	if (!m_editor || contextFirstLine <= 0)
+		return qMax(0, contextFirstLine);
+
+	// 리터럴 블록은 줄 사이 상태라 창이 블록 한가운데에서 시작하면 알 수 없다.
+	// 비어 있지 않은 0열 줄까지 창을 위로 넓힌다 — 리터럴 본문은 도입부보다 깊게
+	// 들여쓴 줄이므로 0열 줄은 블록 밖임이 보장된다.
+	//
+	// 상한은 아주 긴 code-block 안에서 창이 통째로 길어지는 것을 막는다. 걸리면
+	// 그 창의 리터럴 색이 빠질 수 있지만 나머지 스타일은 그대로 정확하다.
+	constexpr int kMaxSeedWalk = 500;
+
+	int line = contextFirstLine;
+	for (int walked = 0; line > 0 && walked < kMaxSeedWalk; ++walked)
+	{
+		const sptr_t first = m_editor->send(sciMessage(SCI_GETCHARAT), positionFromLine(line));
+		if (first != ' ' && first != '\t' && first != '\r' && first != '\n' && first != 0)
+			break;
+		--line;
+	}
+	return line;
+}
+
 void ScintillaQtDirectBackend::handleStyleNeeded(int endPosition)
 {
 	if (!m_editor || !m_rstLexer)
@@ -1608,7 +1632,7 @@ void ScintillaQtDirectBackend::handleStyleNeeded(int endPosition)
 
 	// 렉서는 제목/구분선 판정을 위해 앞뒤 두 줄을 문맥으로 요구한다.
 	// 문맥까지 포함해 렉싱한 뒤, 실제로 칠할 구간만 잘라 쓴다.
-	const int contextFirstLine = qMax(0, paintFirstLine - 2);
+	const int contextFirstLine = literalSeedLine(qMax(0, paintFirstLine - 2));
 	const int contextLastLine = qMin(totalLines - 1, lastLine + 2);
 
 	const int contextStart = positionFromLine(contextFirstLine);

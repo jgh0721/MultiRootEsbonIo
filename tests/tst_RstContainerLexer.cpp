@@ -63,6 +63,20 @@ private slots:
     void interpretedTextIsStyled();
     /// 장식 길이 규칙. docutils 는 표시 열 폭으로 견주고 4자 미만은 특례가 있다.
     void adornmentLengthFollowsColumnWidth();
+
+    // ── 리터럴 블록 ──
+    /// `::` 로 끝난 문단 뒤의 들여쓴 블록.
+    void doubleColonOpensLiteralBlock();
+    /// `.. code-block::` 본문. 옵션 줄은 필드로 남는다.
+    void codeBlockBodyIsLiteral();
+    /// 본문 안의 `**` 나 `*` 는 인라인 마크업이 아니다.
+    void literalBodySuppressesInlineMarkup();
+    /// 들여쓰기가 얕아지면 블록이 끝난다.
+    void dedentClosesLiteralBlock();
+    /// `.. note::` 처럼 본문이 reST 인 directive 는 리터럴이 아니다.
+    void ordinaryDirectiveBodyStaysReST();
+    /// 제목 밑줄이 `::` 여도 리터럴 도입부로 오인하지 않는다.
+    void titleUnderscoreIsNotLiteralIntro();
 };
 
 void TestRstContainerLexer::byteCountIsConserved_data()
@@ -335,6 +349,70 @@ void TestRstContainerLexer::adornmentLengthFollowsColumnWidth()
     // 같은 문자가 아니면 장식이 아니다.
     const std::string mixed = "\xEC\xA0\x9C\xEB\xAA\xA9\n=-=-\n\nbody\n";
     QCOMPARE( styleAt( lexer, mixed, 0 ), int( STYLE_DEFAULT ) );
+}
+
+void TestRstContainerLexer::doubleColonOpensLiteralBlock()
+{
+    const RstContainerLexer lexer;
+    const std::string       text = "\xEB\xB3\xB8\xEB\xAC\xB8::\n\n    literal here\n\n\xEB\x81\x9D\n";
+
+    // 도입부 줄 자체는 본문이다.
+    QCOMPARE( styleAt( lexer, text, 0 ), int( STYLE_DEFAULT ) );
+    QCOMPARE( styleAt( lexer, text, text.find( "literal" ) ), int( STYLE_LITERAL ) );
+    // 0열로 돌아온 줄은 블록 밖이다.
+    QCOMPARE( styleAt( lexer, text, text.find( "\xEB\x81\x9D" ) ), int( STYLE_DEFAULT ) );
+}
+
+void TestRstContainerLexer::codeBlockBodyIsLiteral()
+{
+    const RstContainerLexer lexer;
+    const std::string       text =
+        ".. code-block:: cpp\n   :linenos:\n\n   int a = *p;\n\nafter\n";
+
+    // 옵션 줄은 옵션으로 남는다. 그것까지 리터럴로 칠하면 필드 색이 사라진다.
+    QCOMPARE( styleAt( lexer, text, text.find( ":linenos:" ) ), int( STYLE_FIELD_NAME ) );
+    QCOMPARE( styleAt( lexer, text, text.find( "int a" ) ), int( STYLE_LITERAL ) );
+    QCOMPARE( styleAt( lexer, text, text.find( "after" ) ), int( STYLE_DEFAULT ) );
+}
+
+void TestRstContainerLexer::literalBodySuppressesInlineMarkup()
+{
+    const RstContainerLexer lexer;
+    const std::string       text = ".. code-block:: python\n\n   f(**kwargs)\n   c = a * b\n";
+
+    // 예전에는 `**kwargs)` 가 굵게, `a * b` 의 별표 구간이 강조로 칠해졌다.
+    const std::size_t stars = text.find( "**kwargs" );
+    QCOMPARE( styleAt( lexer, text, stars ), int( STYLE_LITERAL ) );
+    QCOMPARE( styleAt( lexer, text, text.find( "a * b" ) + 2 ), int( STYLE_LITERAL ) );
+}
+
+void TestRstContainerLexer::dedentClosesLiteralBlock()
+{
+    const RstContainerLexer lexer;
+    // 두 칸 들여쓴 도입부 — 본문은 그보다 깊어야 한다.
+    const std::string text = "  intro::\n\n      deep\n  shallow **b**\n";
+
+    QCOMPARE( styleAt( lexer, text, text.find( "deep" ) ), int( STYLE_LITERAL ) );
+    // 도입부와 같은 깊이로 돌아왔으므로 블록이 끝났고, 인라인이 다시 산다.
+    QCOMPARE( styleAt( lexer, text, text.find( "**b**" ) ), int( STYLE_STRONG ) );
+}
+
+void TestRstContainerLexer::ordinaryDirectiveBodyStaysReST()
+{
+    const RstContainerLexer lexer;
+    const std::string       text = ".. note::\n\n   **strong** stays strong\n";
+
+    QCOMPARE( styleAt( lexer, text, text.find( "**strong**" ) ), int( STYLE_STRONG ) );
+}
+
+void TestRstContainerLexer::titleUnderscoreIsNotLiteralIntro()
+{
+    const RstContainerLexer lexer;
+    // 제목 글이 `::` 로 끝난다. 밑줄이 붙었으므로 제목이지 리터럴 도입부가 아니다.
+    const std::string text = "usage::\n=======\n\n   **still strong**\n";
+
+    QCOMPARE( styleAt( lexer, text, 0 ), int( STYLE_TITLE ) );
+    QCOMPARE( styleAt( lexer, text, text.find( "**still" ) ), int( STYLE_STRONG ) );
 }
 
 MRST_REGISTER_TEST( TestRstContainerLexer );

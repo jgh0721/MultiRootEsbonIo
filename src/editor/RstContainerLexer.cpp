@@ -403,25 +403,42 @@ void RstContainerLexer::styleInto( std::string_view utf8Text, std::span< unsigne
     std::vector< InlineToken > scratch;
     scratch.reserve( 16 );
 
+    // 리터럴 블록은 줄 사이 상태다. 창이 블록 밖에서 시작한다는 보장은 부르는
+    // 쪽(handleStyleNeeded)이 창을 0열 줄까지 넓혀서 준다.
+    LiteralBlockTracker literal;
+
     for( std::size_t i = 0; i < lines.size(); )
     {
-        const TitleScan scan = titleScanAt( lines, i );
-        if( scan.span > 0 )
+        const std::string_view line = lines.line( i );
+
+        // 리터럴 본문이 아닐 때만 제목을 찾는다. 상태를 미리 보는 이유는 제목
+        // 묶음이 여러 줄을 한꺼번에 가져가기 때문이다 — 먹인 뒤에 되돌릴 수 없다.
+        if( !literal.peek( line ) )
         {
-            if( scan.title )
+            const TitleScan scan = titleScanAt( lines, i );
+            if( scan.span > 0 )
             {
-                // 묶음 전체(윗줄·제목·밑줄)를 제목색으로 칠한다. 개행은 남긴다.
-                for( std::uint32_t k = scan.title->firstLine; k <= scan.title->lastLine; ++k )
+                if( scan.title )
                 {
-                    const std::size_t base = lines.byteStart( k );
-                    paint( out, base, base + lines.line( k ).size(), STYLE_TITLE );
+                    // 묶음 전체(윗줄·제목·밑줄)를 제목색으로 칠한다. 개행은 남긴다.
+                    for( std::uint32_t k = scan.title->firstLine; k <= scan.title->lastLine; ++k )
+                    {
+                        const std::size_t base = lines.byteStart( k );
+                        paint( out, base, base + lines.line( k ).size(), STYLE_TITLE );
+                    }
                 }
+                // 묶음이 가져간 줄도 빠짐없이 상태 기계에 흘려보낸다.
+                for( std::uint32_t k = 0; k < scan.span; ++k )
+                    literal.consumeAsTitle( lines.line( i + k ) );
+                i += scan.span;
+                continue;
             }
-            i += scan.span;
-            continue;
         }
 
-        paintOrdinaryLine( lines.line( i ), lines.byteStart( i ), cache_, out, scratch );
+        if( literal.feed( line ) )
+            paint( out, lines.byteStart( i ), lines.byteStart( i ) + line.size(), STYLE_LITERAL );
+        else
+            paintOrdinaryLine( line, lines.byteStart( i ), cache_, out, scratch );
         ++i;
     }
 }

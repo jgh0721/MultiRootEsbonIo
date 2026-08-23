@@ -48,14 +48,52 @@ constexpr CodepointRange kWideRanges[] = {
 
 /// 결합 문자. docutils 는 폭 계산에서 이만큼을 뺀다.
 ///
-/// 여기 담은 것은 실사용에서 압도적인 비중을 차지하는 블록들이다. 전체 표를
-/// 들이지 않는 이유는 이 모듈이 외부 의존 없이 서야 하기 때문이며, 빠진 문자는
-/// 제목 폭을 최대 그 개수만큼 넓게 세어 밑줄이 짧다고 판정할 수 있다.
+/// 기준은 정규 결합 클래스(UnicodeData.txt 세 번째 칸)가 0 이 아닌 것이다 — docutils 의
+/// find_combining_chars() 가 unicodedata.combining() 으로 가르는 것과 같다. 범주 Mn/Me 와는
+/// 다르다: 에워싸는 표시(U+0488)처럼 클래스가 0 인 표시 문자는 docutils 도 빼지 않으므로
+/// 여기에도 없다.
+///
+/// UCD 15.0.0 전체다(922자 / 192구간). kWideRanges 와 같은 판을 쓴다.
 constexpr CodepointRange kCombiningRanges[] = {
-    {0x00300,0x0036F}, {0x00483,0x00489}, {0x00591,0x005BD}, {0x00610,0x0061A},
-    {0x0064B,0x0065F}, {0x006D6,0x006DC}, {0x00730,0x0074A}, {0x007A6,0x007B0},
-    {0x01AB0,0x01AFF}, {0x01DC0,0x01DFF}, {0x020D0,0x020F0}, {0x0302A,0x0302F},
-    {0x03099,0x0309A}, {0x0FE20,0x0FE2F},
+    {0x00300,0x0034E}, {0x00350,0x0036F}, {0x00483,0x00487}, {0x00591,0x005BD}, {0x005BF,0x005BF},
+    {0x005C1,0x005C2}, {0x005C4,0x005C5}, {0x005C7,0x005C7}, {0x00610,0x0061A}, {0x0064B,0x0065F},
+    {0x00670,0x00670}, {0x006D6,0x006DC}, {0x006DF,0x006E4}, {0x006E7,0x006E8}, {0x006EA,0x006ED},
+    {0x00711,0x00711}, {0x00730,0x0074A}, {0x007EB,0x007F3}, {0x007FD,0x007FD}, {0x00816,0x00819},
+    {0x0081B,0x00823}, {0x00825,0x00827}, {0x00829,0x0082D}, {0x00859,0x0085B}, {0x00898,0x0089F},
+    {0x008CA,0x008E1}, {0x008E3,0x008FF}, {0x0093C,0x0093C}, {0x0094D,0x0094D}, {0x00951,0x00954},
+    {0x009BC,0x009BC}, {0x009CD,0x009CD}, {0x009FE,0x009FE}, {0x00A3C,0x00A3C}, {0x00A4D,0x00A4D},
+    {0x00ABC,0x00ABC}, {0x00ACD,0x00ACD}, {0x00B3C,0x00B3C}, {0x00B4D,0x00B4D}, {0x00BCD,0x00BCD},
+    {0x00C3C,0x00C3C}, {0x00C4D,0x00C4D}, {0x00C55,0x00C56}, {0x00CBC,0x00CBC}, {0x00CCD,0x00CCD},
+    {0x00D3B,0x00D3C}, {0x00D4D,0x00D4D}, {0x00DCA,0x00DCA}, {0x00E38,0x00E3A}, {0x00E48,0x00E4B},
+    {0x00EB8,0x00EBA}, {0x00EC8,0x00ECB}, {0x00F18,0x00F19}, {0x00F35,0x00F35}, {0x00F37,0x00F37},
+    {0x00F39,0x00F39}, {0x00F71,0x00F72}, {0x00F74,0x00F74}, {0x00F7A,0x00F7D}, {0x00F80,0x00F80},
+    {0x00F82,0x00F84}, {0x00F86,0x00F87}, {0x00FC6,0x00FC6}, {0x01037,0x01037}, {0x01039,0x0103A},
+    {0x0108D,0x0108D}, {0x0135D,0x0135F}, {0x01714,0x01715}, {0x01734,0x01734}, {0x017D2,0x017D2},
+    {0x017DD,0x017DD}, {0x018A9,0x018A9}, {0x01939,0x0193B}, {0x01A17,0x01A18}, {0x01A60,0x01A60},
+    {0x01A75,0x01A7C}, {0x01A7F,0x01A7F}, {0x01AB0,0x01ABD}, {0x01ABF,0x01ACE}, {0x01B34,0x01B34},
+    {0x01B44,0x01B44}, {0x01B6B,0x01B73}, {0x01BAA,0x01BAB}, {0x01BE6,0x01BE6}, {0x01BF2,0x01BF3},
+    {0x01C37,0x01C37}, {0x01CD0,0x01CD2}, {0x01CD4,0x01CE0}, {0x01CE2,0x01CE8}, {0x01CED,0x01CED},
+    {0x01CF4,0x01CF4}, {0x01CF8,0x01CF9}, {0x01DC0,0x01DFF}, {0x020D0,0x020DC}, {0x020E1,0x020E1},
+    {0x020E5,0x020F0}, {0x02CEF,0x02CF1}, {0x02D7F,0x02D7F}, {0x02DE0,0x02DFF}, {0x0302A,0x0302F},
+    {0x03099,0x0309A}, {0x0A66F,0x0A66F}, {0x0A674,0x0A67D}, {0x0A69E,0x0A69F}, {0x0A6F0,0x0A6F1},
+    {0x0A806,0x0A806}, {0x0A82C,0x0A82C}, {0x0A8C4,0x0A8C4}, {0x0A8E0,0x0A8F1}, {0x0A92B,0x0A92D},
+    {0x0A953,0x0A953}, {0x0A9B3,0x0A9B3}, {0x0A9C0,0x0A9C0}, {0x0AAB0,0x0AAB0}, {0x0AAB2,0x0AAB4},
+    {0x0AAB7,0x0AAB8}, {0x0AABE,0x0AABF}, {0x0AAC1,0x0AAC1}, {0x0AAF6,0x0AAF6}, {0x0ABED,0x0ABED},
+    {0x0FB1E,0x0FB1E}, {0x0FE20,0x0FE2F}, {0x101FD,0x101FD}, {0x102E0,0x102E0}, {0x10376,0x1037A},
+    {0x10A0D,0x10A0D}, {0x10A0F,0x10A0F}, {0x10A38,0x10A3A}, {0x10A3F,0x10A3F}, {0x10AE5,0x10AE6},
+    {0x10D24,0x10D27}, {0x10EAB,0x10EAC}, {0x10EFD,0x10EFF}, {0x10F46,0x10F50}, {0x10F82,0x10F85},
+    {0x11046,0x11046}, {0x11070,0x11070}, {0x1107F,0x1107F}, {0x110B9,0x110BA}, {0x11100,0x11102},
+    {0x11133,0x11134}, {0x11173,0x11173}, {0x111C0,0x111C0}, {0x111CA,0x111CA}, {0x11235,0x11236},
+    {0x112E9,0x112EA}, {0x1133B,0x1133C}, {0x1134D,0x1134D}, {0x11366,0x1136C}, {0x11370,0x11374},
+    {0x11442,0x11442}, {0x11446,0x11446}, {0x1145E,0x1145E}, {0x114C2,0x114C3}, {0x115BF,0x115C0},
+    {0x1163F,0x1163F}, {0x116B6,0x116B7}, {0x1172B,0x1172B}, {0x11839,0x1183A}, {0x1193D,0x1193E},
+    {0x11943,0x11943}, {0x119E0,0x119E0}, {0x11A34,0x11A34}, {0x11A47,0x11A47}, {0x11A99,0x11A99},
+    {0x11C3F,0x11C3F}, {0x11D42,0x11D42}, {0x11D44,0x11D45}, {0x11D97,0x11D97}, {0x11F41,0x11F42},
+    {0x16AF0,0x16AF4}, {0x16B30,0x16B36}, {0x16FF0,0x16FF1}, {0x1BC9E,0x1BC9E}, {0x1D165,0x1D169},
+    {0x1D16D,0x1D172}, {0x1D17B,0x1D182}, {0x1D185,0x1D18B}, {0x1D1AA,0x1D1AD}, {0x1D242,0x1D244},
+    {0x1E000,0x1E006}, {0x1E008,0x1E018}, {0x1E01B,0x1E021}, {0x1E023,0x1E024}, {0x1E026,0x1E02A},
+    {0x1E08F,0x1E08F}, {0x1E130,0x1E136}, {0x1E2AE,0x1E2AE}, {0x1E2EC,0x1E2EF}, {0x1E4EC,0x1E4EF},
+    {0x1E8D0,0x1E8D6}, {0x1E944,0x1E94A},
 };
 
 [[nodiscard]] bool inRanges( const CodepointRange* ranges, const std::size_t count,
@@ -490,6 +528,152 @@ bool isTransitionLine( std::string_view line ) noexcept
 {
     std::size_t length = 0;
     return adornmentRun( line, &length ) != '\0' && length >= 4;
+}
+
+// ── 리터럴 블록 ──────────────────────────────────────────
+
+namespace {
+
+/// 본문을 그대로 싣는 directive 이름. 오름차순 — 이분 탐색을 쓴다.
+///
+/// 고르는 기준은 「본문이 reST 인가」다. `parsed-literal` 은 모양만 리터럴이고
+/// 인라인 마크업을 그대로 해석하므로 여기 없다.
+constexpr std::string_view kLiteralBodyDirectives[] = {
+    "code", "code-block", "csv-table", "doctest", "graphviz", "math", "mermaid", "plantuml",
+    "raw", "sourcecode", "testcleanup", "testcode", "testoutput", "testsetup", "uml",
+};
+
+[[nodiscard]] char asciiLower( const char ch ) noexcept
+{
+    return ( ch >= 'A' && ch <= 'Z' ) ? static_cast< char >( ch - 'A' + 'a' ) : ch;
+}
+
+/// ASCII 대소문자만 무시하는 비교. directive 이름은 ASCII 다.
+[[nodiscard]] int compareFolded( std::string_view left, std::string_view right ) noexcept
+{
+    const std::size_t shared = std::min( left.size(), right.size() );
+    for( std::size_t i = 0; i < shared; ++i )
+    {
+        const char a = asciiLower( left[ i ] );
+        const char b = asciiLower( right[ i ] );
+        if( a != b )
+            return ( a < b ) ? -1 : 1;
+    }
+    if( left.size() == right.size() )
+        return 0;
+    return ( left.size() < right.size() ) ? -1 : 1;
+}
+
+}   // namespace
+
+bool hasLiteralBody( std::string_view directiveName ) noexcept
+{
+    constexpr std::size_t kCount =
+        sizeof( kLiteralBodyDirectives ) / sizeof( kLiteralBodyDirectives[ 0 ] );
+
+    std::size_t low = 0;
+    std::size_t high = kCount;
+    while( low < high )
+    {
+        const std::size_t mid = low + ( high - low ) / 2;
+        const int         order = compareFolded( directiveName, kLiteralBodyDirectives[ mid ] );
+        if( order == 0 )
+            return true;
+        if( order < 0 )
+            high = mid;
+        else
+            low = mid + 1;
+    }
+    return false;
+}
+
+bool LiteralBlockTracker::advance( std::string_view line, const bool allowOpen ) noexcept
+{
+    // 블록이 끝나는 줄은 두 번 본다 — 한 번은 닫으려고, 한 번은 그 줄 자체를
+    // 블록 밖 규칙으로 읽으려고. 그 이상은 돌 수 없다.
+    for( int pass = 0; pass < 2; ++pass )
+    {
+        switch( phase_ )
+        {
+            case Phase::Outside:
+            {
+                if( !allowOpen )
+                    return false;
+
+                if( const std::optional< DirectiveParts > parts = parseDirective( line ) )
+                {
+                    const std::string_view name =
+                        line.substr( parts->nameStart, parts->nameEnd - parts->nameStart );
+                    if( hasLiteralBody( name ) )
+                    {
+                        phase_ = Phase::Options;
+                        introIndent_ = indentWidth( line );
+                        sawBlankInOptions_ = false;
+                    }
+                    return false;
+                }
+
+                // `::` 로 끝난 문단은 뒤따르는 들여쓴 블록을 리터럴로 만든다.
+                // directive 를 먼저 걸러 냈으므로 `.. note::` 는 여기 오지 않는다.
+                const std::string_view trimmed = trimView( line );
+                if( trimmed.size() >= 2 && trimmed.substr( trimmed.size() - 2 ) == "::"
+                    && !hasExplicitMarkupPrefix( line ) )
+                {
+                    phase_ = Phase::Pending;
+                    introIndent_ = indentWidth( line );
+                    sawBlankInOptions_ = false;
+                }
+                return false;
+            }
+
+            case Phase::Pending:
+            case Phase::Options:
+            {
+                if( isBlank( line ) )
+                {
+                    sawBlankInOptions_ = true;
+                    return false;
+                }
+                if( indentWidth( line ) <= introIndent_ )
+                {
+                    // 본문이 오지 않았다. 이 줄은 블록 밖이다.
+                    phase_ = Phase::Outside;
+                    continue;
+                }
+                if( phase_ == Phase::Options && !sawBlankInOptions_ && parseField( line ) )
+                    return false;   // directive 옵션. 필드 이름으로 칠해야 한다
+                phase_ = Phase::Inside;
+                return true;
+            }
+
+            case Phase::Inside:
+            {
+                if( isBlank( line ) )
+                    return false;   // 블록 안의 빈 줄. 칠할 것이 없다
+                if( indentWidth( line ) > introIndent_ )
+                    return true;
+                phase_ = Phase::Outside;
+                continue;
+            }
+        }
+    }
+    return false;
+}
+
+bool LiteralBlockTracker::feed( std::string_view line ) noexcept
+{
+    return advance( line, true );
+}
+
+bool LiteralBlockTracker::peek( std::string_view line ) const noexcept
+{
+    LiteralBlockTracker copy = *this;
+    return copy.advance( line, true );
+}
+
+void LiteralBlockTracker::consumeAsTitle( std::string_view line ) noexcept
+{
+    advance( line, false );
 }
 
 // ── 섹션 제목 ────────────────────────────────────────────

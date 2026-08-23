@@ -3,6 +3,7 @@
 
 #include "editor/QBaseEditor.hpp"
 #include "editor/RstContainerLexer.hpp"
+#include "solRstLineUtils.hpp"
 #include "solGlossaryIndex.hpp"
 #include "solRstPathIndex.hpp"
 
@@ -23,16 +24,6 @@ constexpr int kDebounceMs = 150;
 
 /// 이 문자를 입력했을 때만 완성을 시작한다. 그 외 글자는 이미 떠 있는 팝업의
 /// 필터만 갱신한다. 평범한 산문을 치는 동안 팝업이 튀어나오면 안 된다.
-/// 줄 앞쪽 공백 **문자 수**. rstcomplete 의 leadingIndent 와 같은 단위여야 한다
-/// — 그쪽이 정규식의 `captured(1).length()` 와 견주기 때문이다.
-int leadingSpaceCount( const QString& line )
-{
-    int index = 0;
-    while( index < line.length() && line.at( index ).isSpace() )
-        ++index;
-    return index;
-}
-
 bool isTriggerCharacter( const int character )
 {
     switch( character )
@@ -1058,7 +1049,7 @@ QStringList CompletionCoordinator::previousLinesAtCaret() const
         return {};
 
     const int current = activeView_->caretLine();
-    const int caretIndent = leadingSpaceCount( activeView_->lineText( current ) );
+    const int caretIndent = rstline::leadingSpaceCount( activeView_->lineText( current ) );
 
     // 창 크기를 여기서 정하지 않는다. 블록 경계까지 거슬러 올라가는 규칙은
     // rstcomplete 가 갖고 있고 단위 테스트도 그쪽에 붙는다.

@@ -121,12 +121,66 @@ struct FieldParts
 /// 0열에서 시작하는 **같은 장식 문자의 연속**이고 나머지가 공백인가.
 /// 맞으면 그 문자를, 아니면 '\0' 을 낸다. 길이는 outLength 에 담는다.
 ///
-/// 들여쓴 줄은 장식으로 보지 않는다. 허용하면 code-block 본문의 `////`·`----` 가
-/// 전부 장식이 되는데, 리터럴 블록 추적이 없는 지금은 구별할 수단이 없다.
+/// 들여쓴 줄은 장식으로 보지 않는다. docutils 도 섹션을 문서 최상위 들여쓰기에서만
+/// 인정하며, 이 제약 덕분에 code-block 본문의 `////`·`----` 가 장식으로 잡히지
+/// 않는다 — 리터럴 본문은 반드시 들여쓴 줄이기 때문이다(LiteralBlockTracker 참조).
 [[nodiscard]] char adornmentRun( std::string_view line, std::size_t* outLength = nullptr ) noexcept;
 
 /// 홀로 선 구분선인가. docutils 는 4자 이상을 요구한다.
 [[nodiscard]] bool isTransitionLine( std::string_view line ) noexcept;
+
+// ── 리터럴 블록 ──────────────────────────────────────────
+
+/// 본문을 파싱하지 않고 그대로 싣는 directive 인가.
+///
+/// `code-block` 처럼 본문이 다른 언어인 것들이다. 이름 비교는 docutils 와 같이
+/// 대소문자를 가리지 않는다. 여기 없는 directive 의 본문은 계속 reST 로 읽는다.
+[[nodiscard]] bool hasLiteralBody( std::string_view directiveName ) noexcept;
+
+/// 리터럴 블록 안인지를 줄 단위로 따라가는 상태 기계.
+///
+/// 리터럴 블록은 줄 하나만 보고는 알 수 없다. `::` 로 끝난 문단이나
+/// `.. code-block::` 이 **위에** 있어야 시작하고, 들여쓰기가 얕아질 때 끝난다.
+/// 그 상태를 렉서와 접기가 각자 들고 다니지 않도록 여기 한 벌만 둔다.
+///
+/// 줄은 문서 순서대로 빠짐없이 먹여야 한다. 문서 중간부터 먹이려면 블록 밖이
+/// 확실한 곳에서 시작해야 하는데, **비어 있지 않은 0열 줄**이 그런 자리다 —
+/// 리터럴 본문은 도입부보다 깊게 들여쓴 줄이므로 0열일 수 없다.
+class LiteralBlockTracker
+{
+public:
+    /// 다음 줄을 먹이고 그 줄이 리터럴 본문인지 낸다.
+    bool feed( std::string_view line ) noexcept;
+
+    /// 상태를 바꾸지 않고 feed() 의 답만 미리 본다.
+    [[nodiscard]] bool peek( std::string_view line ) const noexcept;
+
+    /// 제목 묶음처럼 다른 규칙이 이미 가져간 줄. 상태는 잇되 블록을 열지 않는다.
+    ///
+    /// 제목 밑줄이 `::` 인 경우와 리터럴 도입부가 겹치기 때문에 필요하다 —
+    /// `사용법::` 아래에 `======` 가 오면 그것은 제목이지 리터럴 도입부가 아니다.
+    void consumeAsTitle( std::string_view line ) noexcept;
+
+    /// 리터럴 본문 안에 있는가.
+    [[nodiscard]] bool inBlock() const noexcept { return phase_ == Phase::Inside; }
+
+private:
+    enum class Phase
+    {
+        Outside,   ///< 평범한 본문
+        Pending,   ///< 도입부를 봤고 첫 본문 줄을 기다린다
+        Options,   ///< directive 옵션 블록을 지나는 중
+        Inside,    ///< 리터럴 본문
+    };
+
+    bool advance( std::string_view line, bool allowOpen ) noexcept;
+
+    Phase phase_ = Phase::Outside;
+    /// 도입부 줄의 들여쓰기. 본문은 이보다 깊다.
+    int introIndent_ = 0;
+    /// 옵션 블록이 빈 줄로 끝났는가. 그 뒤의 `:foo:` 는 옵션이 아니라 본문이다.
+    bool sawBlankInOptions_ = false;
+};
 
 // ── 섹션 제목 ────────────────────────────────────────────
 

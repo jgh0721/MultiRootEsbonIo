@@ -23,9 +23,11 @@ enum Style : int
     STYLE_ROLE_VALID = 7,
     STYLE_ROLE_INVALID = 8,
     STYLE_ROLE_UNKNOWN = 9,
-    /// 리터럴 블록(`::` 뒤의 들여쓴 블록). **아직 산출하지 않는다** — 줄 사이 상태를
-    /// 들고 있어야 하는데 렉서는 창 단위로 불려 그 상태를 잇지 못한다. 테마 색은
-    /// 이미 배정되어 있으므로 문서 스캔이 줄별 분류를 유지하게 되면 그 위에 얹는다.
+    /// 리터럴 블록. `::` 로 끝난 문단 뒤의 들여쓴 블록과 `.. code-block::` 류의 본문이다.
+    ///
+    /// 줄 사이 상태가 필요해 rst::LiteralBlockTracker 가 들고 다닌다. 창 단위로
+    /// 불리는 렉서가 그 상태를 이을 수 있도록, 부르는 쪽이 창을 **비어 있지 않은
+    /// 0열 줄**까지 위로 넓혀서 준다(ScintillaQtDirectBackend::handleStyleNeeded).
     STYLE_LITERAL = 10,
     STYLE_EMPHASIS = 11,
     STYLE_STRONG = 12,

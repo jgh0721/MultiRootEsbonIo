@@ -33,6 +33,18 @@ namespace mrst::rstline {
     return width;
 }
 
+/// 줄 앞 공백 **문자 수**. indentWidth 와 달리 탭을 8칸으로 펴지 않는다.
+///
+/// 자동완성 문맥 판정이 정규식의 `captured(1).length()` 와 견주기 때문에 그쪽은
+/// 문자 수라야 한다. 한쪽만 폭으로 바꾸면 탭이 섞인 문서에서 조용히 어긋난다.
+[[nodiscard]] inline int leadingSpaceCount( const QString& line )
+{
+    int index = 0;
+    while( index < line.length() && line.at( index ).isSpace() )
+        ++index;
+    return index;
+}
+
 [[nodiscard]] inline bool isBlank( const QString& line )
 {
     return line.trimmed().isEmpty();

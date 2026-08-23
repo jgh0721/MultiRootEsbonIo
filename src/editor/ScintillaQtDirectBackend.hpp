@@ -28,9 +28,15 @@ public:
 	QAbstractScrollArea* scrollArea() const;
 
 	void applySettings(const ScintillaEditorSettings& settings);
-	/// 자동 줄넘김 관련 메시지만 보낸다. applySettings() 는 끝에서 문서 전체를
-	/// 다시 렉싱하므로(SCI_COLOURISE + 접기 깊이 재계산) 줄넘김만 바뀌는
-	/// 경로에서 그 비용을 치를 이유가 없다.
+	/// 자동 줄넘김 관련 메시지만 보내고, **화면 맨 위 문서 줄을 지킨다.**
+	///
+	/// 줄넘김을 켜고 끄면 문서 전체가 다시 배치되면서 화면이 튄다. 그것을 되돌리는
+	/// 것이 이 함수의 본래 이유이며 applySettings() 에는 없는 동작이다.
+	///
+	/// 예전 주석은 "applySettings() 가 끝에서 SCI_COLOURISE 로 문서 전체를 다시
+	/// 렉싱하므로" 를 이유로 들었으나 그 호출은 제거되었다. 남은 것은 접기 깊이
+	/// 재주입인데 그것도 이제 값이 달라진 줄만 보낸다 — 성능 논거는 더 이상
+	/// 이 함수를 지탱하지 않는다. 스크롤 위치 보존이 지탱한다.
 	void applyWrapSettings(const ScintillaEditorSettings& settings);
 	void setText(const QString& text);
 	QString text() const;
@@ -200,6 +206,8 @@ private:
 	void applyMarkdownSyntaxStyles();
 	void setKeywordsForLexer(const QString& lexerKey);
 	void handleStyleNeeded(int endPosition);
+	/// 렉싱 창의 시작 줄을 리터럴 블록 상태가 확실한 곳까지 위로 넓힌다.
+	[[nodiscard]] int literalSeedLine(int contextFirstLine) const;
 	/// 접기 깊이 캐시를 버린다. 본문을 통째로 갈아 끼웠을 때 부른다.
 	void invalidateFoldLevelCache();
 	void emitDocumentEdited(bool inserted, int position, int length, int linesAdded,
