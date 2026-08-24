@@ -3,6 +3,7 @@
 
 #include "solPreviewProgress.hpp"
 #include "solUvTaskRunner.hpp"
+#include "utils/solBackgroundWork.hpp"
 #include "utils/solPhaseTrace.hpp"
 
 #include <QDateTime>
@@ -13,6 +14,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QThreadPool>
 #include <QTimer>
 
 namespace mrst {
@@ -309,16 +311,40 @@ void SphinxPreviewController::cleanupStaleOutputDirs( const QString& keepDir ) c
     if( !previewRoot.exists() )
         return;
 
+    // 지울 목록은 GUI 스레드에서 만든다. 여기까지는 디렉터리 한 겹만 읽으므로 싸다.
     const QString keepName = QFileInfo( keepDir ).fileName();
     const QFileInfoList entries = previewRoot.entryInfoList( QDir::Dirs | QDir::NoDotAndDotDot );
+
+    QStringList doomed;
     for( const QFileInfo& entry : entries )
     {
         if( entry.fileName() == keepName )
             continue;
-        // QWebEngine 이 이전 HTML 을 물고 있으면 지워지지 않는다. 실패해도 무시하고
-        // 다음 기회에 다시 시도한다.
-        QDir( entry.absoluteFilePath() ).removeRecursively();
+        doomed << entry.absoluteFilePath();
     }
+    if( doomed.isEmpty() )
+        return;
+
+    // 실제 삭제는 워커로 넘긴다.
+    //
+    // 이 디렉터리 하나가 HTML 36 MB / 파일 수천 개다(위 주석의 실측). 지금까지는
+    // 빌드가 끝나는 순간 GUI 스레드에서 재귀 삭제했다 — 즉 "프리뷰 로딩 중"
+    // 구간에 파일 시스템 작업 수천 건이 얹혀 있었다.
+    //
+    // 결과를 기다릴 이유가 없다. 실패해도 그냥 두고 다음 빌드에서 다시 시도하는
+    // 것이 원래 규칙이고(아래 주석), 남아 있어도 프리뷰 동작에는 영향이 없다.
+    QThreadPool::globalInstance()->start( [ doomed ] {
+        for( const QString& path : doomed )
+        {
+            // 종료 중이면 그만둔다. 수천 개 파일을 다 지우고 나서야 결과가
+            // 버려지는 것을 알게 되면 그 시간만큼 프로세스가 살아 있다.
+            if( isShuttingDown() )
+                return;
+            // QWebEngine 이 이전 HTML 을 물고 있으면 지워지지 않는다. 실패해도
+            // 무시하고 다음 기회에 다시 시도한다.
+            QDir( path ).removeRecursively();
+        }
+    } );
 }
 
 void SphinxPreviewController::startBuild()

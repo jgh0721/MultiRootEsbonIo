@@ -257,6 +257,8 @@ private:
     void                                onPreviewGateDecided( const PreviewBuildRequest& request,
                                                               bool immediate, bool changed );
     void                                refreshDiagnosticMarks( const QString& normalizedPath );
+    /// pathChanged 를 이벤트 루프 회전당 한 덩어리로 모아 refreshDiagnosticMarks 로 넘긴다.
+    void                                scheduleDiagnosticMarksRefresh( const QString& normalizedPath );
 
     // ── Esbonio ──
     // 지금은 활성 프로젝트 하나만 띄운다. 프로젝트당 하나씩 유지하는 풀은
@@ -360,6 +362,22 @@ private:
     /// 같은 프로젝트의 두 번째 `.md` 는 곧바로 내장 렌더러로 간다.
     QSet< QString >                     mystDeniedProjects_;
     QStringList                         previewSources_;      ///< data-mrr-src 인덱스 -> 원본 경로
+    /// previewSources_ 의 역인덱스. 정규화·접은 경로 -> 인덱스.
+    ///
+    /// 없을 때 sourceIndexForPath() 는 목록을 선형 순회하며 **항목마다**
+    /// `QFileInfo(...).absoluteFilePath()` 를 새로 만들었다. 그 함수는
+    /// sigViewportScrolled 마다 불리고, Sphinx 프로젝트에서 이 목록은 수백 개다.
+    QHash< QString, int >               previewSourceIndex_;
+    /// scheduleDiagnosticMarksRefresh() 가 모아 두는 경로들. 비어 있지 않으면
+    /// 예약된 타이머가 하나 떠 있다는 뜻이다.
+    QSet< QString >                     pendingDiagnosticMarkPaths_;
+    /// previewSources_ 를 바꿀 때 함께 부른다. 둘이 어긋나면 프리뷰가 엉뚱한
+    /// 문서로 스크롤하므로 대입 지점을 이 함수 하나로 모은다.
+    void                                setPreviewSources( const QStringList& sources );
+
+    /// 프리뷰로 마지막에 보낸 (소스 인덱스, 줄). 같은 값을 다시 보내지 않는다.
+    int                                 lastSyncedSourceIndex_ = -1;
+    double                              lastSyncedLine_ = -1.0;
     QStringList                         previewProcessedSources_;  ///< 이번 빌드가 다시 읽은 파일들
     /// 마지막으로 빌드를 **요청한** 문서. 탭을 옮겼는데 프리뷰가 따라오지
     /// 않은 상태를 알아채는 기준이다.

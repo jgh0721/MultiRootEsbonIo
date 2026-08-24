@@ -376,6 +376,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_FileKinds.cpp
             tests/tst_FileTreeFilter.cpp
             tests/tst_PreviewProgress.cpp
+            tests/tst_DiagnosticsStore.cpp
             tests/tst_SphinxBuilders.cpp
             tests/tst_WorkspaceSessionActive.cpp
             tests/tst_UpdateVersioning.cpp
@@ -408,6 +409,7 @@ if(MRST_BUILD_TESTS)
             src/utils/solBackgroundWork.cpp
             src/utils/AuthenticodeVerifier.cpp
             src/core/solSphinxDiagnostics.cpp
+            src/core/solSphinxDiagnosticsStore.cpp
             src/core/solSphinxScanner.cpp
             src/core/solLanguageManager.cpp
             src/core/solLanguageManager.hpp

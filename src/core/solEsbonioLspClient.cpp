@@ -252,21 +252,47 @@ void LspClient::start(const SphinxProject& project, const QString& pythonExe, co
     process_->setProcessEnvironment(env);
     connect(process_.get(), &QProcess::readyReadStandardOutput, this, &LspClient::readStdout);
     connect(process_.get(), &QProcess::readyReadStandardError, this, &LspClient::readStderr);
-    connect(process_.get(), &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        emit logMessage(QStringLiteral("Esbonio process error: %1").arg(error));
+    // **기동을 기다리지 않는다.**
+    //
+    // 예전에는 여기서 `waitForStarted(5000)` 을 불렀다. 이 함수는 문서를 여는
+    // 경로에서 GUI 스레드로 호출되므로(setActiveDocument → ensureLspForActiveDocument
+    // → LspServerPool::activate → 여기), 그 한 줄이 python.exe 기동이 끝날 때까지
+    // 창을 붙잡았다. 이미 따뜻한 환경에서는 0.15 ms 였지만, 콜드 스타트나 실시간
+    // 검사가 끼면 수백 ms~수 초가 나온다. 이 저장소에 남은 유일한 `waitFor*` 였다
+    // (solUvTaskRunner.hpp 가 그 원칙을 못 박아 두었다).
+    //
+    // 대신 `started` 에서 이어 간다. 초기화 요청(initialize)은 그 뒤에 보내야
+    // 하는데, 그것이 이 대기의 실제 이유였다 — stdin 이 열리기 전에 쓰면 사라진다.
+    //
+    // 실패 처리는 `errorOccurred` 가 맡는다. 별도 상한 타이머를 두지 않는다:
+    // QProcess 는 실행 파일이 없거나 기동에 실패하면 FailedToStart 를 **스스로**
+    // 내므로, 타이머는 같은 일을 두 번 알리는 장치가 될 뿐이다.
+    // `stop()` 은 process_ 를 reaper 로 **옮긴다**(std::move). 그러면 QProcess 는
+    // 살아 있고 우리 연결도 살아 있는데 process_ 는 비어 있거나 이미 다음
+    // 프로세스를 가리킨다. 그래서 두 람다 모두 "이 시그널이 지금 쓰는 프로세스에서
+    // 온 것인가" 를 먼저 확인한다.
+    QProcess* const spawned = process_.get();
+    connect(process_.get(), &QProcess::started, this, [this, spawned] {
+        if (process_.get() != spawned) {
+            return;   // stop() 이 지나갔거나 다른 프로젝트로 갈아탔다
+        }
+        // Esbonio 는 sphinx_agent 를 손자 프로세스로 띄운다. 우리가 자식만
+        // 종료해서는 손자가 남으므로 Job Object 로 묶어 앱과 함께 정리되게 한다.
+        assignToKillOnExitJob(process_->processId());
+
+        emit logMessage(tr("Esbonio 시작: %1").arg(activeProjectId_));
+        initialize();
     });
+    connect(process_.get(), &QProcess::errorOccurred, this,
+            [this, spawned, pythonExe](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart && process_.get() == spawned) {
+            emit logMessage(tr("Esbonio 시작 실패: %1").arg(pythonExe));
+            return;
+        }
+        emit logMessage(QStringLiteral("Esbonio process error: %1").arg(static_cast<int>(error)));
+    });
+
     process_->start();
-    if (!process_->waitForStarted(5000)) {
-        emit logMessage(tr("Esbonio 시작 실패: %1").arg(pythonExe));
-        return;
-    }
-
-    // Esbonio 는 sphinx_agent 를 손자 프로세스로 띄운다. 우리가 자식만
-    // 종료해서는 손자가 남으므로 Job Object 로 묶어 앱과 함께 정리되게 한다.
-    assignToKillOnExitJob(process_->processId());
-
-    emit logMessage(tr("Esbonio 시작: %1").arg(activeProjectId_));
-    initialize();
 }
 
 void LspClient::stop(const StopMode mode) {
