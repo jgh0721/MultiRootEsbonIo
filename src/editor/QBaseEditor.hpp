@@ -82,8 +82,9 @@ public:
     bool isHotExitEnabled() const;
     void setHotExitEnabled( bool enabled );
     bool openHotExitBackup( const QString& untitledId );
-    void flushHotExitBackup();
+    bool flushHotExitBackup();
     void discardHotExitBackup();
+    void abandonHotExitBackup();
     bool canCopyToClipboard() const override;
     bool copySelectionToClipboard() override;
     bool canPasteFromClipboard() const override;
@@ -283,7 +284,7 @@ private:
     bool currentFileHasBom() const;
     bool shouldUseHotExitForCurrentFile() const;
     void scheduleHotExitBackup();
-    void writeHotExitBackupNow( bool synchronous = false );
+    bool writeHotExitBackupNow( bool synchronous = false );
     void onHotExitBackupTimer();
     void applyHotExitSettingsFromPreferences();
 
@@ -310,6 +311,9 @@ private:
     class QTimer* m_hotExitTimer = nullptr;
     bool                m_hotExitEnabled = true;
     bool                m_hotExitDirty = false;
+    /// 저장하지 않고 명시적으로 닫힌 문서. 이 문서가 뷰에서 사라질 때까지
+    /// hot exit 백업을 다시 만들지 않는다. abandonHotExitBackup() 참고.
+    bool                m_hotExitAbandoned = false;
 
     // ── 제외 기능 ──
     static constexpr int kExcludeBackgroundIndicatorId = 20;
