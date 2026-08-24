@@ -90,14 +90,21 @@ namespace
             && !mrst::filekinds::imageExtensions().contains( ext );
     }
 
+    /// **앱을 닫을 때** 이 뷰의 저장 확인을 건너뛰어도 되는가.
+    ///
+    /// hot exit 는 종료에만 걸린다. 탭 하나를 닫는 것은 "이 문서를 버린다" 는
+    /// 뜻일 수 있으므로 거기서는 그대로 묻는다(onCloseTab).
+    ///
+    /// 제한 프리뷰와 절단 문서는 편집기가 파일의 일부만 들고 있다. 그 상태를
+    /// 스냅샷으로 떠서 되살리면 잘려 나간 뒤쪽이 원본에서 사라진 것처럼 보이므로
+    /// 빼고, 평소처럼 저장 여부를 묻는다.
     bool canCloseWithTextHotExit( QBaseView* view )
     {
-        return false;
-        //auto* textView = qobject_cast< QTextView* >( view );
-        //return textView
-        //    && textView->isHotExitEnabled()
-        //    && !textView->isLimitedPreviewMode()
-        //    && !textView->isContentTruncated();
+        auto* textView = qobject_cast< QTextView* >( view );
+        return textView
+            && textView->isHotExitEnabled()
+            && !textView->isLimitedPreviewMode()
+            && !textView->isContentTruncated();
     }
 
     QString stripOptionalQuotes( QString text )
@@ -2249,18 +2256,25 @@ void MainWindow::onCloseTab( int index )
             cancelLoadingView( view, false );
             return;
         }
-        if( view->isModified() && canCloseWithTextHotExit( view ) )
-        {
-            if( auto* textView = qobject_cast< QTextView* >( view ) )
-                textView->flushHotExitBackup();
-        }
-        else if( view->isModified() )
+        // 탭 하나를 닫는 것은 hot exit 가 맡지 않는다. 종료와 달리 사용자가 그
+        // 문서를 지금 치우겠다고 지목한 것이라, 저장할지 물어야 뜻을 확인할 수
+        // 있다. 여기서도 묻기를 건너뛰면 "아니요" 를 고를 자리가 없어져, 버리려던
+        // 변경이 다음 실행에 되살아난다.
+        if( view->isModified() )
         {
             auto btn = QMessageBox::question( this, tr( "저장 확인" ),
                 tr( "변경사항이 있습니다. 저장하시겠습니까?" ),
                 QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel );
             if( btn == QMessageBox::Cancel ) return;
-            if( btn == QMessageBox::Yes )
+            if( btn == QMessageBox::No )
+            {
+                // 버리겠다고 했다. 그 사이 주기 타이머가 써 둔 hot exit 백업을
+                // 지우고 다시 못 쓰게 잠근다. 남겨 두면 다음 실행이 이 문서를
+                // 되살려, 사용자가 버린 변경이 돌아온다.
+                if( auto* textView = qobject_cast< QTextView* >( view ) )
+                    textView->abandonHotExitBackup();
+            }
+            else if( btn == QMessageBox::Yes )
             {
                 // saveAs=false. 여기서 "예"는 "저장해라"(= Ctrl+S)이지 "다른 이름으로
                 // 저장해라"가 아니다. true 를 주면 saveFileAs() -> TextSaveDialog 로
@@ -2341,12 +2355,21 @@ void MainWindow::closeEvent( QCloseEvent* event )
             QWidget* widget = m_tabWidget->widget( i );
             if( auto* view = qobject_cast< QBaseView* >( widget ) )
             {
+                // hot exit 가 켜져 있으면 묻지 않고 스냅샷으로 남긴다. 다음
+                // 실행이 restoreHotExitSnapshots() 와 세션 복원으로 되살린다.
+                //
+                // 조건을 flush 의 **결과**로 따진다. 스냅샷을 쓰지 못했는데
+                // (폴더 권한, 디스크 가득, 아직 읽는 중) 묻기까지 건너뛰면
+                // 사용자는 아무 표시도 없이 변경을 잃는다. 그때는 평소의 저장
+                // 확인으로 물러선다.
+                bool keptByHotExit = false;
                 if( view->isModified() && canCloseWithTextHotExit( view ) )
                 {
                     if( auto* textView = qobject_cast< QTextView* >( view ) )
-                        textView->flushHotExitBackup();
+                        keptByHotExit = textView->flushHotExitBackup();
                 }
-                else if( view->isModified() )
+
+                if( view->isModified() && !keptByHotExit )
                 {
                     m_tabWidget->setCurrentIndex( i );
                     auto btn = QMessageBox::question( this, tr( "저장 확인" ),

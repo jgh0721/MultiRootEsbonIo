@@ -627,6 +627,7 @@ void QTextView::closeFile()
     m_cachedCurrentLine = 1;
     m_cachedCurrentColumn = 1;
     m_hotExitDirty = false;
+    m_hotExitAbandoned = false;
     m_hotExitUntitledId = newHotExitUntitledId();
     updateMetrics();
     emit sigFileClosed();
@@ -1068,10 +1069,17 @@ bool QTextView::openHotExitBackup( const QString& untitledId )
     return true;
 }
 
-void QTextView::flushHotExitBackup()
+/// 지금 상태를 hot exit 백업으로 즉시 내보낸다.
+///
+/// 돌려주는 값은 **디스크에 백업이 남았는가** 다. 종료 때 저장 확인을 건너뛰는
+/// 근거가 이 백업이므로, 쓰지 못했다면 부르는 쪽이 물어봐야 한다. 그러지 않으면
+/// 사용자는 아무 표시도 못 본 채로 변경을 잃는다.
+bool QTextView::flushHotExitBackup()
 {
-    if( shouldUseHotExitForCurrentFile() && isModified() )
-        writeHotExitBackupNow( true );
+    if( !shouldUseHotExitForCurrentFile() || !isModified() )
+        return false;
+
+    return writeHotExitBackupNow( true );
 }
 
 void QTextView::discardHotExitBackup()
@@ -1083,9 +1091,25 @@ void QTextView::discardHotExitBackup()
     m_hotExitDirty = false;
 }
 
+/// 저장하지 않고 **명시적으로** 닫은 문서의 백업을 지우고, 다시 만들지 못하게 한다.
+///
+/// 탭을 닫을 때 저장 확인에서 "아니요" 를 고른 것은 그 변경을 버리겠다는 뜻이다.
+/// 그런데 지우는 것만으로는 모자란다 — 문서는 아직 수정 상태이므로 2초 주기
+/// 타이머와 뒤따르는 closeFile() 이 스냅샷을 곧바로 다시 써 버리고, 다음 실행이
+/// 사용자가 버린 내용을 되살린다. 그래서 이 문서가 뷰에서 사라질 때까지
+/// (closeFile 이 표시를 되돌린다) hot exit 를 잠근다.
+void QTextView::abandonHotExitBackup()
+{
+    m_hotExitAbandoned = true;
+    if( m_hotExitTimer )
+        m_hotExitTimer->stop();
+    discardHotExitBackup();
+}
+
 bool QTextView::shouldUseHotExitForCurrentFile() const
 {
     return m_hotExitEnabled
+        && !m_hotExitAbandoned
         && m_editor
         && !m_document.isPreviewOnly()
         && !m_document.isTruncated()
@@ -1102,10 +1126,12 @@ void QTextView::scheduleHotExitBackup()
         m_hotExitTimer->start();
 }
 
-void QTextView::writeHotExitBackupNow( bool synchronous )
+/// 돌려주는 값은 백업을 남겼는지다. 동기 경로만 실제 쓰기 결과를 알 수 있고,
+/// 배경 경로는 요청을 넘겼다는 뜻이다.
+bool QTextView::writeHotExitBackupNow( bool synchronous )
 {
     if( !shouldUseHotExitForCurrentFile() )
-        return;
+        return false;
 
     const bool isUntitled = m_filePath.trimmed().isEmpty();
     QFileInfo fileInfo( m_filePath );
@@ -1132,14 +1158,12 @@ void QTextView::writeHotExitBackupNow( bool synchronous )
 
     m_hotExitDirty = false;
     if( synchronous )
-    {
-        TextShadowBackupStore::saveSnapshot( snapshot );
-        return;
-    }
+        return TextShadowBackupStore::saveSnapshot( snapshot );
 
     mrst::persistencePool().start( [snapshot = std::move( snapshot )] {
         TextShadowBackupStore::saveSnapshot( snapshot );
     } );
+    return true;
 }
 
 void QTextView::onHotExitBackupTimer()
