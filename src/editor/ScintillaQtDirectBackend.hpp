@@ -51,6 +51,23 @@ public:
 
 	bool hasSelectedText() const;
 	QString selectedText() const;
+
+	/// 문서 전체의 **UTF-16 코드 유닛 수** (상태바의 "문자 N").
+	///
+	/// 캐시된 값이다. 예전 구현은 부를 때마다 `text().size()` 로 문서를 통째로
+	/// 복사·디코딩했고, 그 경로는 **캐럿을 움직일 때마다** 돌았다. 실측(1095줄
+	/// 45 KB)으로 상태바 갱신 한 번이 0.19 ms 였고 그중 대부분이 이것이다.
+	///
+	/// 값은 편집 통지에서 편집분만 더하고 빼서 유지한다(Utf16Length.hpp 의 판단).
+	/// 캐시가 비어 있으면 여기서 한 번 전량 계산한다 — 그 계산도 SCI_GETRANGEPOINTER
+	/// 로 갭 버퍼를 직접 훑으므로 복사가 없다.
+	int characterCount() const;
+
+	/// 선택 범위의 UTF-16 코드 유닛 수.
+	///
+	/// 여기는 캐시하지 않는다. 선택은 보통 작고, 캐시하면 무효화 계기가 편집이
+	/// 아니라 선택 변경이라 사실상 매번 다시 세게 된다.
+	int selectedCharacterCount() const;
 	bool getSelectionRange(int& lineFrom, int& indexFrom, int& lineTo, int& indexTo) const;
 	void setSelectionRange(int lineFrom, int indexFrom, int lineTo, int indexTo);
 	void setSelectionByPos(int startPos, int endPos);
@@ -196,6 +213,11 @@ signals:
 private:
 	void configureCodeFolding(bool enabled);
 	void configureBraceHighlightIndicators();
+	/// characterCount() 의 캐시. -1 은 "모른다" 이고 다음 조회에서 전량 계산한다.
+	mutable int m_characterCount = -1;
+	/// 갭 버퍼를 직접 훑어 전량 계산한다. 복사도 할당도 하지 않는다.
+	int recountCharacters() const;
+
 	void syncLineCountState(bool emitSignal);
 	void updateLineNumberMargin(int minimumDigits = 0);
 	void emitCursorAndSelectionState();

@@ -6,6 +6,7 @@
 #include "TextLexerRegistry.hpp"
 #include "MarkdownStructure.hpp"
 #include "ScintillaDocument.hpp"
+#include "Utf16Length.hpp"
 #include "utils/solPhaseTrace.hpp"
 
 #include <QAbstractScrollArea>
@@ -254,6 +255,19 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 				if (!inserted && !deleted)
 					return;
 
+				// 문자 수 캐시를 편집분만큼 옮긴다. 여기가 없으면 상태바가 부를
+				// 때마다 문서를 다시 훑는다 — 타이핑 중에는 매 키 입력이 된다.
+				if (m_characterCount >= 0)
+				{
+					const int delta = mrst::sci::utf16Length(changedText);
+					m_characterCount += inserted ? delta : -delta;
+					// 통지가 우리 가정과 어긋났다면(깨진 UTF-8 등) 음수가 된다.
+					// 조용히 틀린 값을 내지 않도록 캐시를 버려 다음 조회가
+					// 전량 계산하게 한다.
+					if (m_characterCount < 0)
+						m_characterCount = -1;
+				}
+
 				emitDocumentEdited(inserted, static_cast<int>(position), static_cast<int>(length),
 								   static_cast<int>(linesAdded), changedText);
 
@@ -432,6 +446,9 @@ void ScintillaQtDirectBackend::setText(const QString& text)
 	m_editor->send(sciMessage(SCI_SETSAVEPOINT));
 	if (changeHistoryFlags != SC_CHANGE_HISTORY_DISABLED)
 		m_editor->send(sciMessage(SCI_SETCHANGEHISTORY), changeHistoryFlags);
+	// SCI_SETTEXT 는 SCI_SETMODEVENTMASK 를 통과하는 통지를 내지만, 적재는
+	// 증분으로 따라갈 값이 아니다. 캐시를 버려 다음 조회가 한 번 전량 계산하게 한다.
+	m_characterCount = -1;
 	syncLineCountState(false);
 	m_forcedModified = false;
 }
@@ -454,6 +471,7 @@ void ScintillaQtDirectBackend::clear()
 
 	m_editor->send(sciMessage(SCI_CLEARALL));
 	m_forcedModified = false;
+	m_characterCount = 0;
 	syncLineCountState(false);
 	updateBraceHighlight();
 }
@@ -498,18 +516,83 @@ bool ScintillaQtDirectBackend::hasSelectedText() const
 	return m_editor ? (m_editor->send(sciMessage(SCI_GETSELECTIONEMPTY)) == 0) : false;
 }
 
+/// 선택 범위를 바이트로 받는다. 종료문자는 잘라낸 상태로 돌려준다.
+///
+/// **SCI_GETSELTEXT 는 종료문자를 뺀 길이를 돌려준다.** Scintilla 5.2 에서
+/// SCI_GETTEXT 계열과 함께 그렇게 바뀌었다(Editor.cxx 의 Message::GetSelText 는
+/// `selectedText.Length()` 를 그대로 반환한다). 그런데 쓸 때는 그 길이만큼 복사한
+/// 뒤 `ptr[길이] = '\0'` 로 **한 바이트를 더 쓴다.**
+///
+/// 예전 구현은 반환값을 "종료문자 포함" 으로 읽어 두 가지가 어긋났다 —
+/// 버퍼를 한 바이트 적게 잡아 Scintilla 가 QByteArray 의 size() 밖에 NUL 을
+/// 썼고, `<= 1` 검사 때문에 **한 글자 선택이 빈 문자열**로 나왔다.
+static QByteArray selectionBytes(ScintillaEditBase* editor)
+{
+	if (editor == nullptr)
+		return {};
+
+	const sptr_t length = editor->send(sciMessage(SCI_GETSELTEXT));
+	if (length <= 0)
+		return {};
+
+	QByteArray buffer(static_cast<int>(length) + 1, Qt::Uninitialized);
+	editor->send(sciMessage(SCI_GETSELTEXT), 0, reinterpret_cast<sptr_t>(buffer.data()));
+	buffer.truncate(static_cast<int>(length));
+	return buffer;
+}
+
 QString ScintillaQtDirectBackend::selectedText() const
 {
 	if (!m_editor || !hasSelectedText())
 		return {};
 
-	const sptr_t lengthWithTerminator = m_editor->send(sciMessage(SCI_GETSELTEXT));
-	if (lengthWithTerminator <= 1)
-		return {};
+	return QString::fromUtf8(selectionBytes(m_editor));
+}
 
-	QByteArray buffer(static_cast<int>(lengthWithTerminator), Qt::Uninitialized);
-	m_editor->send(sciMessage(SCI_GETSELTEXT), 0, reinterpret_cast<sptr_t>(buffer.data()));
-	return QString::fromUtf8(buffer.constData());
+int ScintillaQtDirectBackend::recountCharacters() const
+{
+	if (!m_editor)
+		return 0;
+
+	const sptr_t length = m_editor->send(sciMessage(SCI_GETTEXTLENGTH));
+	if (length <= 0)
+		return 0;
+
+	// 갭 버퍼는 최대 두 조각이다. SCI_GETRANGEPOINTER 는 요청 범위가 갭을 걸치면
+	// 갭을 옮겨 하나로 만들어 주지만(Document::RangePointer), 그러면 문서 전체를
+	// 한 번 움직이게 된다. 갭 위치를 물어 조각별로 훑어 그것을 피한다.
+	const sptr_t gap = m_editor->send(sciMessage(SCI_GETGAPPOSITION));
+	const auto chunk = [this](sptr_t from, sptr_t count) -> int {
+		if (count <= 0)
+			return 0;
+		const auto* data = reinterpret_cast<const char*>(
+			m_editor->send(sciMessage(SCI_GETRANGEPOINTER), from, count));
+		if (data == nullptr)
+			return 0;
+		return mrst::sci::utf16Length(QByteArrayView(data, static_cast<qsizetype>(count)));
+	};
+
+	if (gap <= 0 || gap >= length)
+		return chunk(0, length);
+	return chunk(0, gap) + chunk(gap, length - gap);
+}
+
+int ScintillaQtDirectBackend::characterCount() const
+{
+	if (!m_editor)
+		return 0;
+
+	if (m_characterCount < 0)
+		m_characterCount = recountCharacters();
+	return m_characterCount;
+}
+
+int ScintillaQtDirectBackend::selectedCharacterCount() const
+{
+	if (!m_editor || !hasSelectedText())
+		return 0;
+
+	return mrst::sci::utf16Length(selectionBytes(m_editor));
 }
 
 bool ScintillaQtDirectBackend::getSelectionRange(int& lineFrom, int& indexFrom, int& lineTo, int& indexTo) const

@@ -2,9 +2,11 @@
 #include "QBaseEditor.hpp"
 
 #include "core/solAppSettings.hpp"
+#include "core/solSettingsWriter.hpp"
 #include "core/solShadowBackupStore.hpp"
 #include "core/solThemeManager.hpp"
 #include "utils/solBackgroundWork.hpp"
+#include "utils/solPhaseTrace.hpp"
 
 #include "ColumnRulerWidget.hpp"
 #include "FindReplaceWidget.hpp"
@@ -910,15 +912,17 @@ void QTextView::setEditorFont( const QFont& font )
         : ( font.pointSizeF() > 0.0 ? qRound( font.pointSizeF() ) : settings.value( "textView/fontSize", 10 ).toInt() );
     const int clampedSize = qBound( 6, pointSize, 72 );
 
-    // 값이 같으면 쓰지 않는다. QSettings 는 같은 값을 넣어도 dirty 로 보고
-    // 소멸자의 sync() 에서 INI 를 통째로 다시 쓴다. 이 함수는
+    // 값이 같으면 쓰지 않는다. 쓰기는 SettingsWriter 로 모이므로 파일 재작성은
+    // 더 이상 이 함수 안에서 일어나지 않지만, 가드는 그대로 둔다 — 이 함수는
     // MainWindow::applyPersistedViewSettings() 가 **INI 에서 읽어** 넘긴 값으로
-    // 불리므로, 세션 복원 때 탭마다 그 재작성이 그대로 시작 시간이 된다.
+    // 불리므로, 가드가 없으면 세션 복원이 탭마다 기록을 예약해 종료 때 한 번
+    // 쓸 이유를 없는 데서 만든다.
     // (이 파일의 setLineSpacingScale/setTabWidth/setUseTabs 는 이미 같은 가드를 갖고 있다.)
+    mrst::SettingsWriter& writer = mrst::SettingsWriter::instance();
     if( settings.value( "textView/fontFamily" ).toString() != font.family() )
-        settings.setValue( "textView/fontFamily", font.family() );
+        writer.setValue( QLatin1String( "textView/fontFamily" ), font.family() );
     if( settings.value( "textView/fontSize" ).toInt() != clampedSize )
-        settings.setValue( "textView/fontSize", clampedSize );
+        writer.setValue( QLatin1String( "textView/fontSize" ), clampedSize );
 }
 
 QFont QTextView::editorFont() const { return m_editor ? m_editor->editorFont() : QFont(); }
@@ -937,8 +941,7 @@ void QTextView::setLineSpacingScale( double scale )
     m_editorSettings.lineSpacingScale = scale;
     applyEditorSettings();
 
-    AppSettings settings;
-    settings.setValue( "textView/lineSpacing", scale );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/lineSpacing" ), scale );
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1213,9 +1216,7 @@ void QTextView::goToPosition( int line, int column )
 
 int  QTextView::characterCount() const
 {
-    return m_editor
-        ? static_cast< int >( qMin( m_editor->text().size(), qsizetype( std::numeric_limits<int>::max() ) ) )
-        : 0;
+    return m_editor ? m_editor->characterCount() : 0;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1495,8 +1496,7 @@ void QTextView::setTabWidth( int width )
     m_editorSettings.tabWidth = width;
     applyEditorSettings();
 
-    AppSettings settings;
-    settings.setValue( "textView/tabWidth", width );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/tabWidth" ), width );
 }
 
 bool QTextView::useTabs() const
@@ -1511,8 +1511,7 @@ void QTextView::setUseTabs( bool use )
     m_editorSettings.useTabs = use;
     applyEditorSettings();
 
-    AppSettings settings;
-    settings.setValue( "textView/useTabs", use );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/useTabs" ), use );
     emit statusChanged();
 }
 
@@ -1528,8 +1527,7 @@ void QTextView::setIndentationGuidesVisible( bool visible )
     m_editorSettings.showIndentationGuides = visible;
     applyEditorSettings();
 
-    AppSettings settings;
-    settings.setValue( "textView/showIndentationGuides", visible );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/showIndentationGuides" ), visible );
 }
 
 ScintillaEditorSettings::IndentGuideStyle QTextView::indentGuideStyle() const
@@ -1548,15 +1546,12 @@ void QTextView::setIndentGuideStyle( ScintillaEditorSettings::IndentGuideStyle s
     m_editorSettings.indentGuideStyle = style;
     applyEditorSettings();
 
-    AppSettings settings;
-    settings.setValue( "textView/indentGuideStyle", static_cast< int >( style ) );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/indentGuideStyle" ), static_cast< int >( style ) );
 }
 
 int  QTextView::selectedCharacterCount() const
 {
-    return ( m_editor && m_editor->hasSelectedText() )
-        ? static_cast< int >( qMin( m_editor->selectedText().size(), qsizetype( std::numeric_limits<int>::max() ) ) )
-        : 0;
+    return m_editor ? m_editor->selectedCharacterCount() : 0;
 }
 
 int  QTextView::lineCount() const { return qMax( 1, m_cachedLineCount ); }
@@ -1665,15 +1660,28 @@ void QTextView::setWordWrapMode( ScintillaEditorSettings::WrapMode mode )
     if( m_editorSettings.wrapMode == mode )
         return;
 
+    // Alt+Z 는 연타되는 단축키다. 이 구간이 늘면 곧바로 멈칫으로 보이므로 남긴다.
+    //
+    // 처음 쟀을 때 1095줄 문서에서 2.94 ms 였고 그중 Scintilla 재배치는 0.25 ms
+    // 뿐이었다. 나머지는 INI 파일 동기 쓰기(1.40 ms)와 상태바 갱신(0.65 ms)
+    // 이었고, 둘 다 아래처럼 고쳐 1.35 ms 가 되었다.
+    const mrst::PhaseSpan span( "wrap.toggle",
+                               QStringLiteral( "mode=%1 lines=%2" )
+                                   .arg( static_cast< int >( mode ) )
+                                   .arg( lineCount() ) );
+
     m_editorSettings.wrapMode = mode;
     applyWrapSettingsToEditor();
 
-    AppSettings settings;
-    settings.setValue( "textView/wordWrapMode", static_cast< int >( mode ) );
+    // 쓰기를 모아서 낸다. 예전에는 여기서 `AppSettings` 지역 변수를 만들었고,
+    // 그 소멸자의 sync() 가 키 입력마다 INI 파일을 통째로 다시 썼다.
+    mrst::SettingsWriter& writer = mrst::SettingsWriter::instance();
+    writer.setValue( QLatin1String( "textView/wordWrapMode" ), static_cast< int >( mode ) );
     if( mode != ScintillaEditorSettings::WrapNone )
     {
         m_lastWrapMode = mode;
-        settings.setValue( "textView/wordWrapLastMode", static_cast< int >( mode ) );
+        writer.setValue( QLatin1String( "textView/wordWrapLastMode" ),
+                         static_cast< int >( mode ) );
     }
 
     emit sigWordWrapModeChanged( static_cast< int >( mode ) );
@@ -1707,8 +1715,7 @@ void QTextView::setWrapVisualFlags( int flags )
     m_editorSettings.wrapVisualFlags = flags;
     applyWrapSettingsToEditor();
 
-    AppSettings settings;
-    settings.setValue( "textView/wrapVisualFlags", flags );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/wrapVisualFlags" ), flags );
 }
 
 ScintillaEditorSettings::WrapIndentMode QTextView::wrapIndentMode() const
@@ -1728,8 +1735,7 @@ void QTextView::setWrapIndentMode( ScintillaEditorSettings::WrapIndentMode mode 
     m_editorSettings.wrapIndentMode = mode;
     applyWrapSettingsToEditor();
 
-    AppSettings settings;
-    settings.setValue( "textView/wrapIndentMode", static_cast< int >( mode ) );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/wrapIndentMode" ), static_cast< int >( mode ) );
 }
 
 void QTextView::applyWrapSettingsToEditor()
@@ -1759,8 +1765,7 @@ void QTextView::setFontRenderingMode( ScintillaEditorSettings::FontRenderingMode
     m_editorSettings.fontRendering = mode;
     applyEditorSettings();
 
-    AppSettings settings;
-    settings.setValue( "textView/fontRendering", static_cast< int >( mode ) );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/fontRendering" ), static_cast< int >( mode ) );
 }
 
 bool QTextView::isRulerVisible() const
@@ -1773,8 +1778,7 @@ void QTextView::setRulerVisible( bool visible )
     if( m_ruler )
         m_ruler->setVisible( visible );
 
-    AppSettings settings;
-    settings.setValue( "textView/showRuler", visible );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/showRuler" ), visible );
 }
 
 bool QTextView::isWhitespaceVisible() const
@@ -1789,8 +1793,7 @@ void QTextView::setWhitespaceVisible( bool visible )
     m_editorSettings.showWhitespace = visible;
     applyEditorSettings();
 
-    AppSettings settings;
-    settings.setValue( "textView/showWhitespace", visible );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/showWhitespace" ), visible );
 }
 
 bool QTextView::isCodeFoldingEnabled() const
@@ -1810,8 +1813,7 @@ void QTextView::setCodeFoldingEnabled( bool enabled )
     if( m_ruler && m_editor )
         m_ruler->setLeftMarginWidth( m_editor->leftMarginWidth() );
 
-    AppSettings settings;
-    settings.setValue( "textView/showCodeFolding", enabled );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/showCodeFolding" ), enabled );
 }
 
 void QTextView::foldAll( const bool contract )
@@ -1835,8 +1837,7 @@ void QTextView::setBraceHighlightEnabled( bool enabled )
     m_editorSettings.braceMatching = enabled;
     applyEditorSettings();
 
-    AppSettings settings;
-    settings.setValue( "textView/braceHighlight", enabled );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/braceHighlight" ), enabled );
 }
 
 ScintillaEditorSettings::ChangeHistoryMode QTextView::changeHistoryMode() const
@@ -1864,8 +1865,7 @@ void QTextView::setChangeHistoryMode( ScintillaEditorSettings::ChangeHistoryMode
     m_editorSettings.changeHistoryMode = mode;
     applyEditorSettings();
 
-    AppSettings settings;
-    settings.setValue( "textView/changeHistoryMode", static_cast< int >( mode ) );
+    mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/changeHistoryMode" ), static_cast< int >( mode ) );
 }
 
 void QTextView::setTheme( Theme theme )

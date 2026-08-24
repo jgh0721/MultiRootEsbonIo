@@ -141,6 +141,8 @@ add_executable(${PROJECT_NAME}
         src/core/solGlossaryIndex.hpp
         src/core/solLanguageManager.cpp
         src/core/solLanguageManager.hpp
+        src/core/solSettingsWriter.cpp
+        src/core/solSettingsWriter.hpp
         src/core/solShadowBackupStore.cpp
         src/core/solShadowBackupStore.hpp
         src/core/solSphinxScanner.cpp
@@ -461,6 +463,7 @@ if(MRST_BUILD_TESTS)
             tests/ui/tst_ThemeColorSwatch.cpp
             tests/ui/tst_ScintillaTextMetrics.cpp
             tests/ui/tst_ScintillaDocumentLoad.cpp
+            tests/ui/tst_EditorMetrics.cpp
             tests/ui/tst_PanelActionIcons.cpp
 
             src/uis/PanelActionIcons.cpp
