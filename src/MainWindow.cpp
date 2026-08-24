@@ -444,26 +444,35 @@ MainWindow::MainWindow( QWidget* parent )
 
     createMenus();
 
-    m_loadingLabel = new QLabel( this );
-    m_loadingLabel->setVisible( false );
-    m_loadingProgressBar = new QProgressBar( this );
-    m_loadingProgressBar->setVisible( false );
-    m_loadingProgressBar->setTextVisible( true );
-    m_loadingProgressBar->setAlignment( Qt::AlignCenter );
-    m_loadingProgressBar->setFormat( QStringLiteral( "%p%" ) );
-    m_loadingProgressBar->setFixedWidth( 180 );
-    m_loadingCancelButton = new QPushButton( tr( "취소" ), this );
-    m_loadingCancelButton->setVisible( false );
-    m_loadingCancelButton->setAutoDefault( false );
-    m_loadingCancelButton->setDefault( false );
-    connect( m_loadingCancelButton, &QPushButton::clicked, this, &MainWindow::onCancelLoading );
-    statusBar()->addPermanentWidget( m_loadingLabel );
-    statusBar()->addPermanentWidget( m_loadingProgressBar );
-    statusBar()->addPermanentWidget( m_loadingCancelButton );
+    // ── 상태표시줄 왼쪽: 무슨 일이 얼마나 되었는가 ──
+    //
+    // addWidget 은 왼쪽, addPermanentWidget 은 오른쪽이다. 진행 상황은 왼쪽에 둔다 —
+    // 오른쪽은 줄·열·인코딩처럼 **가만히 있는** 값의 자리이고, 그 사이에 끼우면
+    // 진행 중에만 나타나는 위젯 때문에 옆 칩들이 매번 좌우로 밀린다.
+    statusMessageLabel_ = new QLabel( this );
+    statusMessageLabel_->setVisible( false );
+    statusProgressBar_ = new QProgressBar( this );
+    statusProgressBar_->setVisible( false );
+    statusProgressBar_->setTextVisible( true );
+    statusProgressBar_->setAlignment( Qt::AlignCenter );
+    statusProgressBar_->setFormat( QStringLiteral( "%p%" ) );
+    statusProgressBar_->setFixedWidth( 180 );
+    statusCancelButton_ = new QPushButton( tr( "취소" ), this );
+    statusCancelButton_->setVisible( false );
+    statusCancelButton_->setAutoDefault( false );
+    statusCancelButton_->setDefault( false );
+    connect( statusCancelButton_, &QPushButton::clicked, this, &MainWindow::onCancelLoading );
+    statusBar()->addWidget( statusMessageLabel_ );
+    statusBar()->addWidget( statusProgressBar_ );
+    statusBar()->addWidget( statusCancelButton_ );
+
+    transientStatusTimer_ = new QTimer( this );
+    transientStatusTimer_->setSingleShot( true );
+    connect( transientStatusTimer_, &QTimer::timeout, this, &MainWindow::clearTransientStatus );
 
     m_statusLabel = new QLabel( this );
     statusBar()->addPermanentWidget( m_statusLabel );
-    statusBar()->showMessage( tr( "Ready" ) );
+    showTransientStatus( tr( "Ready" ) );
 
     m_loadingAnimationTimer = new QTimer( this );
     m_loadingAnimationTimer->setInterval( kLoadingAnimationIntervalMs );
@@ -956,8 +965,8 @@ void MainWindow::retranslateUi()
     updateViewerToolBar();
 
     updateEnvStatusChip();
-    if( m_loadingCancelButton != nullptr )
-        m_loadingCancelButton->setText( tr( "취소" ) );
+    if( statusCancelButton_ != nullptr )
+        statusCancelButton_->setText( tr( "취소" ) );
 
     // Ui.retranslateUi() 가 덮어쓴 창 제목을 되돌린다. 순서가 뒤바뀌면 제목
     // 표시줄에 "MainWindow" 가 남는다.
@@ -1781,9 +1790,9 @@ void MainWindow::connectViewWatchSignals( QBaseView* view )
     // 기준으로 삼는데, 우리가 읽은 시점 뒤에 또 바뀌었다면 그 변경을 영원히
     // 놓친다. 발견 시점의 기준을 그대로 두면 그 경우 한 번 더 알려 준다.
     connect( textView, &QTextView::sigFileReloadedFromDisk, this, [this]( const QString& path ) {
-        statusBar()->showMessage( tr( "밖에서 바뀐 내용으로 다시 불러왔습니다: %1" )
+        showTransientStatus( tr( "밖에서 바뀐 내용으로 다시 불러왔습니다: %1" )
                                      .arg( QFileInfo( path ).fileName() ),
-                                 kExternalChangeStatusMs );
+                             kExternalChangeStatusMs );
     } );
 }
 
@@ -1855,9 +1864,9 @@ void MainWindow::onExternalFileVanished( const QString& filePath )
 
     // 탭을 닫지 않는다. 이 버퍼가 그 내용의 마지막 사본일 수 있다.
     view->markFileVanished();
-    statusBar()->showMessage( tr( "파일이 밖에서 사라졌습니다. 편집 중인 내용은 그대로 두었습니다: %1" )
+    showTransientStatus( tr( "파일이 밖에서 사라졌습니다. 편집 중인 내용은 그대로 두었습니다: %1" )
                                  .arg( QFileInfo( filePath ).fileName() ),
-                             kExternalChangeStatusMs );
+                         kExternalChangeStatusMs );
 }
 
 void MainWindow::queueExternalChangePrompt( const QString& filePath )
@@ -2248,7 +2257,7 @@ void MainWindow::onCloseTab( int index )
                     return;
                 if( view->isLoading() )
                 {
-                    statusBar()->showMessage( tr( "저장이 진행 중입니다. 저장 완료 후 다시 탭을 닫아 주세요." ), 3000 );
+                    showTransientStatus( tr( "저장이 진행 중입니다. 저장 완료 후 다시 탭을 닫아 주세요." ), 3000 );
                     refreshCurrentViewUi();
                     return;
                 }
@@ -2685,8 +2694,9 @@ void MainWindow::updateTabDecoration( QBaseView* view )
 
 void MainWindow::updateStatusBar()
 {
-    // 이전의 임시 메시지(showMessage)가 permanent widget을 가리지 않도록 제거
-    statusBar()->clearMessage();
+    // 지난 알림을 치운다. 문서가 바뀌었으면 그 알림은 더 이상 지금 화면에
+    // 대한 이야기가 아니다.
+    clearTransientStatus();
 
     auto* v = currentView();
     if( !v ) { m_statusLabel->clear(); return; }
@@ -2832,7 +2842,7 @@ void MainWindow::cancelLoadingView( QBaseView* view, bool showStatusMessage )
 
     if( showStatusMessage )
     {
-        statusBar()->showMessage(
+        showTransientStatus(
             tr( "\"%1\" 파일 열기를 취소했습니다." ).arg( cancelledTitle.isEmpty() ? tr( "현재 탭" ) : cancelledTitle ),
             2500 );
     }
@@ -2844,7 +2854,7 @@ void MainWindow::setViewLoadingState( QBaseView* view,
                                      int value,
                                      int maximum )
 {
-    if( !m_loadingLabel || !m_loadingProgressBar )
+    if( statusMessageLabel_ == nullptr || statusProgressBar_ == nullptr )
         return;
 
     if( !view )
@@ -2869,7 +2879,7 @@ void MainWindow::setViewLoadingState( QBaseView* view,
     if( !active )
     {
         if( !message.isEmpty() && m_activeViewLoads.isEmpty() )
-            statusBar()->showMessage( message, 2000 );
+            showTransientStatus( message, 2000 );
         else if( m_activeViewLoads.isEmpty() )
             updateStatusBar();
     }
@@ -2879,9 +2889,6 @@ void MainWindow::setViewLoadingState( QBaseView* view,
 
 void MainWindow::refreshLoadingIndicator()
 {
-    if( !m_loadingLabel || !m_loadingProgressBar )
-        return;
-
     QBaseView* displayView = preferredLoadingView();
 
     if( m_loadingAnimationTimer )
@@ -2894,18 +2901,8 @@ void MainWindow::refreshLoadingIndicator()
 
     if( !displayView || !m_activeViewLoads.contains( displayView ) )
     {
-        m_loadingLabel->clear();
-        m_loadingLabel->setVisible( false );
-        m_loadingProgressBar->setVisible( false );
-        m_loadingProgressBar->reset();
-        m_loadingProgressBar->setFormat( QStringLiteral( "%p%" ) );
-        if( m_loadingCancelButton )
-        {
-            m_loadingCancelButton->setVisible( false );
-            m_loadingCancelButton->setToolTip( {} );
-        }
-        // 로딩 중 표시한 임시 메시지 제거 → permanent 위젯이 보이도록
-        statusBar()->clearMessage();
+        statusTasks_.remove( StatusTaskId::FileLoad );
+        refreshStatusProgress();
         return;
     }
 
@@ -2916,30 +2913,111 @@ void MainWindow::refreshLoadingIndicator()
     if( !displayView->title().isEmpty() )
         effectiveMessage = tr( "%1 — %2" ).arg( displayView->title(), effectiveMessage );
 
+    StatusTask task;
+    task.cancellable = displayView->canCancelLoading();
+    task.cancelTip   = tr( "\"%1\" 파일 열기를 취소합니다." ).arg( displayView->title() );
+
     if( state.maximum > 0 )
     {
         const int boundedValue = qBound( 0, state.value, state.maximum );
         const int percent = qRound( ( static_cast< double >( boundedValue ) * 100.0 ) / state.maximum );
-        m_loadingLabel->setText( tr( "%1 (%2%)" ).arg( effectiveMessage ).arg( percent ) );
-        m_loadingProgressBar->setRange( 0, state.maximum );
-        m_loadingProgressBar->setValue( boundedValue );
-        m_loadingProgressBar->setFormat( QStringLiteral( "%p%" ) );
+        task.message  = tr( "%1 (%2%)" ).arg( effectiveMessage ).arg( percent );
+        task.permille = qRound( ( static_cast< double >( boundedValue ) * 1000.0 ) / state.maximum );
     }
     else
     {
-        m_loadingLabel->setText( effectiveMessage );
-        m_loadingProgressBar->setRange( 0, 0 );
-        m_loadingProgressBar->setFormat( tr( "작업 중" ) );
+        task.message  = effectiveMessage;
+        task.permille = -1;
     }
 
-    m_loadingLabel->setVisible( true );
-    m_loadingProgressBar->setVisible( true );
-    if( m_loadingCancelButton )
+    statusTasks_.insert( StatusTaskId::FileLoad, task );
+    refreshStatusProgress();
+}
+
+void MainWindow::refreshStatusProgress()
+{
+    if( statusMessageLabel_ == nullptr || statusProgressBar_ == nullptr )
+        return;
+
+    const auto resetCancel = [this]( const bool visible, const QString& tip ) {
+        if( statusCancelButton_ == nullptr )
+            return;
+        statusCancelButton_->setVisible( visible );
+        statusCancelButton_->setToolTip( tip );
+    };
+
+    if( statusTasks_.isEmpty() )
     {
-        m_loadingCancelButton->setVisible( displayView->canCancelLoading() );
-        m_loadingCancelButton->setToolTip( tr( "\"%1\" 파일 열기를 취소합니다." ).arg( displayView->title() ) );
+        statusMessageLabel_->setText( transientStatus_ );
+        statusMessageLabel_->setVisible( !transientStatus_.isEmpty() );
+        statusProgressBar_->setVisible( false );
+        statusProgressBar_->reset();
+        statusProgressBar_->setFormat( QStringLiteral( "%p%" ) );
+        resetCancel( false, {} );
+        return;
     }
-    statusBar()->showMessage( m_loadingLabel->text() );
+
+    // QMap 은 키로 정렬하므로 첫 항목이 곧 우선순위가 가장 높은 작업이다
+    // (StatusTaskId 의 선언 순서).
+    const StatusTask front = *statusTasks_.constBegin();
+
+    // 큰 문서를 열면 파일 읽기와 프리뷰가 겹친다. 앞선 것만 보여 주면 남은 일이
+    // 몇 개인지 알 수 없어 "다 됐는데 왜 아직" 처럼 보인다.
+    //: 상태표시줄에 동시에 도는 작업이 둘 이상일 때의 틀. %1 은 작업 개수,
+    //: %2 는 그중 지금 보여 주는(첫) 작업의 안내문이다. 보이는 것은 언제나
+    //: 첫 작업이라 앞의 1 은 상수다 — 예: "(1/2) 파일 여는 중...".
+    statusMessageLabel_->setText(
+            statusTasks_.size() > 1
+                    ? tr( "(1/%1) %2" ).arg( statusTasks_.size() ).arg( front.message )
+                    : front.message );
+    statusMessageLabel_->setVisible( true );
+
+    // 전체 진행도는 값을 아는 작업들의 평균이다. 하나도 모를 때만 왕복 막대로
+    // 넘어간다 — 아는 값이 하나라도 있으면 그것이 왕복 막대보다 쓸모 있다.
+    int    known = 0;
+    qint64 sum   = 0;
+    for( const StatusTask& task : std::as_const( statusTasks_ ) )
+    {
+        if( task.permille < 0 )
+            continue;
+        ++known;
+        sum += task.permille;
+    }
+
+    statusProgressBar_->setVisible( true );
+    if( known > 0 )
+    {
+        // 범위를 천분율로 두고 %p% 를 쓰면 Qt 가 백분율로 환산해 보여 준다.
+        statusProgressBar_->setRange( 0, 1000 );
+        statusProgressBar_->setValue( static_cast< int >( sum / known ) );
+        statusProgressBar_->setFormat( QStringLiteral( "%p%" ) );
+    }
+    else
+    {
+        statusProgressBar_->setRange( 0, 0 );
+        statusProgressBar_->setFormat( tr( "작업 중" ) );
+    }
+
+    resetCancel( front.cancellable, front.cancelTip );
+}
+
+void MainWindow::showTransientStatus( const QString& text, const int msec )
+{
+    transientStatus_ = text.trimmed();
+
+    if( transientStatusTimer_ != nullptr )
+    {
+        transientStatusTimer_->stop();
+        if( msec > 0 && !transientStatus_.isEmpty() )
+            transientStatusTimer_->start( msec );
+    }
+
+    refreshStatusProgress();
+}
+
+void MainWindow::clearTransientStatus()
+{
+    showTransientStatus( {} );
 }
 
 void MainWindow::updatePasteActionState()
@@ -3115,7 +3193,7 @@ void MainWindow::openDroppedPaths( const QStringList& paths )
     }
 
     if( openedRequests > 0 )
-        statusBar()->showMessage( tr( "드롭한 항목 %n개를 처리했습니다.", nullptr, openedRequests ), 2500 );
+        showTransientStatus( tr( "드롭한 항목 %n개를 처리했습니다.", nullptr, openedRequests ), 2500 );
 }
 
 void MainWindow::openDroppedDirectory( const QString& dirPath )
@@ -3126,7 +3204,7 @@ void MainWindow::openDroppedDirectory( const QString& dirPath )
     const QFileInfoList entries = dir.entryInfoList( QDir::Files, QDir::Name | QDir::IgnoreCase );
     if( entries.isEmpty() )
     {
-        statusBar()->showMessage( tr( "디렉토리에 열 수 있는 직계 파일이 없습니다: %1" ).arg( QDir::toNativeSeparators( dirPath ) ), 3500 );
+        showTransientStatus( tr( "디렉토리에 열 수 있는 직계 파일이 없습니다: %1" ).arg( QDir::toNativeSeparators( dirPath ) ), 3500 );
         return;
     }
 
@@ -4065,7 +4143,7 @@ void MainWindow::onExplorerBuild( const QString& projectId, const QString& proje
                                              tr( "빌드에 실패했습니다. 로그 탭을 확인하십시오." ) );
                         return;
                     }
-                    statusBar()->showMessage( tr( "빌드 완료: %1" ).arg( resultDirectory ), 8000 );
+                    showTransientStatus( tr( "빌드 완료: %1" ).arg( resultDirectory ), 8000 );
                     if( openWhenDone )
                         revealInFileManager( resultDirectory );
                 },
@@ -4835,12 +4913,8 @@ void MainWindow::setupPythonEnvironment()
     if( controller_ != nullptr )
         controller_->setPythonEnvironment( pythonEnv_ );
 
-    // 프리뷰 칩이 환경 칩보다 왼쪽에 오도록 먼저 붙인다.
-    previewStatusLabel_ = new QLabel( this );
-    previewStatusLabel_->setContentsMargins( 8, 0, 8, 0 );
-    previewStatusLabel_->setVisible( false );
-    statusBar()->addPermanentWidget( previewStatusLabel_ );
-
+    // 프리뷰 상태는 오른쪽 칩이 아니라 왼쪽의 진행 자리로 간다
+    // (refreshStatusProgress). 오른쪽에는 가만히 있는 값만 남는다.
     envStatusLabel_ = new QLabel( this );
     envStatusLabel_->setContentsMargins( 8, 0, 8, 0 );
     statusBar()->addPermanentWidget( envStatusLabel_ );
@@ -4848,11 +4922,21 @@ void MainWindow::setupPythonEnvironment()
     if( controller_ != nullptr )
     {
         connect( controller_, &mrst::WorkspaceController::previewStatusChanged, this,
-                [this]( const QString& text, const bool busy ) {
-                    if( previewStatusLabel_ == nullptr )
-                        return;
-                    previewStatusLabel_->setText( text );
-                    previewStatusLabel_->setVisible( busy );
+                [this]( const QString& text, const bool busy, const int permille ) {
+                    if( busy )
+                    {
+                        StatusTask task;
+                        task.message  = text;
+                        task.permille = permille;
+                        // 프리뷰 빌드는 취소 단추를 내지 않는다. 취소해도 편집기는
+                        // 그대로고, 다음 편집이 곧 새 빌드를 부르므로 사용자가
+                        // 얻는 것이 없다.
+                        statusTasks_.insert( StatusTaskId::Preview, task );
+                    }
+                    else
+                        statusTasks_.remove( StatusTaskId::Preview );
+
+                    refreshStatusProgress();
                 } );
     }
 
@@ -4980,7 +5064,7 @@ void MainWindow::setupUpdateService()
             } );
     connect( updateService_, &mrst::UpdateService::upToDate, this, [this]( const bool userInitiated ) {
         if( userInitiated )
-            statusBar()->showMessage( tr( "최신 버전을 사용하고 있습니다." ), 4000 );
+            showTransientStatus( tr( "최신 버전을 사용하고 있습니다." ), 4000 );
     } );
     connect( updateService_, &mrst::UpdateService::failed, this,
             [this]( const QString& message, const bool silent ) {
@@ -4990,7 +5074,7 @@ void MainWindow::setupUpdateService()
     connect( updateService_, &mrst::UpdateService::installOutcomeReported, this,
             [this]( const bool succeeded, const QString& version, const QString& message ) {
                 if( succeeded )
-                    statusBar()->showMessage( tr( "%1 로 업데이트했습니다." ).arg( version ), 8000 );
+                    showTransientStatus( tr( "%1 로 업데이트했습니다." ).arg( version ), 8000 );
                 else
                     QMessageBox::warning( this, tr( "업데이트" ),
                                          tr( "업데이트를 적용하지 못했습니다.\n%1" ).arg( message ) );

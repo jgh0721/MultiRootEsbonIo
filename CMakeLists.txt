@@ -151,6 +151,8 @@ add_executable(${PROJECT_NAME}
         src/core/solSphinxDiagnosticsStore.hpp
         src/core/solSphinxPreviewController.cpp
         src/core/solSphinxPreviewController.hpp
+        src/core/solPreviewProgress.cpp
+        src/core/solPreviewProgress.hpp
         src/core/solPreviewBridge.cpp
         src/core/solPreviewBridge.hpp
         src/core/solMarkdownAssets.hpp
@@ -373,6 +375,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_RstSubstitutions.cpp
             tests/tst_FileKinds.cpp
             tests/tst_FileTreeFilter.cpp
+            tests/tst_PreviewProgress.cpp
             tests/tst_SphinxBuilders.cpp
             tests/tst_WorkspaceSessionActive.cpp
             tests/tst_UpdateVersioning.cpp
@@ -389,6 +392,7 @@ if(MRST_BUILD_TESTS)
             src/core/solRstPathIndex.cpp
             src/core/solRstSubstitutionIndex.cpp
             src/core/solSphinxBuilders.cpp
+            src/core/solPreviewProgress.cpp
             src/uis/FileTreeFilterProxy.cpp
             src/core/solUpdateManifest.cpp
             src/core/solFileKinds.cpp

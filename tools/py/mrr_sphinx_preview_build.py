@@ -2,7 +2,10 @@
 
 Sphinx 를 Python API 로 직접 구동해 HTML 을 만들고, docutils 노드가 알고 있는
 원본 줄 번호를 그대로 HTML 속성으로 심는다. 결과 요약은 사이드카 JSON 으로
-내보내며 C++ 쪽은 그 JSON 만 신뢰한다 (stdout 은 로그 패널 표시용).
+내보내며 C++ 쪽은 그 JSON 만 신뢰한다.
+
+stdout 은 로그 패널 표시용이다. 딱 하나 예외가 PROGRESS_TAG 로 시작하는 줄인데,
+그것은 진행막대용이라 앱이 걷어내고 로그에는 넣지 않는다 (_emit_progress 참고).
 
 에디터 <-> 프리뷰 양방향 스크롤 동기화가 정확하려면 "이 DOM 요소가 원본 몇 번째
 줄에서 몇 번째 줄까지인가" 를 알아야 한다. 생성된 HTML 에서 원본 텍스트를
@@ -52,6 +55,11 @@ READ_COST_NAME = ".mrr-readcost.json"
 # 직전 빌드에서 미저장 사본을 적용한 docname 목록. 사본이 사라졌을 때
 # doctree 에 남은 편집 내용을 원본으로 되돌리는 데 쓴다.
 SHADOWED_NAME = ".mrr-shadowed.json"
+
+# 진행률 줄의 표식. 이 줄만 stdout 으로 **즉시** 나가고, 앱이 걷어내 진행막대에
+# 쓴다. Sphinx 자신의 status 는 status_stream(StringIO)에 모였다가 _finish() 에서
+# 한꺼번에 나오므로 진행률로 쓸 수 없다 — 빌드가 끝난 뒤에 도착한다.
+PROGRESS_TAG = "@@MRST-PROGRESS "
 
 # 입력 지문을 두던 옛 자리(출력 디렉터리 안). 지금은 앱이 `--inputs-file` 로
 # 워크스페이스의 .multiroot 아래 경로를 지정한다. 옛 파일이 남아 있으면 아무도
@@ -667,6 +675,62 @@ def _install_read_cost_meter(app: Sphinx, costs: dict[str, int]) -> None:
     app.connect("doctree-read", on_doctree_read)
 
 
+def _emit_progress(phase: str, done: int, total: int) -> None:
+    """진행률 한 줄을 stdout 으로 즉시 흘려보낸다.
+
+    flush 가 핵심이다. stdout 이 파이프면 파이썬이 블록 버퍼링을 하므로, flush 하지
+    않으면 이 줄들도 빌드가 끝날 때 한꺼번에 나가 status_stream 과 다를 바가 없다.
+    """
+    try:
+        # print 가 줄바꿈을 붙이고 flush 까지 한 번에 한다.
+        print(PROGRESS_TAG + json.dumps(
+            {"phase": phase, "done": int(done), "total": int(total)}), flush=True)
+    except Exception:  # noqa: BLE001 - 진행막대 때문에 빌드를 깨뜨리지 않는다.
+        pass
+
+
+def _install_progress_reporter(app: Sphinx) -> None:
+    """읽기/쓰기 진행률을 Sphinx 이벤트에서 뽑아 흘려보낸다.
+
+    **status 문자열을 파싱하지 않는다.** `reading sources... [ 42%]` 같은 형식은
+    Sphinx 버전과 tty 여부에 따라 달라지고, 애초에 그 글자는 버퍼에 모였다가
+    끝에 나온다. 이벤트는 그런 사정이 없다.
+
+    분모는 어림값이다. 쓰기 쪽은 `html-page-context` 가 genindex·search 처럼
+    문서 목록에 없는 페이지에도 오므로 done 이 total 을 넘을 수 있어서, 넘는
+    만큼 total 을 늘려 잡는다. 앱 쪽에서도 구간 안으로 가둔다.
+
+    사용자 프로젝트의 venv 에 어떤 Sphinx 가 있을지 모르므로 이벤트마다 따로
+    감싼다. 없는 이벤트가 있어도 빌드는 그대로 되고 진행률만 그 단계가 빠진다.
+    """
+    state = {"read_total": 0, "read_done": 0, "write_total": 0, "write_done": 0}
+
+    def on_before_read(_app, _env, docnames) -> None:
+        state["read_total"] = len(docnames)
+        state["read_done"] = 0
+        _emit_progress("read", 0, state["read_total"])
+
+    def on_source_read(_app, _docname, _source) -> None:
+        state["read_done"] += 1
+        _emit_progress("read", state["read_done"], max(state["read_total"], state["read_done"]))
+
+    def on_page_context(app_, _pagename, _templatename, _context, _doctree) -> None:
+        if not state["write_total"]:
+            state["write_total"] = max(len(app_.env.all_docs), 1)
+        state["write_done"] += 1
+        _emit_progress("write", state["write_done"], max(state["write_total"], state["write_done"]))
+
+    for event, handler in (
+        ("env-before-read-docs", on_before_read),
+        ("source-read", on_source_read),
+        ("html-page-context", on_page_context),
+    ):
+        try:
+            app.connect(event, handler)
+        except Exception:  # noqa: BLE001 - 그 단계의 진행률만 빠진다.
+            pass
+
+
 def _claim_out_dir(out_dir: Path) -> None:
     """중단된 직전 빌드의 잔해를 걷어내고 이번 빌드의 표식을 남긴다.
 
@@ -928,6 +992,7 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(value, (int, float))
         }
         _install_read_cost_meter(app, read_costs)
+        _install_progress_reporter(app)
 
         applied, skipped = _plan_shadow(app, args, read_costs, status_stream)
         stubbed_docs: dict[str, int] = {}

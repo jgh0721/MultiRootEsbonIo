@@ -185,7 +185,11 @@ signals:
     /// 프리뷰가 준비되는 동안의 상태. busy=false 면 text 는 비어 있고 표시를 지운다.
     /// 빌드뿐 아니라 HTML 로드 구간까지 덮는다 — 큰 문서는 빌드가 끝난 뒤에도
     /// WebEngine 이 읽는 데 시간이 걸려서, 그 사이가 비어 있으면 고장으로 보인다.
-    void                                previewStatusChanged( const QString& text, bool busy );
+    ///
+    /// `permille` 은 프리뷰 한 판 전체에 대한 진행도(0..1000)다. 준비 · 빌드 읽기 ·
+    /// 빌드 쓰기 · HTML 로딩이 각자 구간을 나눠 쓰므로 단계가 넘어가도 값이
+    /// 뒤로 가지 않는다. 음수면 진행도를 알 수 없다는 뜻이다(왕복 막대).
+    void                                previewStatusChanged( const QString& text, bool busy, int permille );
 
     // ── 개요 ──
     /// 활성 문서의 섹션 개요. 먼저 정규식 폴백으로 한 번, LSP 응답이 오면 다시.
@@ -238,7 +242,10 @@ private:
     void                                showPreviewHtml( const QString& htmlPath, const QString& documentKey,
                                                           int buildSerial );
     /// 같은 문구를 반복 발신하지 않는다. text 가 비면 표시를 지운다.
-    void                                setPreviewStatus( const QString& text );
+    ///
+    /// 문구가 같아도 진행도가 달라지면 발신한다 — 그러지 않으면 분모를 모르는
+    /// 구간에서 막대가 멈춘 채로 남는다.
+    void                                setPreviewStatus( const QString& text, int permille = -1 );
     /// 프리뷰 페이지의 원격 리소스 접근 허용 여부를 설정에서 읽어 적용한다.
     /// 값이 바뀌었으면 이미 떠 있는 페이지를 다시 읽는다 (실패한 스크립트는
     /// 설정만 바꿔서는 다시 실행되지 않는다).
@@ -397,6 +404,8 @@ private:
     QUrl                                pendingFullLoadUrl_;
     /// 마지막으로 내보낸 프리뷰 상태 문구. 비어 있으면 "표시 없음".
     QString                             previewStatus_;
+    /// 마지막으로 내보낸 진행도(0..1000, 음수 = 모름).
+    int                                 previewPermille_ = -1;
 
     // ── 개요 상태 ──
     QTimer*                             outlineDebounce_ = nullptr;

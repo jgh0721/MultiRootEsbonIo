@@ -1,6 +1,7 @@
 ﻿#include "stdafx.h"
 #include "solSphinxPreviewController.hpp"
 
+#include "solPreviewProgress.hpp"
 #include "solUvTaskRunner.hpp"
 #include "utils/solPhaseTrace.hpp"
 
@@ -416,7 +417,17 @@ void SphinxPreviewController::startBuild()
     buildStartedAtMs_ = QDateTime::currentMSecsSinceEpoch();
     emit buildStarted( projectId );
 
-    connect( task, &UvTask::outputLine, this, &SphinxPreviewController::logMessage );
+    // 빌더의 stdout 은 로그 패널로 가는 통로다. 진행률 줄만 걷어내 신호로 바꾼다 —
+    // 그러지 않으면 문서 하나마다 한 줄씩 로그가 쌓여 정작 볼 것이 묻힌다.
+    connect( task, &UvTask::outputLine, this, [this, projectId]( const QString& line ) {
+        const PreviewBuildProgress progress = parsePreviewProgressLine( line );
+        if( progress.valid )
+        {
+            emit buildProgress( projectId, progress.phase, progress.done, progress.total );
+            return;
+        }
+        emit logMessage( line );
+    } );
     connect( task, &UvTask::failedToStart, this, [this, task]( const QString& message ) {
         emit logMessage( message );
         task->deleteLater();
