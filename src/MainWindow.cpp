@@ -7,6 +7,7 @@
 #include "core/solFileKinds.hpp"
 #include "core/solPythonEnvMgr.hpp"
 #include "core/solRestWorkspaceController.hpp"
+#include "core/solSettingsWriter.hpp"
 #include "core/solSphinxDiagnosticsStore.hpp"
 #include "core/solWorkspaceSearch.hpp"
 #include "core/solWorkspaceSession.hpp"
@@ -35,6 +36,7 @@
 
 #include <QActionGroup>
 #include <QMenuBar>
+#include <QScopeGuard>
 #include <QStatusBar>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -268,7 +270,9 @@ namespace
         }
     }
 
-    void destroyViewerToolBar( QWidget* host, QPointer<QToolBar>& toolBar )
+    /// refresh 가 false 면 레이아웃 무효화를 하지 않는다. 호출자가 뒤에서 한 번에
+    /// 모아 돌릴 때 쓴다(updateViewerToolBar 의 스코프 가드).
+    void destroyViewerToolBar( QWidget* host, QPointer<QToolBar>& toolBar, bool refresh = true )
     {
         if( !host || !toolBar )
             return;
@@ -281,7 +285,8 @@ namespace
 
         oldToolBar->hide();
         delete oldToolBar;
-        refreshViewerToolBarSlot( host );
+        if( refresh )
+            refreshViewerToolBarSlot( host );
     }
 
     void purgeStaleViewerToolBars( QWidget* host, QToolBar* keep = nullptr, QToolBar* keepAux = nullptr )
@@ -391,6 +396,8 @@ MainWindow::MainWindow( QWidget* parent )
     setAcceptDrops( true );
     if( auto* app = QCoreApplication::instance() )
         app->installEventFilter( this );
+
+    startStallWatchdog();
 
     setupCentralContainer();
     // .ui 가 세로로 늘어놓은 pnl* 패널들을 도크로 옮긴다. 이 뒤로는 Ui.pnl* 을
@@ -1392,26 +1399,35 @@ void MainWindow::hideAllDockPanels()
 // ═══════════════════════════════════════════════════════════
 void MainWindow::updateViewerToolBar()
 {
+    // 레이아웃 무효화를 이 함수 한 번에 **한 번**으로 모은다.
+    //
+    // refreshViewerToolBarSlot() 은 호스트와 **부모까지** layout()->invalidate()
+    // + activate() 를 돌린다. 예전에는 이 함수 한 번에 그것이 여러 번 불렸다 —
+    // 도구모음 파괴에서 둘, 조기 반환에서 하나, 끝에서 하나. 그 각각이
+    // splitter_2 를 거쳐 프리뷰 위젯의 geometry 재계산을 유발한다.
+    //
+    // 스코프 가드로 두면 어느 경로로 반환해도 정확히 한 번 돈다. 그래서 아래
+    // 파괴 호출들은 refresh 를 넘기지 않는다(destroyViewerToolBar 의 인자).
+    const auto refreshOnce = qScopeGuard( [this] {
+        refreshViewerToolBarSlot( m_viewerToolBarHost );
+    } );
+
     // 이전 뷰어 도구모음 즉시 제거 및 삭제
     if( m_viewerAuxToolBar )
-        destroyViewerToolBar( m_viewerToolBarHost, m_viewerAuxToolBar );
+        destroyViewerToolBar( m_viewerToolBarHost, m_viewerAuxToolBar, false );
     if( m_viewerToolBar )
-        destroyViewerToolBar( m_viewerToolBarHost, m_viewerToolBar );
+        destroyViewerToolBar( m_viewerToolBarHost, m_viewerToolBar, false );
 
     purgeStaleViewerToolBars( m_viewerToolBarHost );
 
     auto* view = currentView();
     if( !view )
-    {
-        refreshViewerToolBarSlot( m_viewerToolBarHost );
         return;
-    }
 
     if( view->isLoading() )
     {
         if( m_viewerToolBarHost )
             m_viewerToolBarHost->setVisible( false );
-        refreshViewerToolBarSlot( m_viewerToolBarHost );
         return;
     }
 
@@ -1454,7 +1470,6 @@ void MainWindow::updateViewerToolBar()
         }
 
         purgeStaleViewerToolBars( m_viewerToolBarHost, m_viewerToolBar, m_viewerAuxToolBar );
-        refreshViewerToolBarSlot( m_viewerToolBarHost );
     }
 }
 
@@ -2096,18 +2111,17 @@ void MainWindow::connectViewStatusSignals( QBaseView* view )
 
     if( auto* textView = qobject_cast< QTextView* >( view ) )
     {
-        connect( textView, &QTextView::statusChanged, this, [this, textView] {
+        // 세 시그널 모두 **한 번의 조작에 여러 번** 온다. 줄넘김 토글 하나에
+        // statusChanged 가 3~4번 오는데(setWordWrapMode 가 직접 하나,
+        // SCN_UPDATEUI 가 커서·선택 경로로 둘~셋) 그때마다 상태바를 처음부터 다시
+        // 만들 이유가 없다. 이벤트 루프 한 회전에 한 번으로 접는다.
+        const auto schedule = [this, textView] {
             if( currentView() == textView )
-                updateStatusBar();
-        } );
-        connect( textView, &QTextView::encodingChanged, this, [this, textView] {
-            if( currentView() == textView )
-                updateStatusBar();
-        } );
-        connect( textView, &QTextView::languageChanged, this, [this, textView] {
-            if( currentView() == textView )
-                updateStatusBar();
-        } );
+                scheduleStatusBarRefresh();
+        };
+        connect( textView, &QTextView::statusChanged, this, schedule );
+        connect( textView, &QTextView::encodingChanged, this, schedule );
+        connect( textView, &QTextView::languageChanged, this, schedule );
     }
 }
 
@@ -2366,6 +2380,11 @@ void MainWindow::closeEvent( QCloseEvent* event )
     }
     mrst::traceP( "close.prompts-done" );
 
+    // 예약된 INI 쓰기를 내보낸다. 이 지점이어야 하는 이유가 둘 있다 — 저장 확인을
+    // 모두 통과해 종료가 확정된 뒤이고(취소로 되돌아가는 경로에서는 예약을 그대로
+    // 남겨 둬야 한다), 아직 이벤트 루프가 살아 있어 파일 쓰기가 정상 경로로 돈다.
+    mrst::SettingsWriter::instance().flush();
+
     saveWorkspaceSessionNow();
     mrst::traceP( "close.session-saved" );
 
@@ -2421,6 +2440,10 @@ void MainWindow::setPreviewFullScreen( const bool enabled )
     if( previewFullScreen_.active == enabled )
         return;
 
+    // 진입과 복귀를 각각 잰다. 처음 쟀을 때 진입 34.5 ms / 복귀 65.3 ms 였고,
+    // 아래 갱신 억제와 도구모음 재생성 시점 변경으로 16 / 24 ms 가 되었다.
+    const mrst::PhaseSpan span( enabled ? "fullscreen.enter" : "fullscreen.exit" );
+
     // 기동 직후라면 프리뷰가 아직 붙지 않았다. 그 상태로 들어가면 빈 화면만
     // 남고 되돌아올 단서(메뉴)도 사라진다. 파일 열기와 같은 처리를 한다 —
     // 사용자 조작이 기동 단계를 앞당긴다.
@@ -2437,14 +2460,39 @@ void MainWindow::setPreviewFullScreen( const bool enabled )
     if( previewExitFullScreenAction_ != nullptr )
         previewExitFullScreenAction_->setEnabled( enabled );
 
+    // 진입·복귀 모두 위젯을 여러 개 숨기고 보이며 창 상태를 바꾼다. 억제 구간이
+    // 없으면 그 단계마다 splitter_2 를 거쳐 프리뷰 위젯의 geometry 가 다시
+    // 계산되고, 이 저장소의 Breathe 페이지는 하나가 24 MB 라 그 재계산 하나가
+    // 눈에 보이는 정지가 된다. 복귀는 아래 singleShot 블록 끝에서 되살린다.
+    setUpdatesEnabled( false );
+
+    // 전환 동안 프리뷰 위젯을 hide() 하지는 않는다. 리사이즈 전파를 한 번으로
+    // 모으려고 해 봤지만 fs.dock.restore 도 정체도 줄지 않았고(진입은 16.8 →
+    // 23 ms 로 늘었다) 전체 화면이 빈 화면으로 남았다.
+    //
+    // 남은 정체는 Qt 의 리사이즈 전파가 아니라 24 MB 페이지를 다루는 Chromium
+    // 쪽에 있다 — 같은 시나리오를 2 KB 페이지로 돌리면 F11 정체 합계가 6.4초에서
+    // 1.9초로 줄고 1초 이상 정체는 사라진다.
+
     if( enabled )
     {
+        // 진입은 이 함수 안에서 끝나므로 여기서 되살린다.
+        const auto restoreUpdates = qScopeGuard( [this] { setUpdatesEnabled( true ); } );
+
         previewFullScreen_.windowStates = windowState();
         previewFullScreen_.previewSplitSizes = Ui.splitter_2->sizes();
         // 좌측·하단은 도크 배치 전체를 한 덩어리로 기억한다. "보였는가" 만
         // 남기면 핀 고정해 둔 패널이 핀이 풀린 채로, 하단에서 로그를 보고
         // 있었으면 진단 탭으로 돌아온다.
-        previewFullScreen_.dockState = dockManager_->saveState();
+        //
+        // 직전 복귀의 배치 복원이 아직 돌지 않았다면 스냅샷을 덮지 않는다.
+        //
+        // 복원은 singleShot(0) 안에 있다. 그것이 뜨기 전에 F11 이 다시 들어오면
+        // 도크는 아직 **전부 닫힌** 상태이므로, 지금 saveState() 를 찍으면 그
+        // "아무것도 없는 배치" 를 정상 배치로 기억하게 된다. 그러면 다음 복귀에서
+        // 패널이 통째로 사라지고, 사용자는 되돌릴 방법이 없다.
+        if( !fullScreenRestorePending_ )
+            previewFullScreen_.dockState = dockManager_->saveState();
         previewFullScreen_.editorVisible = Ui.frmEditor->isVisible();
         previewFullScreen_.menuBarVisible = menuBar()->isVisible();
         previewFullScreen_.statusBarVisible = statusBar()->isVisible();
@@ -2494,9 +2542,6 @@ void MainWindow::setPreviewFullScreen( const bool enabled )
     Ui.frmEditor->setVisible( previewFullScreen_.editorVisible );
     menuBar()->setVisible( previewFullScreen_.menuBarVisible );
     statusBar()->setVisible( previewFullScreen_.statusBarVisible );
-    // 전체 화면 동안 탭이 바뀌었을 수 있다(Ctrl+Tab). 그러면 기억해 둔 표시
-    // 여부는 이미 옛 문서 것이므로 도구모음은 지금 문서로 다시 계산한다.
-    updateViewerToolBar();
 
     if( ( previewFullScreen_.windowStates & Qt::WindowMaximized ) != 0 )
         showMaximized();
@@ -2506,25 +2551,53 @@ void MainWindow::setPreviewFullScreen( const bool enabled )
     // 배치 복원은 창이 원래 크기로 돌아온 **뒤에** 해야 한다. QSplitter 는
     // setSizes() 로 준 값의 합과 실제 폭이 다르면 남는 폭을 스트레치 비율로
     // 나눠 주므로, 전체 화면 폭에서 넣은 값은 그 자리에서 뭉개진다.
+    fullScreenRestorePending_ = true;
     QTimer::singleShot( 0, this, [this] {
+        // 어떤 경로로 빠져나가도 이 둘은 되돌린다. 갱신을 껐는데 켜지 않으면
+        // 창이 통째로 멈춘 것처럼 보이고, 대기 표시를 지우지 않으면 다음 진입이
+        // 배치 스냅샷을 영영 갱신하지 못한다.
+        const auto finish = qScopeGuard( [this] {
+            fullScreenRestorePending_ = false;
+            setUpdatesEnabled( true );
+        } );
+
         if( previewFullScreen_.active )
             return;   // 그 사이 다시 들어갔다
+
+        // 이 람다는 setPreviewFullScreen() 이 반환한 뒤에 돈다. 위쪽
+        // "fullscreen.exit" span 이 여기를 감싸지 못하므로 따로 잡는다.
+        const mrst::PhaseSpan deferredSpan( "fullscreen.exit.deferred" );
 
         // 도크 배치가 먼저다. restoreState() 가 편집기|프리뷰 스플리터를 담은
         // 중앙 도크를 재배치하므로, 순서를 뒤집으면 아래 setSizes() 가 그
         // 재배치에 덮인다.
         if( !previewFullScreen_.dockState.isEmpty() )
+        {
+            // ADS 는 도크 매니저 전체를 hide()/show() 하고 XML 을 두 번 파싱한다.
+            // 그 매니저 안에 프리뷰가 있어 Chromium 표면이 함께 내려갔다 올라온다.
+            const mrst::PhaseSpan restoreSpan( "fs.dock.restore" );
             dockManager_->restoreState( previewFullScreen_.dockState );
+        }
 
         if( Ui.splitter_2 != nullptr
             && previewFullScreen_.previewSplitSizes.size() == Ui.splitter_2->count() )
         {
             Ui.splitter_2->setSizes( previewFullScreen_.previewSplitSizes );
         }
-    } );
 
-    if( QBaseView* view = currentView() )
-        view->setFocus();
+        // 도구모음은 **여기서** 다시 만든다. 전체 화면 동안 탭이 바뀌었을 수
+        // 있으므로(Ctrl+Tab) 다시 계산해야 하는 것은 맞지만, 예전에는 그것을
+        // showNormal() 앞에서 했다 — 전체 화면 폭으로 만든 콤보박스 넷과
+        // 스핀박스가 곧바로 창 폭으로, 그다음 restoreState() 로, 그다음
+        // setSizes() 로 세 번 더 재배치되었다. 최종 폭이 정해진 뒤에 한 번 만든다.
+        {
+            const mrst::PhaseSpan toolbarSpan( "fs.toolbar.rebuild" );
+            updateViewerToolBar();
+        }
+
+        if( QBaseView* view = currentView() )
+            view->setFocus();
+    } );
 }
 
 void MainWindow::noteTabActivated( QBaseView* view )
@@ -2715,8 +2788,65 @@ void MainWindow::updateTabDecoration( QBaseView* view )
     m_tabWidget->setTabIcon( index, tabIconForView( view ) );
 }
 
+void MainWindow::scheduleDiagnosticsTableRefresh()
+{
+    if( diagnosticsTableRefreshPending_ )
+        return;
+
+    diagnosticsTableRefreshPending_ = true;
+    QTimer::singleShot( 0, this, [this] {
+        diagnosticsTableRefreshPending_ = false;
+        refreshDiagnosticsTable();
+    } );
+}
+
+void MainWindow::scheduleStatusBarRefresh()
+{
+    if( statusBarRefreshPending_ )
+        return;
+
+    statusBarRefreshPending_ = true;
+    // singleShot(0) 은 지금 처리 중인 이벤트가 끝난 뒤 같은 스레드에서 돈다.
+    // 즉 한 조작이 낸 시그널 여러 개가 하나로 접힌다.
+    QTimer::singleShot( 0, this, [this] {
+        statusBarRefreshPending_ = false;
+        updateStatusBar();
+    } );
+}
+
+void MainWindow::startStallWatchdog()
+{
+    if( !mrst::phaseTraceEnabled() )
+        return;   // 배포 빌드에서는 타이머 자체를 만들지 않는다
+
+    constexpr int kIntervalMs = 50;
+    /// 이 이상 늦으면 남긴다. 타이머 정확도(윈도우 기본 틱)와 정상적인 페인트
+    /// 한 장을 넘기는 값이어야 한다 — 그보다 낮으면 트레이스가 잡음으로 덮인다.
+    constexpr double kReportMs = 60.0;
+
+    stallClock_.start();
+    stallWatchdog_ = new QTimer( this );
+    stallWatchdog_->setTimerType( Qt::PreciseTimer );
+    stallWatchdog_->setInterval( kIntervalMs );
+    connect( stallWatchdog_, &QTimer::timeout, this, [this] {
+        const qint64 nowNs = stallClock_.nsecsElapsed();
+        if( stallLastTickNs_ != 0 )
+        {
+            const double gapMs = static_cast< double >( nowNs - stallLastTickNs_ ) / 1e6;
+            if( gapMs >= kReportMs )
+                mrst::traceP( "ui.stall", QStringLiteral( "%1ms" ).arg( gapMs, 0, 'f', 1 ) );
+        }
+        stallLastTickNs_ = nowNs;
+    } );
+    stallWatchdog_->start();
+}
+
 void MainWindow::updateStatusBar()
 {
+    // 캐럿을 움직일 때마다 도는 함수다. characterCount() 가 문서를 통째로
+    // 복사하는지(1.1 의 근거) 여기 값으로 가른다 — 문서 크기에 비례하면 그렇다.
+    const mrst::PhaseSpan span( "status.update" );
+
     // 지난 알림을 치운다. 문서가 바뀌었으면 그 알림은 더 이상 지금 화면에
     // 대한 이야기가 아니다.
     clearTransientStatus();
@@ -3524,7 +3654,8 @@ void MainWindow::setupDiagnosticsTable()
 
     if( mrst::DiagnosticsStore* store = controller_->diagnostics() )
     {
-        connect( store, &mrst::DiagnosticsStore::changed, this, &MainWindow::refreshDiagnosticsTable );
+        connect( store, &mrst::DiagnosticsStore::changed, this,
+                &MainWindow::scheduleDiagnosticsTableRefresh );
     }
 }
 
@@ -4824,6 +4955,11 @@ void MainWindow::refreshDiagnosticsTable()
         return;
 
     const QVector< mrst::DiagnosticEntry > entries = controller_->diagnostics()->all();
+
+    // 세부에 행 수를 담는다. 이 함수가 **빌드당 몇 번** 불리는지가 3.1 의
+    // 근거이므로, 트레이스에서 begin 줄을 세는 것 자체가 측정이다.
+    const mrst::PhaseSpan span( "diag.table",
+                               QStringLiteral( "rows=%1" ).arg( entries.size() ) );
 
     const QSignalBlocker blocker( table );
     table->setRowCount( static_cast< int >( entries.size() ) );

@@ -300,19 +300,23 @@ WorkspaceController::WorkspaceController( QObject* parent )
                     return;
                 }
 
+                const mrst::PhaseSpan span( "diag.store",
+                                           QStringLiteral( "docs=%1 entries=%2" )
+                                               .arg( previewProcessedSources_.size() )
+                                               .arg( entries.size() ) );
+
                 QHash< QString, QVector< DiagnosticEntry > > grouped;
                 for( const DiagnosticEntry& entry : entries )
                     grouped[ QFileInfo( entry.path ).absoluteFilePath() ].push_back( entry );
 
-                for( const QString& processed : previewProcessedSources_ )
-                {
-                    const QString key = QFileInfo( processed ).absoluteFilePath();
-                    diagnosticsStore_->replaceSourceForPath( source, key, grouped.value( key ) );
-                }
+                // 한 번에 넣는다. 예전에는 처리 문서마다 replaceSourceForPath 를
+                // 불렀고, 그 하나하나가 changed() 를 내어 진단 표를 처음부터 다시
+                // 만들었다 — 문서 7개 프로젝트에서 빌드 한 번에 재구축 16회.
+                diagnosticsStore_->replacePathsForSource( source, previewProcessedSources_, grouped );
                 emit diagnosticsChanged( source, entries );
             } );
     connect( diagnosticsStore_, &DiagnosticsStore::pathChanged, this,
-            &WorkspaceController::refreshDiagnosticMarks );
+            &WorkspaceController::scheduleDiagnosticMarksRefresh );
     connect( previewController_, &SphinxPreviewController::missingDependenciesDetected, this,
             &WorkspaceController::missingDependenciesDetected );
     connect( previewController_, &SphinxPreviewController::buildStarted, this,
@@ -469,6 +473,11 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
         markdownPreview_->notifyBridgeReady();
         // 페이지가 다시 로드된 직후이므로, 여기서 맞춰주면 재빌드 후에도
         // 스크롤 위치가 에디터와 어긋나지 않는다.
+        //
+        // 중복 전송 판정을 먼저 지운다. 새 페이지는 맨 위에 있으므로 "지난번과
+        // 같은 줄" 이어도 반드시 한 번은 보내야 한다.
+        lastSyncedSourceIndex_ = -1;
+        lastSyncedLine_ = -1.0;
         syncPreviewFromEditor();
     } );
 
@@ -496,19 +505,38 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
             &MarkdownPreviewController::onAssetFailed );
 }
 
+void WorkspaceController::setPreviewSources( const QStringList& sources )
+{
+    previewSources_ = sources;
+
+    // 역인덱스를 여기서만 만든다. 키는 DiagnosticsStore::normalizeKey 와 같은
+    // 규칙(절대 경로 + 대소문자 접기)이다 — Windows 는 대소문자를 구분하지 않으므로
+    // 예전 선형 검색도 Qt::CaseInsensitive 로 비교했다.
+    previewSourceIndex_.clear();
+    previewSourceIndex_.reserve( sources.size() );
+    for( int index = 0; index < sources.size(); ++index )
+    {
+        const QString key = QFileInfo( sources.at( index ) ).absoluteFilePath().toCaseFolded();
+        if( key.isEmpty() )
+            continue;
+        // 같은 문서가 두 번 들어오면 **앞의 것**을 남긴다. 예전 선형 검색이
+        // 첫 일치를 돌려주었으므로 그 동작을 지킨다.
+        if( !previewSourceIndex_.contains( key ) )
+            previewSourceIndex_.insert( key, index );
+    }
+
+    // 목록이 바뀌면 지난 인덱스는 다른 문서를 가리킬 수 있다. 중복 전송 판정을
+    // 초기화해 다음 동기화가 반드시 나가게 한다.
+    lastSyncedSourceIndex_ = -1;
+    lastSyncedLine_ = -1.0;
+}
+
 int WorkspaceController::sourceIndexForPath( const QString& path ) const
 {
     if( path.isEmpty() )
         return -1;
 
-    const QString normalized = QFileInfo( path ).absoluteFilePath();
-    for( int index = 0; index < previewSources_.size(); ++index )
-    {
-        if( QFileInfo( previewSources_.at( index ) ).absoluteFilePath().compare(
-                normalized, Qt::CaseInsensitive ) == 0 )
-            return index;
-    }
-    return -1;
+    return previewSourceIndex_.value( QFileInfo( path ).absoluteFilePath().toCaseFolded(), -1 );
 }
 
 QString WorkspaceController::pathForSourceIndex( const int sourceIndex ) const
@@ -556,6 +584,22 @@ void WorkspaceController::syncPreviewFromEditor()
     const double anchorLine = activeView_->firstVisibleLine() <= 1
                                   ? 1.0
                                   : activeView_->fractionalLineAtViewportRatio( kAnchorRatio );
+
+    // 보낼 값이 지난번과 같으면 아무것도 하지 않는다. **가드도 세우지 않는다** —
+    // 보내지 않았으므로 프리뷰가 우리 때문에 움직일 일이 없고, 그런데도 가드를
+    // 세우면 그 250 ms 동안 사용자의 프리뷰 스크롤을 무시하게 된다.
+    //
+    // 편집기의 뷰포트 시그널은 문서 줄이 바뀌지 않는 조작에서도 나온다 —
+    // 자동 줄넘김 토글(Alt+Z)이 그렇다. SCI_SETWRAPMODE 가
+    // ContainerNeedsUpdate(HScroll) 를 세우므로 SCN_UPDATEUI 가 오고, 그것이
+    // 그대로 여기까지 내려온다. 그때마다 24 MB 프리뷰 페이지의 렌더러에
+    // 스크롤 요청이 꽂히고 250 ms 가드 둘과 재시도 타이머가 다시 걸린다.
+    // 실측으로 Alt+Z 연타 구간의 60 ms 대 정체가 여기서 왔다.
+    if( sourceIndex == lastSyncedSourceIndex_ && qFuzzyCompare( anchorLine, lastSyncedLine_ ) )
+        return;
+
+    lastSyncedSourceIndex_ = sourceIndex;
+    lastSyncedLine_ = anchorLine;
 
     // 이 순간부터 잠깐은 에디터가 주도권을 갖는다. 프리뷰가 (우리 때문에
     // 움직여서) 보고해 오는 위치로 에디터를 되돌리면 스크롤이 튄다.
@@ -810,7 +854,7 @@ void WorkspaceController::onPreviewFinished( const PreviewBuildResult& result )
     }
 
     // data-mrr-src 인덱스를 실제 경로로 되돌리려면 빌더가 준 순서를 그대로 쓴다.
-    previewSources_ = result.sources;
+    setPreviewSources( result.sources );
     previewPrimaryPath_ = result.sourceFile;
 
     showPreviewHtml( result.htmlPath, result.projectId + QLatin1Char( '\x1f' ) + result.primaryDocname,
@@ -965,7 +1009,7 @@ void WorkspaceController::showPreviewShell( const QString& documentPath )
 
     // data-mrr-src 는 단일 파일이라 항상 0 이다. syncPreviewFromEditor() 의
     // sourceIndexForPath() 가 0 을 찾으려면 이 목록이 반드시 이 문서여야 한다.
-    previewSources_ = { documentPath };
+    setPreviewSources( { documentPath } );
     previewProcessedSources_.clear();
     previewPrimaryPath_ = documentPath;
 
@@ -1294,10 +1338,34 @@ void WorkspaceController::applyProjectOutline( QVector< OutlineDocumentEntry > d
     }
 }
 
+void WorkspaceController::scheduleDiagnosticMarksRefresh( const QString& normalizedPath )
+{
+    // 한 빌드가 처리 문서마다 pathChanged 를 낸다. 그 하나하나가 열린 문서를
+    // 훑어 Scintilla 인디케이터를 통째로 지우고 다시 칠하므로, 같은 회전에 온
+    // 것들을 모아 문서별로 **한 번만** 칠한다.
+    if( normalizedPath.isEmpty() )
+        return;
+
+    pendingDiagnosticMarkPaths_.insert( normalizedPath );
+    if( pendingDiagnosticMarkPaths_.size() > 1 )
+        return;   // 이미 예약되어 있다
+
+    QTimer::singleShot( 0, this, [this] {
+        const QSet< QString > paths = std::move( pendingDiagnosticMarkPaths_ );
+        pendingDiagnosticMarkPaths_.clear();
+        for( const QString& path : paths )
+            refreshDiagnosticMarks( path );
+    } );
+}
+
 void WorkspaceController::refreshDiagnosticMarks( const QString& normalizedPath )
 {
     if( diagnosticsStore_ == nullptr )
         return;
+
+    // 호출 횟수와 한 번의 값을 함께 봐야 진단 폭주가 표(diag.table) 쪽인지
+    // 스퀴글 쪽인지 가른다.
+    const mrst::PhaseSpan span( "diag.marks" );
 
     for( auto it = documents_.begin(); it != documents_.end(); ++it )
     {

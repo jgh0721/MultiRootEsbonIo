@@ -145,19 +145,28 @@ void UvTask::drain( bool flushPartial )
     // uv 는 진행률을 CR 로 덮어쓰므로 CR 도 줄 구분자로 취급한다.
     pending_.replace( QLatin1Char( '\r' ), QLatin1Char( '\n' ) );
 
+    // 버퍼 앞을 잘라내지 않고 오프셋만 옮긴다.
+    //
+    // 예전에는 줄마다 `pending_.remove( 0, newline + 1 )` 이었다. QString::remove
+    // 는 뒤쪽 전체를 앞으로 memmove 하므로, 한 번에 도착한 덩어리가 n줄이면
+    // 비용이 O(n^2) 이다. Sphinx 빌더는 한 번에 수천 줄을 뱉는다.
+    qsizetype consumed = 0;
     qsizetype newline = pending_.indexOf( QLatin1Char( '\n' ) );
     while( newline >= 0 )
     {
-        const QString line = stripAnsiEscapes( pending_.left( newline ) ).trimmed();
-        pending_.remove( 0, newline + 1 );
+        const QString line
+            = stripAnsiEscapes( pending_.mid( consumed, newline - consumed ) ).trimmed();
+        consumed = newline + 1;
         if( !line.isEmpty() )
         {
             collected_ += line;
             collected_ += QLatin1Char( '\n' );
             emit outputLine( line );
         }
-        newline = pending_.indexOf( QLatin1Char( '\n' ) );
+        newline = pending_.indexOf( QLatin1Char( '\n' ), consumed );
     }
+    if( consumed > 0 )
+        pending_.remove( 0, consumed );   // 남은 부분 조각만 앞으로 옮긴다 (1회)
 
     if( flushPartial && !pending_.isEmpty() )
     {

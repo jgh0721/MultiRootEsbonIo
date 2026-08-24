@@ -36,6 +36,11 @@ QMutex& writeLock()
 
 }  // namespace
 
+bool phaseTraceEnabled()
+{
+    return !tracePath().isEmpty();
+}
+
 void startPhaseClock()
 {
     if( tracePath().isEmpty() )
@@ -70,7 +75,7 @@ PhaseSpan::PhaseSpan( const char* tag, QString detail )
     if( tracePath().isEmpty() || tag_ == nullptr )
         return;
 
-    startedAtMs_ = clock().elapsed();
+    startedAtNs_ = clock().nsecsElapsed();
     traceP( QByteArray( tag_ ).append( ".begin" ).constData(), detail_ );
 }
 
@@ -79,8 +84,11 @@ PhaseSpan::~PhaseSpan()
     if( tracePath().isEmpty() || tag_ == nullptr )
         return;
 
-    const qint64 tookMs = clock().elapsed() - startedAtMs_;
-    QString detail = QStringLiteral( "%1ms" ).arg( tookMs );
+    // ns 로 재서 ms 로 낸다. 정수 ms 로는 이 계측의 절반이 0 으로 나온다 —
+    // 줄넘김 토글 한 구획이나 상태바 갱신은 애초에 1 ms 미만이고, 그 안에서
+    // 무엇이 비싼지 가르는 것이 목적이다.
+    const double tookMs = static_cast< double >( clock().nsecsElapsed() - startedAtNs_ ) / 1e6;
+    QString detail = QStringLiteral( "%1ms" ).arg( tookMs, 0, 'f', 3 );
     if( !detail_.isEmpty() )
         detail += QLatin1Char( ' ' ) + detail_;
     traceP( QByteArray( tag_ ).append( ".end" ).constData(), detail );

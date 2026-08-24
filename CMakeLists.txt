@@ -141,6 +141,8 @@ add_executable(${PROJECT_NAME}
         src/core/solGlossaryIndex.hpp
         src/core/solLanguageManager.cpp
         src/core/solLanguageManager.hpp
+        src/core/solSettingsWriter.cpp
+        src/core/solSettingsWriter.hpp
         src/core/solShadowBackupStore.cpp
         src/core/solShadowBackupStore.hpp
         src/core/solSphinxScanner.cpp
@@ -376,6 +378,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_FileKinds.cpp
             tests/tst_FileTreeFilter.cpp
             tests/tst_PreviewProgress.cpp
+            tests/tst_DiagnosticsStore.cpp
             tests/tst_SphinxBuilders.cpp
             tests/tst_WorkspaceSessionActive.cpp
             tests/tst_UpdateVersioning.cpp
@@ -408,6 +411,7 @@ if(MRST_BUILD_TESTS)
             src/utils/solBackgroundWork.cpp
             src/utils/AuthenticodeVerifier.cpp
             src/core/solSphinxDiagnostics.cpp
+            src/core/solSphinxDiagnosticsStore.cpp
             src/core/solSphinxScanner.cpp
             src/core/solLanguageManager.cpp
             src/core/solLanguageManager.hpp
@@ -459,6 +463,7 @@ if(MRST_BUILD_TESTS)
             tests/ui/tst_ThemeColorSwatch.cpp
             tests/ui/tst_ScintillaTextMetrics.cpp
             tests/ui/tst_ScintillaDocumentLoad.cpp
+            tests/ui/tst_EditorMetrics.cpp
             tests/ui/tst_PanelActionIcons.cpp
 
             src/uis/PanelActionIcons.cpp

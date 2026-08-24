@@ -5,6 +5,7 @@
 #include <QHash>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 namespace mrst {
@@ -27,6 +28,21 @@ public:
     /// 한 출처 + 한 파일의 진단만 교체한다 (LSP publishDiagnostics 처럼 파일 단위).
     void                                replaceSourceForPath( const QString& source, const QString& path,
                                                               const QVector< DiagnosticEntry >& entries );
+    /// 한 출처 + **여러 파일**의 진단을 한 번에 교체한다.
+    ///
+    /// `replaceSourceForPath` 를 반복해서 부르는 것과 최종 상태는 같지만,
+    /// `changed()` 를 **한 번만** 낸다. 그 시그널이 진단 표 전체 재구축에 직접
+    /// 이어져 있어서, 반복 호출은 표를 파일 수만큼 다시 만든다 — 문서 7개짜리
+    /// 프로젝트에서도 빌드 한 번에 재구축 16회가 관측되었고, 처리 문서가 수십
+    /// 개인 프로젝트에서는 그만큼 배가 된다.
+    ///
+    /// `paths` 는 이번 빌드가 **실제로 처리한** 파일 목록이다. 그 안에 있으면서
+    /// `entriesByPath` 에 없는 파일은 "이제 깨끗하다" 는 뜻이므로 지운다 —
+    /// 목록에 없는 파일은 건드리지 않는다(증분 빌드에서 다시 읽히지 않은 문서의
+    /// 멀쩡한 진단을 지우지 않기 위한 기존 규칙 그대로다).
+    void                                replacePathsForSource(
+        const QString& source, const QStringList& paths,
+        const QHash< QString, QVector< DiagnosticEntry > >& entriesByPath );
     void                                clearSource( const QString& source );
     void                                clear();
 

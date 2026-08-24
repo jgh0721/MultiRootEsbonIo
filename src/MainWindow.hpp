@@ -9,6 +9,7 @@
 #include <QtWidgets>
 #include <QWebEngineView>
 #include <QMainWindow>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QIcon>
 #include <QPointer>
@@ -395,6 +396,38 @@ private:
         Ready,      ///< 프리뷰가 붙고 세션이 복원된 상태.
     };
     StartupPhase                        startupPhase_ = StartupPhase::Shell;
+
+    // ── UI 정체 감시자 (MRST_PHASE_TRACE 가 있을 때만 존재한다) ──
+    //
+    // PhaseSpan 은 "우리가 의심한 구간" 만 잰다. 그것으로는 **의심하지 않은 곳**이
+    // 이벤트 루프를 굶기는 경우를 못 잡는다 — 이 앱에서 응답없음의 후보 절반은
+    // Chromium 합성이나 Scintilla 유휴 재배치처럼 우리 코드가 아닌 곳에 있다.
+    //
+    // 그래서 GUI 스레드에서 50 ms 타이머를 돌리고 **실제 간격**을 잰다. 간격이
+    // 크게 벌어진 만큼이 사용자가 느끼는 멈칫이다. 바깥에서
+    // SendMessageTimeout 으로 재는 방법은 창 핸들이 어긋나면 조용히 0 을 내므로
+    // 신뢰할 수 없었다.
+    /// 전체 화면 복귀의 배치 복원(singleShot(0))이 아직 돌지 않았는가.
+    ///
+    /// 그 창 안에서 F11 이 다시 들어오면 saveState() 가 "모든 도크가 닫힌" 배치를
+    /// 정상 배치로 기억한다. 이 표시가 그것을 막는다.
+    bool                                fullScreenRestorePending_ = false;
+
+    /// 상태바 갱신을 이벤트 루프 회전당 1회로 접는다. scheduleStatusBarRefresh()
+    /// 가 세우고 그 타이머가 지운다.
+    bool                                statusBarRefreshPending_ = false;
+    void                                scheduleStatusBarRefresh();
+
+    /// 진단 표 재구축도 같은 방식으로 접는다. refreshDiagnosticsTable() 은
+    /// 행마다 QTableWidgetItem 다섯 개와 QFileInfo 하나를 새로 만들므로,
+    /// 한 빌드가 낸 여러 changed() 를 그대로 받으면 그 값을 배로 치른다.
+    bool                                diagnosticsTableRefreshPending_ = false;
+    void                                scheduleDiagnosticsTableRefresh();
+
+    QTimer*                             stallWatchdog_ = nullptr;
+    QElapsedTimer                       stallClock_;
+    qint64                              stallLastTickNs_ = 0;
+    void                                startStallWatchdog();
     /// 첫 페인트를 이미 봤는가. eventFilter 의 일회성 분기를 단락시킨다.
     bool                                firstPaintSeen_ = false;
     /// QWebEnginePage 를 우리가 명시적으로 만들었는가.

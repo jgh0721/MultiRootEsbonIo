@@ -336,6 +336,14 @@
          <property name="readOnly">
           <bool>true</bool>
          </property>
+         <!-- 상한이 없으면 Sphinx 빌드 경고가 그대로 쌓인다. 이 저장소의
+              Breathe 프로젝트는 한 빌드가 진단 2000건(파이썬 쪽 MAX_DIAGNOSTICS)
+              까지 내고, 그 위에 빌더 표준출력 전량이 얹힌다. 블록마다 문서
+              레이아웃이 붙으므로 무제한은 메모리와 스크롤 양쪽에서 값을 치른다.
+              5000줄이면 한 빌드의 출력을 통째로 담고도 남는다. -->
+         <property name="maximumBlockCount">
+          <number>5000</number>
+         </property>
         </widget>
        </item>
       </layout>
