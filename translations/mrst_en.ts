@@ -183,6 +183,11 @@
         <translation type="unfinished">Folder name to create in %1:</translation>
     </message>
     <message>
+        <source>(1/%1) %2</source>
+        <extracomment>상태표시줄에 동시에 도는 작업이 둘 이상일 때의 틀. %1 은 작업 개수, %2 는 그중 지금 보여 주는(첫) 작업의 안내문이다. 보이는 것은 언제나 첫 작업이라 앞의 1 은 상수다 — 예: &quot;(1/2) 파일 여는 중...&quot;.</extracomment>
+        <translation type="unfinished">(1/%1) %2</translation>
+    </message>
+    <message>
         <source>(없음)</source>
         <translation type="unfinished">(none)</translation>
     </message>
@@ -3706,6 +3711,14 @@ Please download it from the release page.</translation>
     <message>
         <source>프리뷰 부분 교체(핫스왑)</source>
         <translation type="unfinished">Partial preview swap (hot swap)</translation>
+    </message>
+    <message>
+        <source>프리뷰 빌드 · 쓰기 %1%</source>
+        <translation type="unfinished">Building preview · writing %1%</translation>
+    </message>
+    <message>
+        <source>프리뷰 빌드 · 읽기 %1%</source>
+        <translation type="unfinished">Building preview · reading %1%</translation>
     </message>
     <message>
         <source>프리뷰 빌드 중...</source>

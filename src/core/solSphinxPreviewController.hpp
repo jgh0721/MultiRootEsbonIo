@@ -157,6 +157,13 @@ signals:
     /// diagnosticsReady 보다 먼저 발신된다.
     void                                processedSourcesKnown( const QStringList& sources );
     void                                buildStarted( const QString& projectId );
+    /// 빌드가 어디까지 왔는가. 빌더가 stdout 으로 흘려보낸 것을 그대로 옮긴다.
+    ///
+    /// `phase` 는 `read`(원본 읽기) 또는 `write`(HTML 쓰기)다. 분모(`total`)는
+    /// 어림값이라 `done` 이 그것을 넘을 수 있다 — 받는 쪽이 가둔다
+    /// (previewOverallPermille).
+    void                                buildProgress( const QString& projectId, const QString& phase,
+                                                       int done, int total );
     void                                buildFinished( const mrst::PreviewBuildResult& result );
     void                                diagnosticsReady( const QString& source,
                                                           const QVector< DiagnosticEntry >& entries );

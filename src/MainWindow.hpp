@@ -109,6 +109,33 @@ private:
         int maximum = 0;
     };
 
+    /// 상태표시줄 **왼쪽**이 나타내는 작업 하나.
+    ///
+    /// 왼쪽은 "지금 무슨 일이 얼마나 되었는가" 한 자리다. 큰 `.rst` 를 열면 파일
+    /// 읽기와 프리뷰가 함께 도는데, 그때 두 벌을 나란히 붙이면 좁은 줄에서
+    /// 서로를 밀어낸다. 표로 모아 한 벌로 합쳐 낸다.
+    struct StatusTask
+    {
+        QString message;
+        /// 0..1000(천분율). 음수면 진행도를 알 수 없다(왕복 막대).
+        ///
+        /// 백분율이 아닌 이유: 프리뷰는 준비 · 빌드 읽기 · 빌드 쓰기 · HTML 로딩이
+        /// 전체의 일부씩을 나눠 쓰므로 백분율로는 구간이 좁아 막대가 뚝뚝 끊긴다.
+        int     permille    = -1;
+        bool    cancellable = false;
+        /// 취소 단추의 도구 설명. 무엇을 취소하는지 밝혀야 한다.
+        QString cancelTip;
+    };
+
+    /// 작업의 우선순위. QMap 이 키로 정렬하므로 **선언 순서가 곧 순서**다.
+    /// 파일 읽기가 앞이다 — 문서를 읽는 동안은 편집도 프리뷰도 할 수 없으니
+    /// 사용자가 먼저 알아야 할 일이다.
+    enum class StatusTaskId
+    {
+        FileLoad,
+        Preview,
+    };
+
     struct ViewTeardownOptions
     {
         ViewTeardownOptions( bool disconnectSignals = true,
@@ -180,12 +207,28 @@ private:
     void                                updatePasteActionState();
     bool                                saveView( QBaseView* view, bool saveAs );
     void                                setViewLoadingState( QBaseView* view, bool active, const QString& message, int value, int maximum );
+    /// 파일 열기/저장 진행 상태를 작업 표에 반영한다. 그리는 것은
+    /// refreshStatusProgress() 가 한다.
     void                                refreshLoadingIndicator();
+    /// 작업 표를 상태표시줄 왼쪽에 그린다.
+    void                                refreshStatusProgress();
+    /// 잠깐 보였다 사라지는 알림.
+    ///
+    /// **`QStatusBar::showMessage()` 를 쓰지 않는다.** 임시 메시지가 있는 동안 Qt 는
+    /// `addWidget` 으로 붙인 위젯을 모두 숨기므로(qstatusbar.cpp: hideOrShow),
+    /// 알림 하나가 몇 초 동안 진행막대를 지운다. `msec` 이 0 이면 다음 알림이나
+    /// clearTransientStatus() 까지 남는다.
+    void                                showTransientStatus( const QString& text, int msec = 0 );
+    void                                clearTransientStatus();
     void                                advanceLoadingAnimation();
     void                                onCancelLoading();
     void                                addRecentFile( const QString& filePath );
     void                                updateRecentFilesMenu();
     void                                shutdownUi();
+
+    /// 로그 한 건에 시각을 찍는다. `[ MM-dd HH:mm:ss.zzz ] ` 를 앞에 두고,
+    /// 여러 줄이면 이어지는 줄을 같은 칸만큼 밀어 한 덩어리로 보이게 한다.
+    [[nodiscard]] static QString        stampLogLine( const QString& text );
     int                                 addViewTab( QBaseView* view );
     void                                disconnectViewSignals( QBaseView* view );
     void                                removeViewTabWithoutSignals( QBaseView* view );
@@ -313,10 +356,17 @@ private:
     QToolBar*                           m_mainToolBar = nullptr;
     QPointer<QToolBar>                  m_viewerToolBar = nullptr;   // 뷰어별 도구모음
     QPointer<QToolBar>                  m_viewerAuxToolBar = nullptr; // 뷰어별 2줄 보조 도구모음
-    QLabel*                             m_loadingLabel = nullptr;
-    QProgressBar*                       m_loadingProgressBar = nullptr;
-    QPushButton*                        m_loadingCancelButton = nullptr;
-    QLabel*                             m_statusLabel = nullptr;   // 상태 표시줄 정보
+    // ── 상태표시줄 왼쪽 (진행 상황) ──
+    QLabel*                             statusMessageLabel_ = nullptr;
+    QProgressBar*                       statusProgressBar_ = nullptr;
+    QPushButton*                        statusCancelButton_ = nullptr;
+    /// 지금 도는 작업들. 비면 왼쪽에는 임시 알림만 남는다.
+    QMap< StatusTaskId, StatusTask >    statusTasks_;
+    /// 임시 알림 문구. 작업이 도는 동안은 가려진다.
+    QString                             transientStatus_;
+    QTimer*                             transientStatusTimer_ = nullptr;
+
+    QLabel*                             m_statusLabel = nullptr;   // 상태 표시줄 정보(오른쪽)
     QMenu*                              m_recentMenu = nullptr;   // 최근 파일 메뉴
     QAction*                            m_saveAction = nullptr;
     QAction*                            m_saveAsAction = nullptr;
@@ -481,7 +531,6 @@ private:
     QLabel*                             envStatusLabel_ = nullptr;   // 상태 표시줄 환경 칩
     /// 상태 표시줄 프리뷰 칩. 빌드부터 HTML 로드 완료까지가 한 구간이라,
     /// 그동안 아무 표시가 없으면 사용자에게는 고장으로 보인다.
-    QLabel*                             previewStatusLabel_ = nullptr;
     QWidget*                            missingDepBar_ = nullptr;
     QLabel*                             missingDepLabel_ = nullptr;
     QStringList                         missingDepPending_;

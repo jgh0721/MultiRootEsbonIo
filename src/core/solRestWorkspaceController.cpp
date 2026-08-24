@@ -6,6 +6,7 @@
 #include "solEsbonioLspClient.hpp"
 #include "solEsbonioLspPool.hpp"
 #include "solPreviewBridge.hpp"
+#include "solPreviewProgress.hpp"
 #include "solThemeManager.hpp"
 #include "solGlossaryIndex.hpp"
 #include "solRstSubstitutionIndex.hpp"
@@ -315,7 +316,23 @@ WorkspaceController::WorkspaceController( QObject* parent )
     connect( previewController_, &SphinxPreviewController::missingDependenciesDetected, this,
             &WorkspaceController::missingDependenciesDetected );
     connect( previewController_, &SphinxPreviewController::buildStarted, this,
-            [this]( const QString& ) { setPreviewStatus( tr( "프리뷰 빌드 중..." ) ); } );
+            [this]( const QString& ) {
+                setPreviewStatus( tr( "프리뷰 빌드 중..." ),
+                                  previewOverallPermille( PreviewPhase::BuildRead, 0, 0 ) );
+            } );
+    // 빌더가 문서를 읽고 쓰는 만큼 진행도를 내보낸다. 문구에 단계와 백분율을 함께
+    // 담는 이유는, 막대만으로는 "무엇이 42% 인지" 를 알 수 없기 때문이다.
+    connect( previewController_, &SphinxPreviewController::buildProgress, this,
+            [this]( const QString&, const QString& phase, const int done, const int total ) {
+                const PreviewPhase step    = previewPhaseFromTag( phase );
+                const int          overall = previewOverallPermille( step, done, total );
+                const int percent = total > 0 ? qRound( ( qBound( 0, done, total ) * 100.0 ) / total ) : 0;
+
+                const QString text = step == PreviewPhase::BuildWrite
+                                             ? tr( "프리뷰 빌드 · 쓰기 %1%" ).arg( percent )
+                                             : tr( "프리뷰 빌드 · 읽기 %1%" ).arg( percent );
+                setPreviewStatus( text, overall );
+            } );
     connect( previewController_, &SphinxPreviewController::buildFinished, this,
             &WorkspaceController::onPreviewFinished );
 
@@ -385,7 +402,8 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
     connect( previewView_, &QWebEngineView::loadProgress, this, [this]( const int percent ) {
         if( previewStatus_.isEmpty() )
             return;   // 사용자가 프리뷰 안에서 링크를 눌러 이동한 경우
-        setPreviewStatus( tr( "프리뷰 로딩 중... %1%" ).arg( percent ) );
+        setPreviewStatus( tr( "프리뷰 로딩 중... %1%" ).arg( percent ),
+                          previewOverallPermille( PreviewPhase::Load, percent, 100 ) );
     } );
 
     connect( previewView_, &QWebEngineView::loadFinished, this, [this]( const bool ok ) {
@@ -428,7 +446,8 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
                 emit logMessage( tr( "프리뷰 부분 교체 실패, 전체 다시 로드: %1" ).arg( message ) );
                 if( !pendingFullLoadPath_.isEmpty() )
                 {
-                    setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
+                    setPreviewStatus( tr( "프리뷰 로딩 중..." ),
+                                      previewOverallPermille( PreviewPhase::Load, 0, 100 ) );
                     previewUrl_ = pendingFullLoadUrl_;
                     previewLoadedOk_ = false;
                     previewLoadInFlight_ = true;
@@ -674,7 +693,8 @@ void WorkspaceController::requestPreviewBuild( const bool immediate, const bool 
 
     // 여기서부터는 결과가 나올 때까지 시간이 걸린다. 조기 반환들을 모두 통과한
     // 뒤에만 표시를 켠다 — 프리뷰를 만들 수 없는 파일에서 켜면 영영 남는다.
-    setPreviewStatus( tr( "프리뷰 준비 중..." ) );
+    setPreviewStatus( tr( "프리뷰 준비 중..." ),
+                      previewOverallPermille( PreviewPhase::Prepare, 0, 0 ) );
 
     traceP( "preview.request",
            QStringLiteral( "%1 immediate=%2 shadow=%3" )
@@ -797,13 +817,16 @@ void WorkspaceController::onPreviewFinished( const PreviewBuildResult& result )
                      result.serial );
 }
 
-void WorkspaceController::setPreviewStatus( const QString& text )
+void WorkspaceController::setPreviewStatus( const QString& text, const int permille )
 {
-    if( previewStatus_ == text )
+    // 문구가 같아도 진행도가 움직이면 내보낸다. 분모를 모르는 구간(문구가 그대로인
+    // 채로 진행도만 올라가는 구간)에서 막대가 멈춘 것처럼 보이지 않게 한다.
+    if( previewStatus_ == text && previewPermille_ == permille )
         return;
 
-    previewStatus_ = text;
-    emit previewStatusChanged( text, !text.isEmpty() );
+    previewStatus_   = text;
+    previewPermille_ = permille;
+    emit previewStatusChanged( text, !text.isEmpty(), permille );
 }
 
 void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QString& documentKey,
@@ -869,7 +892,8 @@ void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QStrin
     const auto loadFullPage = [this, &url, &htmlPath, size] {
         traceP( "preview.load.begin",
                QStringLiteral( "%1 %2KB" ).arg( QFileInfo( htmlPath ).fileName() ).arg( size / 1024 ) );
-        setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
+        setPreviewStatus( tr( "프리뷰 로딩 중..." ),
+                          previewOverallPermille( PreviewPhase::Load, 0, 100 ) );
         previewUrl_ = url;
         previewLoadedOk_ = false;
         previewLoadInFlight_ = true;
@@ -969,7 +993,8 @@ void WorkspaceController::showPreviewShell( const QString& documentPath )
     if( previewLoadInFlight_ && previewUrl_.path() == url.path() )
         return;
 
-    setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
+    setPreviewStatus( tr( "프리뷰 로딩 중..." ),
+                      previewOverallPermille( PreviewPhase::Load, 0, 100 ) );
     previewUrl_ = url;
     previewLoadedOk_ = false;
     previewLoadInFlight_ = true;
@@ -1042,7 +1067,8 @@ void WorkspaceController::applyPreviewWebSettings()
     // 속성만 갈아도 다시 실행되지 않으므로 같은 문서를 다시 읽는다.
     if( !firstApply && previewUrlIsOurs() )
     {
-        setPreviewStatus( tr( "프리뷰 로딩 중..." ) );
+        setPreviewStatus( tr( "프리뷰 로딩 중..." ),
+                          previewOverallPermille( PreviewPhase::Load, 0, 100 ) );
         previewLoadedOk_ = false;
         previewLoadInFlight_ = true;
         if( previewBridge_ != nullptr )

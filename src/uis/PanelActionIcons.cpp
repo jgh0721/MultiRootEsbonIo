@@ -156,6 +156,52 @@ void drawFilter( QPainter& painter, const QColor& color )
     painter.drawLine( QPointF( 10.3, 10.3 ), QPointF( 14.2, 14.2 ) );
 }
 
+/// 색 견본 한 장. `scale` 은 화면 배율이다 (물리 픽셀 = 논리 크기 × scale).
+QPixmap renderSwatch( const QColor& color, const QSize& size, const QPalette& palette, const qreal scale )
+{
+    const int width  = qMax( 1, qRound( size.width() * scale ) );
+    const int height = qMax( 1, qRound( size.height() * scale ) );
+
+    QPixmap pixmap( width, height );
+    pixmap.fill( Qt::transparent );
+
+    QPainter painter( &pixmap );
+
+    // 반투명한 색과 불투명한 색은 체커보드가 없으면 화면에서 구분할 수 없다.
+    // 알파가 온전한 색에는 깔지 않는다 — 어차피 덮이는데 칸마다 그리는 값이다.
+    if( color.alpha() < 255 )
+    {
+        const int    cell = qMax( 2, qRound( 4.0 * scale ) );
+        const QColor even = palette.color( QPalette::Active, QPalette::Base );
+        // AlternateBase 는 테마에 따라 Base 와 같을 수 있다. 그러면 체커보드가
+        // 단색이 되어 아무 구실도 못 하므로 밝기에서 직접 만든다.
+        const QColor odd = even.lightnessF() < 0.5 ? even.lighter( 145 ) : even.darker( 112 );
+        for( int y = 0; y < height; y += cell )
+        {
+            for( int x = 0; x < width; x += cell )
+                painter.fillRect( QRect( x, y, cell, cell ),
+                                  ( ( x / cell + y / cell ) % 2 == 0 ) ? even : odd );
+        }
+    }
+
+    painter.fillRect( QRect( 0, 0, width, height ), color );
+
+    // 테두리는 장식이 아니다. 없으면 표 배경과 같은 색인 견본이 빈 칸처럼 보인다.
+    QColor borderColor = palette.color( QPalette::Active, QPalette::Text );
+    borderColor.setAlpha( 110 );
+    const qreal penWidth = qMax( 1.0, scale );
+    QPen        pen( borderColor );
+    pen.setWidthF( penWidth );
+    painter.setPen( pen );
+    painter.setBrush( Qt::NoBrush );
+    // 선의 가운데가 그림 밖으로 반쯤 걸치지 않게 반 폭만큼 안으로 들인다.
+    const qreal inset = penWidth / 2.0;
+    painter.drawRect( QRectF( inset, inset, width - penWidth, height - penWidth ) );
+
+    painter.end();
+    return pixmap;
+}
+
 }  // namespace
 
 QIcon newFile( const QPalette& palette )
@@ -181,6 +227,20 @@ QIcon remove( const QPalette& palette )
 QIcon filter( const QPalette& palette )
 {
     return build( drawFilter, palette );
+}
+
+QIcon colorSwatch( const QColor& color, const QSize& size, const QPalette& palette )
+{
+    if( !color.isValid() || size.isEmpty() )
+        return {};
+
+    QIcon icon;
+    // 배율마다 딱 맞는 그림을 담는다. 한 장만 넣으면 Qt 가 그것을 늘리거나 줄여
+    // 테두리가 흐려진다 — 위 kSizes 주석과 같은 이유다. 다만 여기서는 논리 크기가
+    // 호출 측이 정하는 값이라 절대 크기 대신 배율로 담는다.
+    for( const qreal scale : { 1.0, 1.25, 1.5, 2.0, 3.0 } )
+        icon.addPixmap( renderSwatch( color, size, palette, scale ) );
+    return icon;
 }
 
 }  // namespace mrst::panelicons

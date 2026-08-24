@@ -77,7 +77,6 @@ private:
     void                                applyThemeScopeFilter();
     void                                applyThemePreview();
     QHash<QString, QColor>              collectThemeColors() const;
-    void                                updateThemeColorButton( QPushButton* button, const QColor& color ) const;
     void                                updateThemeColorItem( QTableWidgetItem* item, const QColor& color ) const;
 
     Ui::dlgSettings                     Ui;

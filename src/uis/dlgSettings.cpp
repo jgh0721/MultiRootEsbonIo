@@ -8,6 +8,7 @@
 #include "core/solLanguageManager.hpp"
 #include "core/solThemeManager.hpp"
 #include "core/solShadowBackupStore.hpp"
+#include "uis/PanelActionIcons.hpp"
 #include "uniqueLibs/solEncodingDetector.hpp"
 #include "utils/DwmTitleBar.hpp"
 
@@ -644,6 +645,9 @@ QWidget* QSettingsDialog::createGeneralPage()
     m_themeColorTable->verticalHeader()->setVisible( false );
     m_themeColorTable->setSelectionBehavior( QAbstractItemView::SelectRows );
     m_themeColorTable->setEditTriggers( QAbstractItemView::NoEditTriggers );
+    // 색 견본을 담는 크기다. 기본값(PM_SmallIconSize)은 정사각형이라 좁아서 색을
+    // 알아보기 어렵고, 알파가 섞인 색의 체커보드도 드러나지 않는다.
+    m_themeColorTable->setIconSize( QSize( 32, 16 ) );
     // 스크롤 영역 안에서는 이 표가 남는 높이를 받지 못한다. 공통 페이지의 내용
     // 최소 높이가 이미 뷰포트보다 커서 stretch 1 에 돌아올 몫이 없고, 그러면 표가
     // 자기 최소 높이로 주저앉는다. 그래서 같은 페이지의 다른 목록들처럼(위의 Lexer
@@ -1712,14 +1716,6 @@ void QSettingsDialog::populateThemeColorTable()
     const auto           colors    = ThemeManager::instance().effectiveColors( theme );
     const auto           overrides = ThemeManager::instance().colorOverrides( theme );
     const QSignalBlocker blocker( m_themeColorTable );
-    for( int row = 0; row < m_themeColorTable->rowCount(); ++row )
-    {
-        if( auto* widget = m_themeColorTable->cellWidget( row, 2 ) )
-        {
-            m_themeColorTable->removeCellWidget( row, 2 );
-            widget->deleteLater();
-        }
-    }
     m_themeColorTable->clearContents();
     m_themeColorTable->setRowCount( 0 );
     m_themeColorTable->setRowCount( entries.size() );
@@ -1747,9 +1743,8 @@ void QSettingsDialog::populateThemeColorTable()
         labelItem->setData( Qt::UserRole, entry.key );
         m_themeColorTable->setItem( row, 1, labelItem );
 
-        auto* colorItem = new QTableWidgetItem( QStringLiteral( "■" ) );
+        auto* colorItem = new QTableWidgetItem;
         colorItem->setFlags( colorItem->flags() & ~Qt::ItemIsEditable );
-        colorItem->setTextAlignment( Qt::AlignCenter );
         colorItem->setData( Qt::UserRole, entry.key );
         updateThemeColorItem( colorItem, color );
         m_themeColorTable->setItem( row, 2, colorItem );
@@ -1865,29 +1860,27 @@ QHash<QString, QColor> QSettingsDialog::collectThemeColors() const
     return colors;
 }
 
-void QSettingsDialog::updateThemeColorButton(QPushButton* button, const QColor& color) const
-{
-    if (!button)
-        return;
-
-    button->setText(QStringLiteral("■"));
-    button->setProperty("themeColor", color.name(QColor::HexArgb));
-    button->setStyleSheet(QStringLiteral(
-        "QPushButton { background-color: %1; color: %2; border: 1px solid palette(mid); min-width: 42px; }"
-    ).arg(color.name(QColor::HexArgb), color.lightnessF() < 0.45 ? QStringLiteral("#ffffff") : QStringLiteral("#111111")));
-    button->setToolTip(color.name(QColor::HexArgb));
-}
-
 void QSettingsDialog::updateThemeColorItem(QTableWidgetItem* item, const QColor& color) const
 {
     if (!item)
         return;
 
+    // 색은 **아이콘으로만** 나른다.
+    //
+    // 예전에는 `■` 글자를 넣고 `setBackground()`/`setForeground()` 로 색을 실어
+    // 보냈는데, 그러면 표 전체가 같은 색으로 나왔다. Qlementine 이
+    // `PE_PanelItemViewItem` 에서 셀 배경을 자기가 칠하면서
+    // `QStyleOptionViewItem::backgroundBrush` 를 읽지 않고(색을 정하는
+    // `listItemBackgroundColor()` 는 모델 인덱스를 `Q_UNUSED` 로 버린다), 남은
+    // 통로인 글자색은 대비를 맞추려고 흰색/검은색 둘 중 하나로 덮어써 버렸기
+    // 때문이다. 아이콘은 `QStyleOptionViewItem::icon` 을 타므로 두 함정을 모두
+    // 지나지 않는다. 앱이 `setAutoIconColor` 를 부르지 않으므로 기본값
+    // `AutoIconColor::None` 이라 Qlementine 이 색을 덧입히지도 않는다.
     const QString colorName = color.name(QColor::HexArgb);
-    item->setText(QStringLiteral("■"));
+    const QSize   swatchSize = m_themeColorTable ? m_themeColorTable->iconSize() : QSize(28, 14);
+    item->setIcon(mrst::panelicons::colorSwatch(
+        color, swatchSize, m_themeColorTable ? m_themeColorTable->palette() : palette()));
     item->setToolTip(tr("더블클릭하여 색상 변경: %1").arg(colorName));
     item->setData(Qt::UserRole + 1, colorName);
-    item->setBackground(QBrush(color));
-    item->setForeground(QBrush(color.lightnessF() < 0.45 ? QColor(QStringLiteral("#ffffff")) : QColor(QStringLiteral("#111111"))));
 }
 
