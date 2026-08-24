@@ -1300,6 +1300,26 @@ QString WorkspaceController::activeProjectId() const
     return activeProjectId_;
 }
 
+bool WorkspaceController::activeDocumentIsStandalone() const
+{
+    // contextFor() 는 비-const 라 여기서 쓸 수 없다. 텍스트 뷰가 아닌 탭
+    // (이미지·PDF)과 탭이 하나도 없는 상태가 모두 여기로 떨어져 false 가 된다.
+    const auto it = documents_.constFind( activeView_.data() );
+    if( it == documents_.constEnd() )
+        return false;
+
+    const DocumentContext& context = it.value();
+    if( !context.projectId.isEmpty() && !context.isVirtual )
+        return false;   // conf.py 를 가진 실제 프로젝트에 속한다
+
+    // 가상 프로젝트도 "없음" 으로 센다. 그 srcdir 은 임시 디렉터리가 아니라
+    // 원본 파일이 있던 실제 디렉터리라서(solVirtualProjectMgr.hpp 참고), 프로젝트
+    // 개요를 만들면 그 폴더의 무관한 문서까지 재귀로 늘어놓는다 — 문서 하나짜리
+    // 목록이 아니다.
+    return filekinds::hasExtension( context.path, filekinds::restructuredTextExtensions() )
+           || filekinds::hasExtension( context.path, filekinds::markdownExtensions() );
+}
+
 DiagnosticsStore* WorkspaceController::diagnostics() const
 {
     return diagnosticsStore_;
@@ -1665,6 +1685,17 @@ void WorkspaceController::setActiveDocument( QTextView* view )
         emit logMessage( tr( "활성 프로젝트: %1" )
                             .arg( activeProjectId_.isEmpty() ? unresolvedProjectLabel() : activeProjectId_ ) );
     }
+
+    // 요약 패널이 어느 탭을 앞에 둘지 여기서 알린다. 아래 중복 호출 가드보다
+    // **앞**에 둔다 — 단독 `.md` 는 projectId 가 계속 빈 문자열이어서 스캔이
+    // 끝난 뒤의 재호출이 그 가드에 걸리는데, 그때가 바로 답이 확정되는 순간이다.
+    //
+    // 스캔이 도는 동안에는 내보내지 않는다. 그때는 실제 프로젝트에 속한 문서도
+    // projectId 가 비어 있어(resolveProject 가 조기 반환한다) 단독 문서와
+    // 구별되지 않는다. 스캔이 끝나면 scanFinished 가 소속을 다시 정한 뒤 이
+    // 함수를 다시 부르므로, 한 박자 늦게 정확한 답이 나간다.
+    if( !registry_->isScanning() )
+        emit activeDocumentResolved( activeDocumentIsStandalone() );
 
     if( !projectChanged && !documentChanged && !previewStale )
         return;   // 같은 문서에 대한 중복 호출

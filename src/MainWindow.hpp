@@ -155,6 +155,9 @@ private:
     /// 첫 실행(세션에 배치가 없을 때)의 패널 비율을 정한다. 창이 실제 크기를
     /// 가진 뒤에 불러야 한다 — 이유는 구현부 주석에 있다.
     void                                applyDefaultDockSizes();
+    /// 요약 패널의 두 탭 중 어느 것을 앞에 둘지 활성 문서의 소속에 따라 정한다.
+    /// WorkspaceController::activeDocumentResolved 에 걸려 있다.
+    void                                applyDefaultOutlineTab( bool standalone );
     /// ADS 기본 스타일시트에서 다크 테마와 어긋나는 규칙을 덮는다.
     void                                applyDockStylesheetOverrides();
     /// 세션에 담긴 도크 배치(base64)를 되살린다. 비었거나 못 읽으면 기본 배치를
@@ -353,6 +356,10 @@ private:
     /// 세션이 도크 배치를 복원했는가. 위와 같은 이유로 둔다 — 사용자가 옮겨 둔
     /// 패널을 기본 비율로 되돌리면 그 조작이 매 실행마다 사라진다.
     bool                                dockLayoutFromSession_ = false;
+    /// 요약 패널의 "활성 문서" 탭을 **우리가** 앞으로 냈는가.
+    /// 되돌릴 대상을 우리 조작으로 한정하려고 둔다 — 사용자가 직접 고른 탭은
+    /// 문서가 바뀌어도 그대로 둔다.
+    bool                                outlineTabAutoSwitched_ = false;
     /// setStartupPaths() 로 받아 둔 명령줄 경로. 비면 지난 세션을 복원한다.
     QStringList                         startupPaths_;
 
