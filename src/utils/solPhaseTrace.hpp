@@ -24,6 +24,14 @@ namespace mrst {
 /// 환경 변수가 없으면 첫 호출에서 즉시 반환하므로 배포 빌드에 그대로 둬도 된다.
 void traceP( const char* tag, const QString& detail = {} );
 
+/// 이 트레이스가 켜져 있는가. **켜져 있을 때만 만들 물건**을 위한 것이다.
+///
+/// traceP() 는 스스로 게이트를 보므로 호출자는 이것을 물어볼 필요가 없다. 필요한
+/// 것은 정체 감시자(MainWindow 의 50 ms 타이머)처럼 **존재 자체가 비용인** 경우다 —
+/// 배포 빌드에서 쓸데없이 이벤트 루프를 깨우지 않으려면 만들지 않아야 하고,
+/// 그 판단을 하려면 게이트를 밖에서도 볼 수 있어야 한다.
+[[nodiscard]] bool phaseTraceEnabled();
+
 /// 기준 시각을 세운다. main() 첫 줄에서 한 번 부른다.
 /// 부르지 않아도 traceP() 의 첫 호출이 대신 세운다(경과 시간의 원점만 늦어진다).
 void startPhaseClock();
@@ -42,7 +50,7 @@ public:
 private:
     const char*                         tag_ = nullptr;
     QString                             detail_;
-    qint64                              startedAtMs_ = 0;
+    qint64                              startedAtNs_ = 0;
 };
 
 }  // namespace mrst
