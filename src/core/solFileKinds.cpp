@@ -44,10 +44,19 @@ const QStringList& markdownExtensions()
     return extensions;
 }
 
+const QStringList& restructuredTextExtensions()
+{
+    static const QStringList extensions = toList( { "rst", "rest" } );
+    return extensions;
+}
+
 const QStringList& documentExtensions()
 {
+    // 순서를 지킨다. textLikeExtensions() 가 이 목록을 물려받아 경로 자동완성의
+    // 후보 순위로 쓴다.
     static const QStringList extensions = [] {
-        QStringList list = toList( { "rst", "rest", "txt" } );
+        QStringList list = restructuredTextExtensions();
+        list += toList( { "txt" } );
         list += markdownExtensions();
         return list;
     }();

@@ -1183,7 +1183,9 @@ void MainWindow::setupDockLayout()
     dockOutlineProject_ = makeDock( "dock.outline.project", tr( "프로젝트" ),
                                     Ui.pnlOutlineProject );
     dockManager_->addDockWidgetTabToArea( dockOutlineProject_, outlineArea );
-    // 예전 tabLeftSideOutline 의 currentIndex 가 1(프로젝트)이었다.
+    // 예전 tabLeftSideOutline 의 currentIndex 가 1(프로젝트)이었다. 이것은
+    // **문서를 모르는 동안의** 기본값이다 — 여기는 생성자라 controller_ 도
+    // 열린 파일도 없다. 소속이 정해지면 applyDefaultOutlineTab() 이 다시 정한다.
     dockOutlineProject_->setAsCurrentTab();
 
     // ── 하단 ──
@@ -1244,6 +1246,46 @@ void MainWindow::applyDefaultDockSizes()
     ratio( areaSplitter( dockOutlineDocument_ ), 1, 1 );
     // 편집기 | 하단
     ratio( areaSplitter( dockDiagnostics_ ), 4, 1 );
+}
+
+void MainWindow::applyDefaultOutlineTab( const bool standalone )
+{
+    if( dockOutlineDocument_ == nullptr || dockOutlineProject_ == nullptr )
+        return;
+
+    // 둘이 한 영역에 탭으로 겹쳐 있을 때만 손댄다. 사용자가 하나를 떼어 냈거나
+    // 가장자리에 핀으로 접었거나 위아래로 쪼개 두었으면 ADS 가 저마다 다른
+    // 영역을 주고, 그때는 바꿀 탭이 애초에 없다. 영역 포인터는 캐시하지 않는다
+    // — 비면 ADS 가 지우고, restoreState() 는 모든 영역을 새로 만든다.
+    ads::CDockAreaWidget* area = dockOutlineDocument_->dockAreaWidget();
+    if( area == nullptr || area != dockOutlineProject_->dockAreaWidget() )
+        return;
+
+    // 스스로 옮기는 방향은 하나다. 되돌리는 것은 **우리가 옮겨 둔** 경우뿐이라,
+    // 사용자가 직접 고른 탭은 문서가 바뀌어도 그대로 남는다.
+    ads::CDockWidget* target = nullptr;
+    if( standalone )
+        target = dockOutlineDocument_;
+    else if( outlineTabAutoSwitched_ )
+        target = dockOutlineProject_;
+
+    // isClosed() 면 setAsCurrentTab() 이 스스로 아무 일도 하지 않지만, 그러면
+    // 아래 기록이 화면과 어긋난다. 사용자가 닫아 둔 패널은 되살리지 않는다.
+    if( target == nullptr || target->isClosed() || target->isCurrentTab() )
+        return;
+
+    // 물러나는 패널은 레이아웃에서 떨어져 숨는다(ADS 의 탭 전환은 내용 위젯을
+    // setParent(nullptr) 로 뽑아낸다). 그 안에 포커스가 있으면 사용자가 치던
+    // 글자가 갈 곳을 잃는다 — 요약 필터 칸이 실제 사례다. 편집기는 중앙 도크라
+    // 여기 걸리지 않으므로 본문을 치는 중에는 규칙이 그대로 동작한다.
+    if( ads::CDockWidget* current = area->currentDockWidget();
+        current != nullptr && current->isAncestorOf( QApplication::focusWidget() ) )
+        return;
+
+    target->setAsCurrentTab();
+    // 실제로 앞에 나왔을 때만 기록한다. 되돌릴 대상을 우리 조작으로 한정하려면
+    // 이 기록이 화면과 어긋나서는 안 된다.
+    outlineTabAutoSwitched_ = dockOutlineDocument_->isCurrentTab();
 }
 
 void MainWindow::applyDockStylesheetOverrides()
@@ -4171,6 +4213,13 @@ void MainWindow::setupOutlineTrees()
                 outlineDocumentSymbols_.clear();
                 setOutlinePlaceholder( Ui.treOutlineDocument, reason );
             } );
+
+    // 어느 탭을 앞에 둘지는 활성 문서의 소속에 달렸다. 이 신호는 소속이 정해진
+    // 뒤에만 오므로(스캔 중에는 오지 않는다) 프로젝트 문서를 단독 문서로 오해해
+    // 탭을 흔드는 일이 없다. documentOutlineReady 는 트리거로 쓸 수 없다 —
+    // 편집 디바운스와 LSP 응답으로 한 문서에 여러 번 온다.
+    connect( controller_, &mrst::WorkspaceController::activeDocumentResolved, this,
+            &MainWindow::applyDefaultOutlineTab );
 }
 
 void MainWindow::redrawDocumentOutlineTree()

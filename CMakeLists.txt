@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.21)
 
 project("MultiRoot-reST-Editor" VERSION 0.6.0 LANGUAGES CXX)
 
@@ -371,6 +371,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_WorkspaceSearch.cpp
             tests/tst_GlossaryParsing.cpp
             tests/tst_RstSubstitutions.cpp
+            tests/tst_FileKinds.cpp
             tests/tst_FileTreeFilter.cpp
             tests/tst_SphinxBuilders.cpp
             tests/tst_WorkspaceSessionActive.cpp

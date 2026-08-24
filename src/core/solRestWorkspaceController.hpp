@@ -156,6 +156,15 @@ signals:
     void                                logMessage( const QString& text );
     void                                projectsChanged( int count );
     void                                activeProjectChanged( const QString& projectId, bool isVirtual );
+    /// 활성 문서와 그 소속이 정해졌다. standalone 이면 conf.py 를 가진 실제
+    /// Sphinx 프로젝트 밖에 홀로 있는 `.md`/`.rst` 다 — 그 문서에는 프로젝트
+    /// 개요가 보여 줄 것이 없다.
+    ///
+    /// activeProjectChanged 로는 이것을 알 수 없어 따로 둔다. 그 신호는
+    /// projectId 가 **바뀔** 때만 나오는데, 단독 `.md` 는 가상 프로젝트조차
+    /// 만들지 않아(VirtualProjectManager::isSupported) projectId 가 처음부터
+    /// 끝까지 빈 문자열이고, 그래서 한 번도 나오지 않는다.
+    void                                activeDocumentResolved( bool standalone );
     void                                navigateRequested( const QString& path, int line, int column );
     void                                diagnosticsChanged( const QString& source,
                                                             const QVector< DiagnosticEntry >& entries );
@@ -195,6 +204,8 @@ private:
     [[nodiscard]] const SphinxProject*  lookupProject( const QString& projectId ) const;
     /// 이 문서의 프리뷰를 Sphinx 가 만드는가, 내장 Markdown 렌더러가 만드는가.
     [[nodiscard]] PreviewRoute          routeFor( const DocumentContext& context ) const;
+    /// 활성 문서가 실제 프로젝트 밖에 홀로 있는 `.md`/`.rst` 인가.
+    [[nodiscard]] bool                  activeDocumentIsStandalone() const;
     /// 가상 프로젝트의 합성 conf.py 가 쓸 `html_theme`.
     ///
     /// 설정이 비어 있으면("다른 프로젝트와 동일") 워크스페이스의 실제 프로젝트

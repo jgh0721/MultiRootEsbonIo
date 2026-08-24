@@ -23,6 +23,9 @@ namespace mrst::filekinds {
 /// 브라우저와 Sphinx 가 함께 다룰 수 있는 이미지.
 [[nodiscard]] const QStringList&             imageExtensions();
 [[nodiscard]] const QStringList&             markdownExtensions();
+/// reStructuredText 본문. `.txt` 는 넣지 않는다 — Sphinx 는 source_suffix 에
+/// 따라 문서로 읽을 수 있지만, 대부분의 `.txt` 는 문서가 아니다.
+[[nodiscard]] const QStringList&             restructuredTextExtensions();
 /// Sphinx 가 문서로 읽는 것 (toctree / :doc: 후보).
 [[nodiscard]] const QStringList&             documentExtensions();
 /// literalinclude 처럼 "글자로 읽는" 파일. 후보를 **거르는** 데 쓰지 말고
