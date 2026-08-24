@@ -148,6 +148,88 @@ namespace
         };
     }
 
+    /// 콤보박스·스핀박스 위에서 굴린 휠이 페이지를 스크롤하는 대신 값을 바꾸는
+    /// 것을 막는다.
+    ///
+    /// qlementine 은 QAbstractSpinBox 와 QAbstractSlider 에만 같은 필터를 걸어 둔다
+    /// (StyleUtils.cpp 의 shouldNotHaveWheelEvents). 콤보박스는 빠져 있는데, 이
+    /// 대화상자의 콤보 중에는 **고르는 순간 저장되는** 것이 있다 — 표시 언어와
+    /// 테마 모드다. 내용을 굴려 내려가다 그 위를 스쳐 지나가기만 해도 앱 언어가
+    /// 바뀌므로, 스크롤을 들이는 것과 이 필터를 거는 것은 한 묶음이다.
+    /// 스핀박스까지 함께 거는 이유는 qlementine 설치가 실패하면 Fusion 으로
+    /// 대체되고(main.cpp) 그 경로에는 상류 필터가 없기 때문이다.
+    ///
+    /// ignore() 를 부른 뒤 true 를 돌려주는 것이 요령이다. true 는 대상 위젯에
+    /// 배달을 막고, accepted 가 false 로 남아 QApplicationPrivate::notify 의 휠
+    /// 전파 루프가 부모로 한 칸 올라간다 — 결국 스크롤 영역이 대신 받아 페이지가
+    /// 스크롤된다. (qlementine 의 MouseWheelBlockerEventFilter 와 같은 수법이다.)
+    class WheelValueGuard : public QObject
+    {
+    public:
+        explicit WheelValueGuard( QWidget* widget )
+            : QObject( widget )
+            , m_widget( widget )
+        {
+        }
+
+    protected:
+        bool eventFilter( QObject*, QEvent* event ) override
+        {
+            if( event->type() == QEvent::Wheel && !m_widget->hasFocus() )
+            {
+                event->ignore();
+                return true;
+            }
+            return false;
+        }
+
+    private:
+        QWidget* m_widget = nullptr;
+    };
+
+    /// 페이지를 스크롤 영역에 담아 돌려준다.
+    ///
+    /// 설정 항목을 더할 때마다 대화상자가 세로로 길어지던 것을 여기서 끊는다.
+    /// 예전에는 페이지의 레이아웃 최소 높이가 그대로 대화상자의 최소 높이가 됐다.
+    /// 프리뷰 페이지 하나가 1,240 논리 픽셀을 요구해서, .ui 에 655 로 적어 둔
+    /// 기본 높이와 무관하게 창이 화면보다 높게 떴다.
+    ///
+    /// QScrollArea 를 한 겹 두면 두 가지가 함께 끊긴다.
+    /// * minimumSizeHint 가 내용과 무관해진다. 스크롤바 하나가 성립하는 최소 길이와
+    ///   테두리뿐이다 (QAbstractScrollArea::minimumSizeHint). 페이지가 얼마나
+    ///   길어져도 레이아웃이 창을 밀어 올리지 못한다.
+    /// * sizeHint 는 내용 크기를 따르지만 `24 * 글꼴 높이` 에서 잘린다
+    ///   (QScrollArea::sizeHint 의 boundedTo).
+    QScrollArea* wrapInScrollArea( QWidget* content, QWidget* parent )
+    {
+        auto* scroll = new QScrollArea( parent );
+        // 이미 .ui 의 QFrame 안에 들어가므로 테두리를 한 겹 더 그리면 액자가
+        // 이중으로 보인다.
+        scroll->setFrameShape( QFrame::NoFrame );
+        // 뷰포트 폭에 맞춰 내용을 다시 배치한다. 프리뷰 페이지의 설명 라벨은
+        // 줄바꿈 라벨이라 폭이 정해져야 높이가 나온다 — 이것이 없으면 잘린다.
+        scroll->setWidgetResizable( true );
+        // 뷰포트는 기본값이 autoFillBackground(true) + QPalette::Base 다. 그대로
+        // 두면 입력란 색이 페이지 배경으로 깔려 다른 페이지와 색이 달라진다.
+        // (내용 위젯 쪽은 손대지 않는다 — setWidget() 이 다시 true 로 돌린다.)
+        scroll->viewport()->setAutoFillBackground( false );
+
+        for( QWidget* child : content->findChildren< QWidget* >() )
+        {
+            if( qobject_cast< QComboBox* >( child ) == nullptr
+                && qobject_cast< QAbstractSpinBox* >( child ) == nullptr )
+                continue;
+            // 휠로는 포커스를 주지 않는다. 클릭하거나 Tab 으로 들어온 뒤에만
+            // 휠이 값을 바꾼다.
+            if( child->focusPolicy() == Qt::WheelFocus )
+                child->setFocusPolicy( Qt::StrongFocus );
+            child->installEventFilter( new WheelValueGuard( child ) );
+        }
+
+        scroll->setWidget( content );
+        return scroll;
+    }
+
 }  // namespace
 
 QSettingsDialog::QSettingsDialog( QWidget* Parent )
@@ -390,11 +472,13 @@ void QSettingsDialog::buildPages()
         Ui.lstCate->addItem( tr( "Python/Esbonio" ) );
     }
 
-    Ui.stkWidget->addWidget( createGeneralPage() );
-    Ui.stkWidget->addWidget( createShortcutsPage() );
-    Ui.stkWidget->addWidget( createEditorPage() );
-    Ui.stkWidget->addWidget( createPreviewPage() );
-    Ui.stkWidget->addWidget( createEsbonioPage() );
+    // 페이지는 스크롤 영역에 담아 넣는다. 항목이 늘어도 대화상자가 세로로
+    // 길어지지 않는 것은 여기 하나에 달려 있다 — wrapInScrollArea() 주석 참고.
+    Ui.stkWidget->addWidget( wrapInScrollArea( createGeneralPage(), this ) );
+    Ui.stkWidget->addWidget( wrapInScrollArea( createShortcutsPage(), this ) );
+    Ui.stkWidget->addWidget( wrapInScrollArea( createEditorPage(), this ) );
+    Ui.stkWidget->addWidget( wrapInScrollArea( createPreviewPage(), this ) );
+    Ui.stkWidget->addWidget( wrapInScrollArea( createEsbonioPage(), this ) );
 
     // .ui 에는 "PushButton" 이라고 적혀 있다. Ui.retranslateUi() 를 부르면
     // 그 값이 되살아나므로 여기서 매번 덮어써야 한다.
@@ -560,6 +644,11 @@ QWidget* QSettingsDialog::createGeneralPage()
     m_themeColorTable->verticalHeader()->setVisible( false );
     m_themeColorTable->setSelectionBehavior( QAbstractItemView::SelectRows );
     m_themeColorTable->setEditTriggers( QAbstractItemView::NoEditTriggers );
+    // 스크롤 영역 안에서는 이 표가 남는 높이를 받지 못한다. 공통 페이지의 내용
+    // 최소 높이가 이미 뷰포트보다 커서 stretch 1 에 돌아올 몫이 없고, 그러면 표가
+    // 자기 최소 높이로 주저앉는다. 그래서 같은 페이지의 다른 목록들처럼(위의 Lexer
+    // 목록 120, Esbonio 로그 160) 바닥을 정해 준다. 창을 키우면 여기서부터 늘어난다.
+    m_themeColorTable->setMinimumHeight( 240 );
     themeLayout->addWidget( m_themeColorTable, 1 );
 
     // ── 자동 업데이트 ──
