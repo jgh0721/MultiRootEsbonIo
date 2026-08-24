@@ -1467,6 +1467,10 @@ void MainWindow::openFile( const QString& filePath )
         if( view && normalizeFilePath( view->currentFilePath() ) == normalizedPath )
         {
             m_tabWidget->setCurrentIndex( i );
+            // 트리뷰·진단 표·개요에서 문서를 불러낸 경우 포커스는 아직 그 패널에
+            // 있다. 문서를 앞에 냈으면 키보드도 문서에 있어야 한다. 미루는 이유는
+            // addViewTab() 쪽과 같다.
+            QTimer::singleShot( 0, this, &MainWindow::focusActiveEditor );
             return;
         }
     }
@@ -1928,6 +1932,17 @@ int MainWindow::addViewTab( QBaseView* view )
     const int idx = m_tabWidget->addTab( view, view->title() );
     m_tabWidget->setCurrentIndex( idx );
     updateTabDecoration( view );
+    // 문서를 열었으면 키보드도 문서에 있어야 한다. 여기가 새 탭이 생기는 유일한
+    // 자리라 탐색기·진단·개요·드롭·최근 파일이 모두 이 한 줄을 지난다.
+    //
+    // **이벤트 루프로 미룬다.** 여기서 곧바로 setFocus 하면 트리가 포커스를
+    // 되가져간다 — 트리의 더블클릭 처리가 아직 끝나지 않았고, 새 탭 페이지도
+    // 아직 보이지 않아 Qt 가 포커스를 실제로 옮기지 않는다. 기동 경로가
+    // 같은 이유로 같은 방식을 쓴다(advanceStartupPhase).
+    //
+    // 세션 복원도 이 자리를 지나가지만, 기동 끝에서 한 번 더 돌아 결과는
+    // 달라지지 않는다.
+    QTimer::singleShot( 0, this, &MainWindow::focusActiveEditor );
 
     connect( view, &QBaseView::sigTitleChanged, this, [this, view]( const QString& title ) {
         const int i = m_tabWidget ? m_tabWidget->indexOf( view ) : -1;
@@ -2248,7 +2263,18 @@ void MainWindow::onCloseTab( int index )
         widget->deleteLater();
     }
 
-    refreshCurrentViewUi();
+    // 탭을 지울 때 currentChanged 를 막아 두므로(removeViewTabWithoutSignals, 그리고
+    // 위 else 의 QSignalBlocker) "새 탭이 앞에 왔을 때" 처리가 저절로 돌지 않는다.
+    // 직접 부른다 — 포커스뿐 아니라 활성 문서(프리뷰·LSP)와 Ctrl+Tab 순서도
+    // 여기서 갱신된다. 이것이 없으면 지워진 위젯이 포커스를 쥔 채 부모에서 떨어져
+    // 나가므로 Qt 가 포커스 체인의 다음 위젯 — 탐색기 트리 — 로 포커스를 넘긴다.
+    if( m_tabWidget->count() > 0 )
+    {
+        onTabChanged( m_tabWidget->currentIndex() );
+        focusActiveEditor();
+    }
+    else
+        refreshCurrentViewUi();
 }
 
 void MainWindow::closeEvent( QCloseEvent* event )
