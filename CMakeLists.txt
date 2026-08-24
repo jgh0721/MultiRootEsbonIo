@@ -452,6 +452,7 @@ if(MRST_BUILD_TESTS)
             tests/TestRunner.hpp
             tests/ui/tst_CompletionPopupUi.cpp
             tests/ui/tst_ThemeColorKeys.cpp
+            tests/ui/tst_ThemeColorSwatch.cpp
             tests/ui/tst_ScintillaTextMetrics.cpp
             tests/ui/tst_ScintillaDocumentLoad.cpp
             tests/ui/tst_PanelActionIcons.cpp

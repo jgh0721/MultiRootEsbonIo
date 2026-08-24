@@ -1,7 +1,9 @@
 ﻿#pragma once
 
+#include <QColor>
 #include <QIcon>
 #include <QPalette>
+#include <QSize>
 
 namespace mrst::panelicons {
 
@@ -24,5 +26,22 @@ namespace mrst::panelicons {
 [[nodiscard]] QIcon remove( const QPalette& palette );
 /// 필터 입력칸 앞머리에 붙는 돋보기.
 [[nodiscard]] QIcon filter( const QPalette& palette );
+
+/// 설정 → 테마의 색상 칸에 놓는 색 견본.
+///
+/// **아이콘이어야 한다.** `QTableWidgetItem::setBackground()` 로는 안 된다 —
+/// Qlementine 이 `PE_PanelItemViewItem` 에서 셀 배경을 직접 칠하면서
+/// `QStyleOptionViewItem::backgroundBrush` 를 읽지 않고, 색을 정하는
+/// `listItemBackgroundColor()` 는 모델 인덱스를 아예 무시한다(`Q_UNUSED(index)`).
+/// 그래서 브러시로 색을 실어 보내면 모든 칸이 같은 색으로 나온다. 아이콘은
+/// `QStyleOptionViewItem::icon` 을 타고 가므로 그 경로를 지나지 않는다.
+///
+/// 테두리는 장식이 아니다 — 없으면 배경과 같은 색인 견본이 빈 칸처럼 보인다.
+/// 알파가 있는 색은 체커보드 위에 올린다. 그러지 않으면 반투명한 색과 불투명한
+/// 색을 화면에서 구분할 수 없다.
+///
+/// 격자와 테두리 색은 팔레트에서 온다. `panelicons` 의 다른 함수들과 같은
+/// 이유다 — 라이트에서 흰 격자, 다크에서 검은 격자가 되어야 한다.
+[[nodiscard]] QIcon colorSwatch( const QColor& color, const QSize& size, const QPalette& palette );
 
 }  // namespace mrst::panelicons
