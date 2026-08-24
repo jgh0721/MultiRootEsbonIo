@@ -2,12 +2,13 @@
 #include "core/solGlossaryIndex.hpp"
 
 #include "core/solRestOutlineService.hpp"
+#include "core/solRstLineUtils.hpp"
+#include "editor/RstStructure.hpp"
 #include "utils/solBackgroundWork.hpp"
 
 #include <QFile>
 #include <QMetaObject>
 #include <QPointer>
-#include <QRegularExpression>
 #include <QThreadPool>
 
 namespace mrst {
@@ -17,26 +18,10 @@ namespace {
 /// 용어집을 뽑을 때 훑을 문서 수의 상한. 프로젝트 개요와 같은 규모로 잡는다.
 constexpr int kMaxGlossaryDocuments = 2000;
 
-/// 줄 앞 공백의 개수. 탭은 8칸으로 센다 (docutils 규칙).
-int indentWidth( const QString& line )
-{
-    int width = 0;
-    for( const QChar ch : line )
-    {
-        if( ch == QLatin1Char( ' ' ) )
-            ++width;
-        else if( ch == QLatin1Char( '\t' ) )
-            width += 8 - ( width % 8 );
-        else
-            break;
-    }
-    return width;
-}
-
-bool isBlank( const QString& line )
-{
-    return line.trimmed().isEmpty();
-}
+// 줄 나누기·들여쓰기·빈 줄 판정은 공용 도우미가 한다. 예전에는 이 셋이 이 파일과
+// 다른 인덱서에 바이트 단위로 같은 사본으로 있었다.
+using mrst::rstline::indentWidth;
+using mrst::rstline::isBlank;
 
 /// `용어 : 정렬키` 에서 표시용 용어만 남긴다.
 /// 이스케이프한 `\:` 는 콜론 그대로 둔다.
@@ -58,16 +43,31 @@ QString stripSortKey( QString term )
 
 QVector< GlossaryEntry > parseGlossary( const QString& text, const QString& path )
 {
-    static const QRegularExpression glossaryRe(
-        QStringLiteral( R"(^(\s*)\.\.\s+glossary::\s*$)" ) );
+    // `.. glossary::` 판정은 공용 파서가 한다. 예전에는 정규식이 한 벌 더 있었고,
+    // 그것만 directive 이름의 `+` 를 막는 식으로 다섯 벌이 조금씩 갈라져 있었다.
+    const auto isGlossaryDirective = []( const QString& line ) {
+        const QByteArray utf8 = line.toUtf8();
+        const std::optional< rst::DirectiveParts > parts = rst::parseDirective(
+            std::string_view( utf8.constData(), static_cast< std::size_t >( utf8.size() ) ) );
+        if( !parts || parts->hasSubstitution() )
+            return false;
+        if( QByteArray::fromRawData( utf8.constData() + parts->nameStart,
+                                     static_cast< qsizetype >( parts->nameEnd - parts->nameStart ) )
+            != QByteArrayLiteral( "glossary" ) )
+            return false;
+        // 인자를 받지 않는 directive 다. 뒤에 무언가 붙어 있으면 다른 것이다.
+        return QByteArray::fromRawData( utf8.constData() + parts->colonsEnd,
+                                        utf8.size() - static_cast< qsizetype >( parts->colonsEnd ) )
+            .trimmed()
+            .isEmpty();
+    };
 
-    const QStringList lines = text.split( QRegularExpression( QStringLiteral( "\r\n|\n|\r" ) ) );
+    const QStringList lines = mrst::rstline::splitLines( text );
 
     QVector< GlossaryEntry > entries;
     for( qsizetype index = 0; index < lines.size(); ++index )
     {
-        const QRegularExpressionMatch match = glossaryRe.match( lines.at( index ) );
-        if( !match.hasMatch() )
+        if( !isGlossaryDirective( lines.at( index ) ) )
             continue;
 
         const int directiveIndent = indentWidth( lines.at( index ) );

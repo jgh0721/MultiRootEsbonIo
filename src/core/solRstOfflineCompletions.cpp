@@ -2,6 +2,8 @@
 #include "solRstOfflineCompletions.hpp"
 
 #include "core/solRstPathCompletion.hpp"
+#include "core/solRstLineUtils.hpp"
+#include "editor/RstStructure.hpp"
 
 #include <QCoreApplication>
 #include <QObject>
@@ -157,14 +159,9 @@ QStringList optionsFor( const QString& directiveName )
     return {};
 }
 
-/// 줄 앞쪽 공백 문자 수.
-int leadingIndent( const QString& line )
-{
-    int index = 0;
-    while( index < line.length() && line.at( index ).isSpace() )
-        ++index;
-    return index;
-}
+// 줄 앞 공백 문자 수. 공용 도우미를 쓴다 — 예전에는 이 파일과 조율자에 같은
+// 사본이 하나씩 있었다.
+using mrst::rstline::leadingSpaceCount;
 
 /// 커서가 directive 블록 안(들여쓰기된 본문)이라면 그 directive 이름.
 ///
@@ -173,21 +170,26 @@ int leadingIndent( const QString& line )
 /// 아니면 블록 밖이다.
 QString enclosingDirective( const QStringList& previousLines, const int currentIndent )
 {
-    static const QRegularExpression directiveRe(
-        QStringLiteral( R"(^(\s*)\.\.\s+(?:\|[^|]+\|\s+)?([a-zA-Z0-9_.-]+(?::[a-zA-Z0-9_.-]+)?)::)" ) );
-
     for( const QString& line : previousLines )
     {
         if( line.trimmed().isEmpty() )
             continue;
 
-        const int indent = leadingIndent( line );
+        const int indent = leadingSpaceCount( line );
         if( indent >= currentIndent )
             continue;   // 같은 블록 안의 다른 줄. 계속 위로 본다.
 
         // 더 얕게 들여쓴 첫 줄. 이게 directive 여야 우리가 그 블록 안이다.
-        const QRegularExpressionMatch match = directiveRe.match( line );
-        return match.hasMatch() ? match.captured( 2 ) : QString{};
+        //
+        // 판정은 공용 파서에 맡긴다. 예전에는 여기에 정규식이 한 벌 더 있었고
+        // 다섯 벌 중 이것만 이름의 `+` 를 막고 있었다.
+        const QByteArray utf8 = line.toUtf8();
+        const std::optional< rst::DirectiveParts > parts = rst::parseDirective(
+            std::string_view( utf8.constData(), static_cast< std::size_t >( utf8.size() ) ) );
+        if( !parts )
+            return {};
+        return QString::fromUtf8( utf8.constData() + parts->nameStart,
+                                  static_cast< qsizetype >( parts->nameEnd - parts->nameStart ) );
     }
     return {};
 }
@@ -214,7 +216,7 @@ QString stripEol( QString line )
 bool barIsBlockMarkup( const QString& rawLine, const QStringList& previousLines )
 {
     const QString lineText = stripEol( rawLine );
-    const int     first = leadingIndent( lineText );
+    const int     first = leadingSpaceCount( lineText );
     if( first >= lineText.length() || lineText.at( first ) != QLatin1Char( '|' ) )
         return false;   // 줄머리가 `|` 가 아니면 표도 줄 블록도 아니다
 
@@ -376,6 +378,25 @@ QStringList substitutionDirectives()
     // 것이 정확히 `.. |br| raw:: html` 이다.
     return { QStringLiteral( "replace" ), QStringLiteral( "image" ),
             QStringLiteral( "unicode" ), QStringLiteral( "date" ), QStringLiteral( "raw" ) };
+}
+
+QStringList collectPreviousLines( const int caretLine, const int caretIndent,
+                                  const std::function< std::optional< QString >( int ) >& lineAt,
+                                  const int absoluteLimit )
+{
+    QStringList lines;
+    for( int line = caretLine - 1; line >= 0 && lines.size() < absoluteLimit; --line )
+    {
+        const std::optional< QString > text = lineAt( line );
+        if( !text )
+            break;
+        lines << *text;
+        if( text->trimmed().isEmpty() )
+            continue;
+        if( leadingSpaceCount( *text ) < caretIndent )
+            break;   // 블록 경계
+    }
+    return lines;   // 역순: 바로 앞 줄이 [0]
 }
 
 Context detectContext( const QString& lineText, const int column, const QStringList& previousLines )
@@ -610,7 +631,7 @@ QVector< Item > normalizeLspItems( QVector< Item > items, const QString& lineTex
     const QString before = lineText.left( caret );
     // 앞쪽만 잘라야 한다. trimmed() 로 뒤까지 자르면 정작 문제가 되는 상황인
     // ".. " (뒤에 공백 하나) 가 ".." 이 되어 컨텍스트 판정을 놓친다.
-    const QStringView stripped = QStringView( before ).mid( leadingIndent( before ) );
+    const QStringView stripped = QStringView( before ).mid( leadingSpaceCount( before ) );
     if( !stripped.startsWith( QStringLiteral( ".. " ) ) )
         return items;
 

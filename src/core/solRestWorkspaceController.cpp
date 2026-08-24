@@ -1168,6 +1168,11 @@ void WorkspaceController::syncDocumentToServer( DocumentContext& context, const 
         return;
     }
 
+    // 증분이 켜져 있으면 sigDocumentEdited 경로가 이미 보냈다. 여기서 전문을 또
+    // 보내면 677KB 문서에서 키 입력마다 692KB 를 두 번 쓰는 셈이 된다.
+    if( client->supportsIncrementalSync() )
+        return;
+
     client->didChange( context.path, context.view->text() );
 }
 
@@ -1188,15 +1193,20 @@ void WorkspaceController::refreshDocumentOutline()
         return;
     }
 
+    // text() 는 문서 전체를 QString 으로 복사한다. UTF-16 이라 677KB 문서에서 한 번에
+    // 1.3MB 다. 예전에는 폴백과 didChange 가 각각 불러 두 번 복사했다.
+    const QString documentText = activeView_->text();
+
     // 폴백을 먼저 내보낸다. Esbonio 가 데워지기 전에도 개요가 비어 있지 않게.
-    emit documentOutlineReady( context->path,
-                              parseDocumentOutline( activeView_->text(), context->path ) );
+    emit documentOutlineReady( context->path, parseDocumentOutline( documentText, context->path ) );
 
     // LSP 가 살아 있으면 더 정확한 결과로 덮어쓴다.
     if( LspClient* client = lspPool_->clientFor( context->projectId );
         client != nullptr && client->isRunning() && context->syncedToServer )
     {
-        client->didChange( context->path, activeView_->text() );
+        // 증분이 켜져 있으면 서버 사본은 이미 최신이다.
+        if( !client->supportsIncrementalSync() )
+            client->didChange( context->path, documentText );
         client->documentSymbols( context->path );
     }
 }
@@ -1433,6 +1443,24 @@ void WorkspaceController::attachDocument( QTextView* view )
     context.path = view->currentFilePath().isEmpty() ? QString{} : QFileInfo( view->currentFilePath() ).absoluteFilePath();
     resolveProject( context );
     documents_.insert( view, context );
+
+    // 편집 구간을 그대로 서버에 흘린다. 디바운스하지 않는다 — 증분 동기화는 편집을
+    // 하나라도 빠뜨리면 서버 사본이 어긋나고 그 뒤 진단·완성 위치가 전부 밀린다.
+    // 프레임 하나가 수백 바이트라 전문 전송(677KB 문서에서 692KB)과 비교가 되지 않는다.
+    connect( view, &QTextView::sigDocumentEdited, this,
+             [ this, view ]( int startLine, int startColumn, int oldEndLine, int oldEndColumn,
+                             const QByteArray& newText ) {
+                 DocumentContext* context = contextFor( view );
+                 if( context == nullptr || !context->syncedToServer || context->path.isEmpty() )
+                     return;   // 아직 didOpen 전이다. 곧 전문이 나가므로 여기서 보낼 것이 없다.
+
+                 LspClient* client = lspPool_->clientFor( context->projectId );
+                 if( client == nullptr || !client->isRunning() || !client->supportsIncrementalSync() )
+                     return;   // 협상 실패. syncDocumentToServer 의 전문 경로가 맡는다.
+
+                 client->didChangeIncremental( context->path, startLine, startColumn, oldEndLine,
+                                               oldEndColumn, newText );
+             } );
 
     // 편집 중에는 디바운스된 프리뷰 재빌드 + LSP 문서 동기화.
     connect( view, &QTextView::sigTextEdited, this, [this, view] {

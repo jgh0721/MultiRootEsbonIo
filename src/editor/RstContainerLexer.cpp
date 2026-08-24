@@ -1,39 +1,26 @@
 ﻿// Qt 비의존 순수 모듈이다. stdafx.h 를 포함하지 않으므로 테스트 타깃에서
 // Qt Widgets/WebEngine 없이 그대로 컴파일할 수 있다.
+//
+// 판정 규칙은 이 파일에 두지 않는다. 장식 문자·directive·필드·인라인 마크업의
+// 정의는 전부 RstStructure 에 있고, 개요·접기·자동완성·인덱스가 같은 것을 쓴다.
+// 예전에는 같은 규칙이 다섯 곳에 서로 다르게 구현되어 실제 문서에서 갈라졌다.
+//
+// std::regex 는 쓰지 않는다. 열한 개를 줄마다 돌리던 예전 구현은 677KB 한국어
+// 문서 전체 강조에 364ms 를 썼고 그중 93% 가 정규식 두 개(강조·하이퍼링크)에서
+// 나왔다. 같은 판정을 문자 스캐너로 하면 0.9ms 다(실측).
 #include "RstContainerLexer.hpp"
 
+#include "RstStructure.hpp"
+
 #include <algorithm>
-#include <cctype>
-#include <regex>
-#include <string_view>
 
 namespace mrst::rst {
 namespace {
 
-const std::string kTitleChars = "=-`:.~'^\"_*+#!$%&()/<>@\\{|}";
-
-const std::regex kDirectiveRegex( R"(^(\s*\.\.\s+)([a-zA-Z0-9_.-]+(?::[a-zA-Z0-9_.-]+)?)(::)(.*))" );
-const std::regex kRoleRegex( R"(:([a-zA-Z0-9_.-]+(?::[a-zA-Z0-9_.-]+)?):`([^`]*)`)" );
-const std::regex kInlineLiteralRegex( R"(``(.+?)``)" );
-const std::regex kStrongRegex( R"(\*\*(.+?)\*\*)" );
-const std::regex kEmphasisRegex( R"((^|[^*])\*([^*]+)\*(?!\*))" );
-const std::regex kHyperlinkRegex( R"(`[^`]+`_|[a-zA-Z0-9]+_(?!_))" );
-const std::regex kSubstitutionRegex( R"(\|[^|]+\|)" );
-const std::regex kFieldRegex( R"(^(\s*):([^:]+):(.*))" );
-const std::regex kExplicitMarkupRegex( R"(^\s*\.\.\s+(?![a-zA-Z0-9_.-]+(?::[a-zA-Z0-9_.-]+)?::))" );
-const std::regex kTransitionRegex( R"(^([=\-`:.~'\"_*+#]{4,})\s*$)" );
-const std::regex kSnippetPlaceholderRegex( R"(\$\{[^}]*\})" );
-
-[[nodiscard]] std::string trim( std::string value )
+[[nodiscard]] std::string trim( const std::string& value )
 {
-    const auto first = std::find_if_not( value.begin(), value.end(),
-                                        []( unsigned char ch ) { return std::isspace( ch ) != 0; } );
-    const auto last = std::find_if_not( value.rbegin(), value.rend(),
-                                       []( unsigned char ch ) { return std::isspace( ch ) != 0; } ).base();
-    if( first >= last )
-        return {};
-
-    return std::string( first, last );
+    const std::string_view view = trimView( value );
+    return std::string( view );
 }
 
 [[nodiscard]] std::string firstLine( std::string_view value )
@@ -54,8 +41,9 @@ const std::regex kSnippetPlaceholderRegex( R"(\$\{[^}]*\})" );
 
 [[nodiscard]] std::string toLower( std::string value )
 {
-    std::transform( value.begin(), value.end(), value.begin(),
-                   []( unsigned char ch ) { return static_cast< char >( std::tolower( ch ) ); } );
+    std::transform( value.begin(), value.end(), value.begin(), []( unsigned char ch ) {
+        return static_cast< char >( ( ch >= 'A' && ch <= 'Z' ) ? ch + ( 'a' - 'A' ) : ch );
+    } );
     return value;
 }
 
@@ -65,113 +53,107 @@ const std::regex kSnippetPlaceholderRegex( R"(\$\{[^}]*\})" );
         value.erase( value.begin() );
     while( !value.empty() && value.back() == ':' )
         value.pop_back();
-
     return value;
 }
 
-/// UTF-8 문자(코드포인트) 수. 후속 바이트(10xxxxxx)는 세지 않는다.
-[[nodiscard]] std::size_t utf8Length( std::string_view value )
+/// `${...}` 스니펫 자리표시자를 지운다. 예전에는 정규식이었다.
+[[nodiscard]] std::string stripSnippetPlaceholders( std::string_view value )
 {
-    std::size_t count = 0;
-    for( const char raw : value )
+    std::string out;
+    out.reserve( value.size() );
+    for( std::size_t i = 0; i < value.size(); )
     {
-        if( ( static_cast< unsigned char >( raw ) & 0xC0 ) != 0x80 )
-            ++count;
-    }
-    return count;
-}
-
-/// adornmentLine 이 titleLine 의 제목 장식(윗줄/밑줄)인가.
-[[nodiscard]] bool isTitleAdornmentFor( const std::string& adornmentLine, const std::string& titleLine )
-{
-    if( adornmentLine.empty() || !std::regex_match( adornmentLine, kTransitionRegex ) )
-        return false;
-
-    const std::string adornment = trim( adornmentLine );
-    const std::string title = trim( titleLine );
-    if( adornment.empty() || title.empty() )
-        return false;
-    if( kTitleChars.find( adornment.front() ) == std::string::npos )
-        return false;
-
-    // 길이는 반드시 **문자 수**로 비교한다. 바이트로 재면 글자당 3바이트인
-    // 한글 제목은 장식이 늘 짧아 보여서 제목으로 인식되지 않는다.
-    return utf8Length( adornment ) >= utf8Length( title );
-}
-
-/// 윗줄과 밑줄이 같은 문자로 그려졌는가. reST 는 짝이 맞아야 제목으로 본다.
-[[nodiscard]] bool sameAdornmentChar( const std::string& first, const std::string& second )
-{
-    const std::string left = trim( first );
-    const std::string right = trim( second );
-    return !left.empty() && !right.empty() && left.front() == right.front();
-}
-
-[[nodiscard]] std::vector< std::string > splitLines( const std::string& text )
-{
-    std::vector< std::string > lines;
-    std::size_t start = 0;
-    while( true )
-    {
-        const std::size_t pos = text.find( '\n', start );
-        if( pos == std::string::npos )
+        if( value[ i ] == '$' && i + 1 < value.size() && value[ i + 1 ] == '{' )
         {
-            lines.push_back( text.substr( start ) );
-            break;
+            const std::size_t close = value.find( '}', i + 2 );
+            if( close != std::string_view::npos )
+            {
+                i = close + 1;
+                continue;
+            }
         }
-        lines.push_back( text.substr( start, pos - start ) );
-        start = pos + 1;
+        out.push_back( value[ i ] );
+        ++i;
     }
-    return lines;
+    return out;
 }
 
-/// std::regex 를 std::string 위에서 돌리면 match.position() 이 이미 바이트
-/// 오프셋이다. (Python 원본은 str 위에서 돌아 문자 오프셋이 나오므로 바이트로
-/// 환산하는 단계가 필요했지만, 여기서는 그 환산이 오히려 비ASCII 앞선 줄에서
-/// 오프셋을 밀어버린다.)
-void appendMatchSpans( const std::string& line,
-                      const std::regex& pattern,
-                      int style,
-                      std::vector< Span >& matches,
-                      bool emphasisWorkaround = false )
+[[nodiscard]] int styleForInline( const InlineKind kind, const RstMetadataCache& cache,
+                                  std::string_view roleName )
 {
-    for( std::sregex_iterator it( line.begin(), line.end(), pattern ), end; it != end; ++it )
+    switch( kind )
     {
-        const std::smatch& match = *it;
-        std::size_t start = static_cast< std::size_t >( match.position( 0 ) );
-        std::size_t length = static_cast< std::size_t >( match.length( 0 ) );
-        if( emphasisWorkaround && match.length( 1 ) == 1 )
-        {
-            // std::regex 에는 Python 의 고정폭 negative lookbehind
-            // (?<!\*)\*([^*]+)\*(?!\*) 가 없다. 선행 non-star 한 글자를 선택적으로
-            // 매치한 뒤 스타일 범위에서 빼는 방식으로 대체한다.
-            start += 1;
-            length -= 1;
-        }
-        matches.push_back( { start, start + length, style } );
+        case InlineKind::Literal:      return STYLE_INLINE_LITERAL;
+        case InlineKind::Strong:       return STYLE_STRONG;
+        case InlineKind::Emphasis:     return STYLE_EMPHASIS;
+        case InlineKind::Substitution: return STYLE_SUBSTITUTION;
+        case InlineKind::Hyperlink:    return STYLE_HYPERLINK;
+        case InlineKind::Interpreted:  return STYLE_INTERPRETED;
+        case InlineKind::Role:         return cache.roleStyle( std::string( roleName ) );
     }
+    return STYLE_DEFAULT;
 }
 
-/// 줄 앞 공백의 시각적 폭. 탭은 docutils 와 같이 8칸으로 편다.
-/// 깊이 비교에만 쓰므로 정확한 폭보다 일관성이 중요하다.
-[[nodiscard]] int indentWidth( const std::string& line )
+/// out 의 [start, end) 를 style 로 채운다. 범위를 벗어나면 잘라 낸다.
+void paint( std::span< unsigned char > out, const std::size_t start, const std::size_t end,
+            const int style )
 {
-    int width = 0;
-    for( const char raw : line )
+    if( start >= out.size() )
+        return;
+    const std::size_t last = std::min( end, out.size() );
+    if( last <= start )
+        return;
+    std::fill( out.begin() + static_cast< std::ptrdiff_t >( start ),
+               out.begin() + static_cast< std::ptrdiff_t >( last ),
+               static_cast< unsigned char >( style ) );
+}
+
+/// 제목 묶음이 아닌 줄 하나를 칠한다. base 는 줄의 첫 바이트 오프셋이다.
+void paintOrdinaryLine( std::string_view line, const std::size_t base,
+                        const RstMetadataCache& cache, std::span< unsigned char > out,
+                        std::vector< InlineToken >& scratch )
+{
+    if( line.empty() )
+        return;
+
+    if( isTransitionLine( line ) )
     {
-        if( raw == ' ' )
-            ++width;
-        else if( raw == '\t' )
-            width += 8 - ( width % 8 );
-        else
-            break;
+        paint( out, base, base + line.size(), STYLE_TRANSITION );
+        return;
     }
-    return width;
-}
 
-[[nodiscard]] bool isBlankLine( const std::string& line )
-{
-    return trim( line ).empty();
+    if( const std::optional< DirectiveParts > parts = parseDirective( line ) )
+    {
+        paint( out, base, base + parts->prefixEnd, STYLE_EXPLICIT_MARKUP );
+        if( parts->hasSubstitution() )
+            paint( out, base + parts->subStart, base + parts->subEnd, STYLE_SUBSTITUTION );
+        const std::string name( line.substr( parts->nameStart, parts->nameEnd - parts->nameStart ) );
+        paint( out, base + parts->nameStart, base + parts->colonsEnd, cache.directiveStyle( name ) );
+        return;
+    }
+
+    if( hasExplicitMarkupPrefix( line ) )
+    {
+        paint( out, base, base + line.size(), STYLE_COMMENT );
+        return;
+    }
+
+    if( const std::optional< FieldParts > parts = parseField( line ) )
+    {
+        paint( out, base + parts->indentEnd, base + parts->markerEnd, STYLE_FIELD_NAME );
+        return;
+    }
+
+    scratch.clear();
+    scanInline( line, scratch );
+    for( const InlineToken& token : scratch )
+    {
+        const std::string_view name =
+            line.substr( token.nameStart, token.nameEnd > token.nameStart
+                                              ? token.nameEnd - token.nameStart
+                                              : 0 );
+        paint( out, base + token.start, base + token.end, styleForInline( token.kind, cache, name ) );
+    }
 }
 
 /// 제목 장식의 종류. 같은 문자라도 윗줄이 있는 제목과 없는 제목은
@@ -187,33 +169,20 @@ struct AdornmentStyle
     }
 };
 
-/// 줄 하나의 접기 계산용 분류.
-enum class LineKind
-{
-    Blank,
-    TitleOverline,   ///< 윗줄 장식. 여기서 제목 묶음이 시작된다.
-    TitleText,
-    TitleUnderline,
-    Body,
-};
+}   // namespace
 
-}  // namespace
+// ── 접기 깊이 ────────────────────────────────────────────
 
 std::vector< FoldLine > computeFoldLevels( const std::string& utf8Text )
 {
-    const std::vector< std::string > lines = splitLines( utf8Text );
+    const LineIndex   lines( utf8Text );
     const std::size_t count = lines.size();
 
     std::vector< FoldLine > folds( count );
     if( count == 0 )
         return folds;
 
-    const auto lineAt = [ &lines, count ]( const std::size_t index ) -> const std::string& {
-        static const std::string empty;
-        return index < count ? lines[ index ] : empty;
-    };
-
-    // 장식 문자가 처음 나온 순서가 곧 섹션 깊이다.
+    // 장식 양식이 처음 나온 순서가 곧 섹션 깊이다.
     std::vector< AdornmentStyle > sectionStack;
     // 본문 들여쓰기 깊이. 섹션이 바뀌면 처음부터 다시 센다.
     std::vector< int > indentStack{ 0 };
@@ -232,67 +201,54 @@ std::vector< FoldLine > computeFoldLevels( const std::string& utf8Text )
         return static_cast< int >( sectionStack.size() - 1 );
     };
 
-    int sectionDepth = 0;       ///< 지금 열려 있는 섹션의 깊이
-    bool sawSection = false;    ///< 첫 제목 전의 본문은 깊이 0 이다
-    std::size_t skipUntil = 0;  ///< 제목 묶음을 한 번에 처리하고 건너뛴다
+    int  sectionDepth = 0;
+    bool sawSection = false;
 
-    for( std::size_t i = 0; i < count; ++i )
+    for( std::size_t i = 0; i < count; )
     {
-        const std::string& line = lines[ i ];
+        const std::string_view line = lines.line( i );
 
-        if( i < skipUntil )
-            continue;
-
-        if( isBlankLine( line ) )
+        if( isBlank( line ) )
         {
             folds[ i ].blank = true;
-            // 레벨은 뒤에서 앞 줄 것으로 채운다.
-            folds[ i ].level = -1;
+            folds[ i ].level = -1;   // 레벨은 뒤에서 이웃 것으로 채운다
+            ++i;
             continue;
         }
 
-        LineKind kind = LineKind::Body;
-        AdornmentStyle style;
-        std::size_t titleSpan = 0;   // 이 제목 묶음이 차지하는 줄 수
-
-        if( std::regex_match( line, kTransitionRegex )
-            && isTitleAdornmentFor( lineAt( i + 2 ), lineAt( i + 1 ) )
-            && sameAdornmentChar( line, lineAt( i + 2 ) ) )
+        const TitleScan scan = titleScanAt( lines, i );
+        if( scan.title )
         {
-            kind = LineKind::TitleOverline;
-            style = { trim( line ).front(), true };
-            titleSpan = 3;
+            sectionDepth = depthForAdornment( { scan.title->adornChar, scan.title->overlined } );
+            sawSection = true;
+            indentStack.assign( 1, 0 );
+
+            const std::size_t last = std::min< std::size_t >( i + scan.span, count );
+            for( std::size_t k = i; k < last; ++k )
+                folds[ k ].level = sectionDepth;
+            i = last;
+            continue;
         }
-        else if( isTitleAdornmentFor( lineAt( i + 1 ), line ) )
+        if( scan.span > 0 )
         {
-            kind = LineKind::TitleText;
-            style = { trim( lineAt( i + 1 ) ).front(), false };
-            titleSpan = 2;
-        }
-
-        if( kind == LineKind::Body )
-        {
-            // 제목이 하나도 없는 문서에서도 들여쓰기 접기는 살아 있어야 한다.
-            const int width = indentWidth( line );
-            while( indentStack.size() > 1 && width < indentStack.back() )
-                indentStack.pop_back();
-            if( width > indentStack.back() )
-                indentStack.push_back( width );
-
-            const int indentDepth = static_cast< int >( indentStack.size() ) - 1;
-            folds[ i ].level = sectionDepth + ( sawSection ? 1 : 0 ) + indentDepth;
+            // 제목이 아니지만 docutils 가 통째로 소비하는 구간. 본문 깊이로 둔다.
+            const std::size_t last = std::min< std::size_t >( i + scan.span, count );
+            for( std::size_t k = i; k < last; ++k )
+                folds[ k ].level = sectionDepth + ( sawSection ? 1 : 0 );
+            i = last;
             continue;
         }
 
-        // 제목 묶음. 세 줄(또는 두 줄) 전체가 섹션 자신의 깊이를 갖는다.
-        sectionDepth = depthForAdornment( style );
-        sawSection = true;
-        indentStack.assign( 1, 0 );
+        // 제목이 하나도 없는 문서에서도 들여쓰기 접기는 살아 있어야 한다.
+        const int width = indentWidth( line );
+        while( indentStack.size() > 1 && width < indentStack.back() )
+            indentStack.pop_back();
+        if( width > indentStack.back() )
+            indentStack.push_back( width );
 
-        const std::size_t last = std::min( i + titleSpan, count );
-        for( std::size_t k = i; k < last; ++k )
-            folds[ k ].level = sectionDepth;
-        skipUntil = last;
+        const int indentDepth = static_cast< int >( indentStack.size() ) - 1;
+        folds[ i ].level = sectionDepth + ( sawSection ? 1 : 0 ) + indentDepth;
+        ++i;
     }
 
     // 빈 줄은 앞뒤 중 **더 깊은** 쪽에 붙인다.
@@ -306,7 +262,7 @@ std::vector< FoldLine > computeFoldLevels( const std::string& utf8Text )
     // 뒤쪽만 보면 반대로 섹션 끝의 빈 줄이 다음 섹션 것으로 넘어가 접었을 때
     // 빈 줄만 덩그러니 남는다. 더 깊은 쪽을 고르면 둘 다 해결된다.
     std::vector< int > forward( count, 0 );
-    int carried = 0;
+    int                carried = 0;
     for( std::size_t i = 0; i < count; ++i )
     {
         if( folds[ i ].level >= 0 )
@@ -326,7 +282,7 @@ std::vector< FoldLine > computeFoldLevels( const std::string& utf8Text )
     }
 
     // 다음 비어 있지 않은 줄이 더 깊으면 이 줄이 접기 머리다.
-    int nextLevel = 0;
+    int  nextLevel = 0;
     bool haveNext = false;
     for( std::size_t i = count; i-- > 0; )
     {
@@ -340,6 +296,8 @@ std::vector< FoldLine > computeFoldLevels( const std::string& utf8Text )
 
     return folds;
 }
+
+// ── 어휘 캐시 ────────────────────────────────────────────
 
 int RstMetadataCache::directiveStyle( const std::string& name ) const
 {
@@ -402,7 +360,7 @@ std::string extractDirectiveName( const std::string& label, const std::string& i
     // 스니펫 placeholder 를 "::" 보다 먼저 제거해야 한다. Python 원본은 순서가
     // 반대라서 "image:: ${1:path}" 가 "image::" 로 남고, 그 이름이 캐시에 들어가면
     // 정작 "image" directive 가 INVALID(빨강)로 표시된다.
-    text = trim( std::regex_replace( text, kSnippetPlaceholderRegex, "" ) );
+    text = trim( stripSnippetPlaceholders( text ) );
     if( endsWith( text, "::" ) )
         text = trim( text.substr( 0, text.size() - 2 ) );
 
@@ -417,6 +375,8 @@ std::string extractDirectiveName( const std::string& label, const std::string& i
 
     return fallback;
 }
+
+// ── 렉서 ─────────────────────────────────────────────────
 
 RstContainerLexer::RstContainerLexer( RstMetadataCache cache )
     : cache_( std::move( cache ) )
@@ -433,196 +393,118 @@ RstMetadataCache& RstContainerLexer::metadataCache()
     return cache_;
 }
 
+void RstContainerLexer::styleInto( std::string_view utf8Text, std::span< unsigned char > out ) const
+{
+    std::fill( out.begin(), out.end(), static_cast< unsigned char >( STYLE_DEFAULT ) );
+    if( utf8Text.empty() )
+        return;
+
+    const LineIndex            lines( utf8Text );
+    std::vector< InlineToken > scratch;
+    scratch.reserve( 16 );
+
+    // 리터럴 블록은 줄 사이 상태다. 창이 블록 밖에서 시작한다는 보장은 부르는
+    // 쪽(handleStyleNeeded)이 창을 0열 줄까지 넓혀서 준다.
+    LiteralBlockTracker literal;
+
+    for( std::size_t i = 0; i < lines.size(); )
+    {
+        const std::string_view line = lines.line( i );
+
+        // 리터럴 본문이 아닐 때만 제목을 찾는다. 상태를 미리 보는 이유는 제목
+        // 묶음이 여러 줄을 한꺼번에 가져가기 때문이다 — 먹인 뒤에 되돌릴 수 없다.
+        if( !literal.peek( line ) )
+        {
+            const TitleScan scan = titleScanAt( lines, i );
+            if( scan.span > 0 )
+            {
+                if( scan.title )
+                {
+                    // 묶음 전체(윗줄·제목·밑줄)를 제목색으로 칠한다. 개행은 남긴다.
+                    for( std::uint32_t k = scan.title->firstLine; k <= scan.title->lastLine; ++k )
+                    {
+                        const std::size_t base = lines.byteStart( k );
+                        paint( out, base, base + lines.line( k ).size(), STYLE_TITLE );
+                    }
+                }
+                // 묶음이 가져간 줄도 빠짐없이 상태 기계에 흘려보낸다.
+                for( std::uint32_t k = 0; k < scan.span; ++k )
+                    literal.consumeAsTitle( lines.line( i + k ) );
+                i += scan.span;
+                continue;
+            }
+        }
+
+        if( literal.feed( line ) )
+            paint( out, lines.byteStart( i ), lines.byteStart( i ) + line.size(), STYLE_LITERAL );
+        else
+            paintOrdinaryLine( line, lines.byteStart( i ), cache_, out, scratch );
+        ++i;
+    }
+}
+
 std::vector< Span > RstContainerLexer::tokenizeLine( const std::string& line,
                                                     const std::string& previousLine,
                                                     const std::string& nextLine,
                                                     const std::string& lineAfterNext ) const
 {
-    const std::size_t lineByteLen = line.size();
+    // 네 줄짜리 작은 문서를 만들어 같은 경로로 칠한 뒤 가운데 줄만 잘라 낸다.
+    // 제목은 세 줄에 걸치므로 줄 하나만 보고는 판정할 수 없고, 판정 규칙을 여기
+    // 한 벌 더 두면 그것이 곧 갈라지는 지점이 된다.
+    std::string document;
+    document.reserve( previousLine.size() + line.size() + nextLine.size() + lineAfterNext.size() + 4 );
+    document += previousLine;
+    document += '\n';
+    const std::size_t base = document.size();
+    document += line;
+    document += '\n';
+    document += nextLine;
+    document += '\n';
+    document += lineAfterNext;
 
-    // 다음 줄이 밑줄이면 이 줄은 제목이다.
-    if( isTitleAdornmentFor( nextLine, line ) )
-        return { { 0, lineByteLen, STYLE_TITLE } };
+    std::vector< unsigned char > styles( document.size(), static_cast< unsigned char >( STYLE_DEFAULT ) );
+    styleInto( document, styles );
 
-    if( std::regex_match( line, kTransitionRegex ) )
+    std::vector< Span > spans;
+    std::size_t         runStart = 0;
+    for( std::size_t i = 0; i <= line.size(); ++i )
     {
-        // 앞 줄에 내용이 있으면 제목의 밑줄이다.
-        if( !trim( previousLine ).empty() )
-            return { { 0, lineByteLen, STYLE_TITLE } };
-
-        // 윗줄/아랫줄로 감싼 제목의 윗줄도 제목의 일부다.
-        //     ########
-        //     제목
-        //     ########
-        // 두 장식이 같은 문자여야 하고, 그 사이 줄이 제목이어야 한다.
-        if( isTitleAdornmentFor( lineAfterNext, nextLine ) && sameAdornmentChar( line, lineAfterNext ) )
-            return { { 0, lineByteLen, STYLE_TITLE } };
-
-        // 그 밖에는 단독 구분선이다.
-        return { { 0, lineByteLen, STYLE_TRANSITION } };
+        const int current = ( i < line.size() ) ? static_cast< int >( styles[ base + i ] ) : -1;
+        const int previous = static_cast< int >( styles[ base + runStart ] );
+        if( i == line.size() || current != previous )
+        {
+            if( previous != STYLE_DEFAULT )
+                spans.push_back( { runStart, i, previous } );
+            runStart = i;
+        }
     }
-
-    if( std::regex_match( line, kDirectiveRegex ) )
-        return styleDirectiveLine( line );
-
-    if( std::regex_search( line, kExplicitMarkupRegex ) )
-        return { { 0, lineByteLen, STYLE_COMMENT } };
-
-    if( std::regex_match( line, kFieldRegex ) )
-        return styleFieldLine( line );
-
-    return styleInline( line );
+    return spans;
 }
 
 std::vector< Span > RstContainerLexer::styleText( const std::string& utf8Text ) const
 {
-    const std::vector< std::string > lines = splitLines( utf8Text );
-    std::vector< Span > result;
-    std::size_t base = 0;
+    const std::vector< unsigned char > styles = styleBytes( utf8Text );
 
-    for( std::size_t i = 0; i < lines.size(); ++i )
+    std::vector< Span > spans;
+    std::size_t         runStart = 0;
+    for( std::size_t i = 0; i <= styles.size(); ++i )
     {
-        const std::string& line = lines[ i ];
-        // 마지막 줄을 제외하면 개행 1바이트가 줄 길이에 포함된다.
-        const std::size_t lineByteLen = line.size() + ( i + 1 < lines.size() ? 1 : 0 );
-        if( lineByteLen == 0 )
-            continue;
-
-        std::vector< Span > spans = tokenizeLine( line,
-                                                 i > 0 ? lines[ i - 1 ] : std::string{},
-                                                 i + 1 < lines.size() ? lines[ i + 1 ] : std::string{},
-                                                 i + 2 < lines.size() ? lines[ i + 2 ] : std::string{} );
-        if( spans.empty() )
+        const bool end = ( i == styles.size() );
+        if( end || styles[ i ] != styles[ runStart ] )
         {
-            result.push_back( { base, base + lineByteLen, STYLE_DEFAULT } );
+            if( runStart < styles.size() )
+                spans.push_back( { runStart, i, static_cast< int >( styles[ runStart ] ) } );
+            runStart = i;
         }
-        else
-        {
-            std::sort( spans.begin(), spans.end(),
-                      []( const Span& left, const Span& right ) { return left.start < right.start; } );
-            std::size_t pos = 0;
-            for( const Span& span : spans )
-            {
-                if( span.start > pos )
-                    result.push_back( { base + pos, base + span.start, STYLE_DEFAULT } );
-                if( span.end > span.start )
-                    result.push_back( { base + span.start, base + span.end, span.style } );
-                pos = span.end;
-            }
-            if( pos < lineByteLen )
-                result.push_back( { base + pos, base + lineByteLen, STYLE_DEFAULT } );
-        }
-        base += lineByteLen;
     }
-
-    return result;
+    return spans;
 }
 
 std::vector< unsigned char > RstContainerLexer::styleBytes( const std::string& utf8Text ) const
 {
     std::vector< unsigned char > result( utf8Text.size(), static_cast< unsigned char >( STYLE_DEFAULT ) );
-    for( const Span& span : styleText( utf8Text ) )
-    {
-        const std::size_t end = std::min( span.end, result.size() );
-        for( std::size_t i = std::min( span.start, result.size() ); i < end; ++i )
-            result[ i ] = static_cast< unsigned char >( span.style );
-    }
+    styleInto( utf8Text, result );
     return result;
 }
 
-std::vector< Span > RstContainerLexer::styleDirectiveLine( const std::string& line ) const
-{
-    std::smatch match;
-    if( !std::regex_match( line, match, kDirectiveRegex ) )
-        return {};
-
-    const std::string prefix = match[ 1 ].str();
-    const std::string name = match[ 2 ].str();
-    const std::string colons = match[ 3 ].str();
-    const std::string rest = match[ 4 ].str();
-    const int nameStyle = cache_.directiveStyle( name );
-
-    std::vector< Span > spans;
-    std::size_t pos = 0;
-    spans.push_back( { pos, pos + prefix.size(), STYLE_EXPLICIT_MARKUP } );
-    pos += prefix.size();
-    spans.push_back( { pos, pos + name.size(), nameStyle } );
-    pos += name.size();
-    spans.push_back( { pos, pos + colons.size(), nameStyle } );
-    pos += colons.size();
-    if( !rest.empty() )
-        spans.push_back( { pos, pos + rest.size(), STYLE_DEFAULT } );
-
-    return spans;
-}
-
-std::vector< Span > RstContainerLexer::styleFieldLine( const std::string& line ) const
-{
-    std::smatch match;
-    if( !std::regex_match( line, match, kFieldRegex ) )
-        return {};
-
-    const std::string indent = match[ 1 ].str();
-    const std::string fieldName = match[ 2 ].str();
-    const std::string rest = match[ 3 ].str();
-
-    std::vector< Span > spans;
-    if( !indent.empty() )
-        spans.push_back( { 0, indent.size(), STYLE_DEFAULT } );
-
-    const std::size_t fieldStart = indent.size();
-    const std::size_t fieldEnd = fieldStart + fieldName.size() + 2;   // 앞뒤 콜론 2개
-    spans.push_back( { fieldStart, fieldEnd, STYLE_FIELD_NAME } );
-    if( !rest.empty() )
-        spans.push_back( { fieldEnd, fieldEnd + rest.size(), STYLE_DEFAULT } );
-
-    return spans;
-}
-
-std::vector< Span > RstContainerLexer::styleInline( const std::string& line ) const
-{
-    std::vector< Span > matches;
-    appendMatchSpans( line, kInlineLiteralRegex, STYLE_INLINE_LITERAL, matches );
-    appendMatchSpans( line, kStrongRegex, STYLE_STRONG, matches );
-    appendMatchSpans( line, kEmphasisRegex, STYLE_EMPHASIS, matches, true );
-    appendMatchSpans( line, kSubstitutionRegex, STYLE_SUBSTITUTION, matches );
-    appendMatchSpans( line, kHyperlinkRegex, STYLE_HYPERLINK, matches );
-
-    for( std::sregex_iterator it( line.begin(), line.end(), kRoleRegex ), end; it != end; ++it )
-    {
-        const std::smatch& match = *it;
-        const std::string roleName = match[ 1 ].str();
-        const std::size_t start = static_cast< std::size_t >( match.position( 0 ) );
-        const std::size_t finish = start + static_cast< std::size_t >( match.length( 0 ) );
-        matches.push_back( { start, finish, cache_.roleStyle( roleName ) } );
-    }
-
-    if( matches.empty() )
-        return {};
-
-    std::sort( matches.begin(), matches.end(), []( const Span& left, const Span& right ) {
-        if( left.start == right.start )
-            return left.end < right.end;
-        return left.start < right.start;
-    } );
-
-    std::vector< Span > spans;
-    std::size_t lastEnd = 0;
-    for( const Span& match : matches )
-    {
-        // 앞선 매치와 겹치는 구간은 버린다 (먼저 잡힌 쪽이 이긴다).
-        if( match.start < lastEnd )
-            continue;
-        if( match.start > lastEnd )
-            spans.push_back( { lastEnd, match.start, STYLE_DEFAULT } );
-
-        spans.push_back( match );
-        lastEnd = match.end;
-    }
-    if( lastEnd < line.size() )
-        spans.push_back( { lastEnd, line.size(), STYLE_DEFAULT } );
-
-    return spans;
-}
-
-}  // namespace mrst::rst
+}   // namespace mrst::rst

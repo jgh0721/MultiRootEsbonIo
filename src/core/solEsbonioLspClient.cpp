@@ -335,6 +335,39 @@ void LspClient::didChange(const QString& path, const QString& text) {
     }));
 }
 
+bool LspClient::supportsIncrementalSync() const {
+    // 2 = TextDocumentSyncKind.Incremental.
+    // utf-8 을 얻지 못했으면 쓰지 않는다. UTF-16 환산을 하느니 전문을 보내는 편이
+    // 안전하다 — 좌표가 한 글자라도 어긋나면 그 뒤 진단·완성 위치가 전부 밀린다.
+    return serverSyncKind_ == 2 && serverUsesUtf8Positions_;
+}
+
+void LspClient::didChangeIncremental(const QString& path, const int startLine, const int startColumn,
+                                     const int endLine, const int endColumn,
+                                     const QByteArray& newTextUtf8) {
+    if (!isRunning()) {
+        return;
+    }
+    const QString uri = pathToUri(path);
+    const int version = documentVersions_.value(uri, 1) + 1;
+    documentVersions_[uri] = version;
+
+    const auto position = [](const int line, const int column) {
+        return QJsonObject{{QStringLiteral("line"), line}, {QStringLiteral("character"), column}};
+    };
+
+    write(writer_.notify(QStringLiteral("textDocument/didChange"), {
+        {QStringLiteral("textDocument"), QJsonObject{{QStringLiteral("uri"), uri}, {QStringLiteral("version"), version}}},
+        {QStringLiteral("contentChanges"), QJsonArray{QJsonObject{
+            {QStringLiteral("range"), QJsonObject{
+                {QStringLiteral("start"), position(startLine, startColumn)},
+                {QStringLiteral("end"), position(endLine, endColumn)},
+            }},
+            {QStringLiteral("text"), QString::fromUtf8(newTextUtf8)},
+        }}},
+    }));
+}
+
 void LspClient::didSave(const QString& path, const QString& text) {
     if (!isRunning()) {
         return;
@@ -456,6 +489,13 @@ void LspClient::initialize() {
                 }},
                 {QStringLiteral("publishDiagnostics"), QJsonObject{{QStringLiteral("relatedInformation"), true}}},
             }},
+            // LSP 의 기본 위치 단위는 UTF-16 코드 유닛인데 Scintilla 는 UTF-8 바이트
+            // 오프셋을 쓴다. utf-8 을 얻으면 증분 동기화에서 환산이 통째로 사라진다.
+            // pygls 는 ServerCapabilitiesBuilder.choose_position_encoding 으로 이 목록을
+            // 보고 고르므로 esbonio 에서 성사된다.
+            {QStringLiteral("general"), QJsonObject{
+                {QStringLiteral("positionEncodings"), QJsonArray{QStringLiteral("utf-8"), QStringLiteral("utf-16")}},
+            }},
             {QStringLiteral("window"), QJsonObject{{QStringLiteral("workDoneProgress"), true}}},
             {QStringLiteral("workspace"), QJsonObject{{QStringLiteral("workspaceFolders"), true}, {QStringLiteral("configuration"), true}}},
         }},
@@ -513,6 +553,30 @@ void LspClient::handleResponse(const QJsonObject& message) {
     const int id = message.value(QStringLiteral("id")).toInt();
     const QString method = pendingRequests_.take(id);
     if (method.isEmpty()) {
+        return;
+    }
+
+    if (method == QStringLiteral("initialize")) {
+        const QJsonObject capabilities =
+            message.value(QStringLiteral("result")).toObject().value(QStringLiteral("capabilities")).toObject();
+
+        // textDocumentSync 는 숫자이거나 { change: n } 객체다. 둘 다 규약에 있다.
+        const QJsonValue sync = capabilities.value(QStringLiteral("textDocumentSync"));
+        if (sync.isDouble()) {
+            serverSyncKind_ = sync.toInt();
+        } else if (sync.isObject()) {
+            serverSyncKind_ = sync.toObject().value(QStringLiteral("change")).toInt(serverSyncKind_);
+        }
+
+        const QString encoding = capabilities.value(QStringLiteral("positionEncoding")).toString();
+        serverUsesUtf8Positions_ = (encoding == QStringLiteral("utf-8"));
+
+        // 협상 결과를 남긴다. utf-8 을 얻지 못하면 증분 경로가 통째로 꺼지므로
+        // 원인을 로그에서 바로 볼 수 있어야 한다.
+        emit logMessage(QStringLiteral("LSP 협상: syncKind=%1 positionEncoding=%2 (증분 %3)")
+                            .arg(serverSyncKind_)
+                            .arg(encoding.isEmpty() ? QStringLiteral("utf-16(기본)") : encoding)
+                            .arg(supportsIncrementalSync() ? QStringLiteral("사용") : QStringLiteral("미사용")));
         return;
     }
 

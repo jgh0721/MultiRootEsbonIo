@@ -227,6 +227,10 @@ signals:
 
     /// 사용자가 문서를 편집했다 (파일 로드로 인한 변경은 제외).
     void sigTextEdited();
+    /// 편집 구간. 좌표는 LSP 규약 그대로(0-based 줄, 줄머리로부터의 바이트 수).
+    /// LSP 증분 동기화에 쓴다. sigTextEdited 보다 **먼저** 나간다.
+    void sigDocumentEdited( int startLine, int startColumn, int oldEndLine, int oldEndColumn,
+                            const QByteArray& newText );
     /// 캐럿이 이동했다. 1-based 줄/열.
     void sigCursorMoved( int line, int column );
     /// 사용자가 문자를 입력했다. 자동완성 트리거 문자 감지용.

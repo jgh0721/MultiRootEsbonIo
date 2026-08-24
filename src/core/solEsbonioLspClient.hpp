@@ -121,6 +121,15 @@ public:
     void stop(StopMode mode = StopMode::Immediate);
     void didOpen(const QString& path, const QString& text, const QString& languageId = QStringLiteral("rst"));
     void didChange(const QString& path, const QString& text);
+    /// 편집 한 건만 보낸다. 좌표는 협상된 위치 인코딩 기준이며, 우리는 utf-8 을
+    /// 선호로 선언하므로 성사되면 Scintilla 의 바이트 오프셋이 그대로 들어간다.
+    ///
+    /// supportsIncrementalSync() 가 참일 때만 부를 것. 거짓이면 didChange(전문)
+    /// 로 되돌아가야 한다 — 하나라도 빠뜨리면 서버 사본이 어긋난다.
+    void didChangeIncremental(const QString& path, int startLine, int startColumn,
+                              int endLine, int endColumn, const QByteArray& newTextUtf8);
+    /// 서버가 증분 동기화를 광고했고 위치 인코딩이 utf-8 로 협상되었는가.
+    [[nodiscard]] bool supportsIncrementalSync() const;
     void didSave(const QString& path, const QString& text);
     void didClose(const QString& path);
     /// triggerCharacter 를 주면 triggerKind=2 로 보낸다. Esbonio 가 등록한
@@ -167,6 +176,10 @@ private:
     bool htmlStyleOverride_ = false;
     QString sphinxPythonCommand_;
     QHash<QString, int> documentVersions_;
+    /// initialize 응답에서 읽는다. 협상 전에는 둘 다 보수적인 기본값이므로
+    /// 그 사이의 편집은 전문 전송 경로로 흘러간다.
+    int  serverSyncKind_ = 1;          ///< LSP TextDocumentSyncKind. 1 = Full
+    bool serverUsesUtf8Positions_ = false;
     /// 우리가 보낸 요청: id -> method. 예전에는 completion/documentSymbol 을
     /// 따로 들고 있었는데, 그러면 "이 id 가 내 것인가" 를 추측하게 된다.
     QHash<int, QString> pendingRequests_;

@@ -1,6 +1,7 @@
 ﻿#include "TestRunner.hpp"
 
 #include "core/solRestOutlineService.hpp"
+#include "editor/RstStructure.hpp"
 
 #include <QDir>
 #include <QFile>
@@ -13,9 +14,14 @@ namespace {
 
 QString heading( const QString& title, const QChar adornment, const bool overline = false )
 {
-    // 장식 줄은 제목만큼 길어야 하고, 한 글자짜리는 docutils 도 섹션으로 보지
-    // 않는다. 짧은 제목이라도 최소 3자로 긋는다.
-    const QString rule = QString( qMax( title.length(), qsizetype( 3 ) ), adornment );
+    // 장식 줄은 제목의 **표시 폭** 이상이어야 한다. docutils 는 column_width() 로
+    // 견주므로 한글 한 글자(두 칸)짜리 제목에는 두 자가 필요하다 — 예전 헬퍼는
+    // QString::length() 로 재서 "첫째" 에 세 자면 된다고 보았고, 그것이 곧
+    // 개요만 제목으로 잡고 화면에는 색이 없던 원인이었다.
+    const QByteArray titleUtf8 = title.toUtf8();
+    const auto       width = static_cast< qsizetype >( mrst::rst::columnWidth(
+        std::string_view( titleUtf8.constData(), static_cast< std::size_t >( titleUtf8.size() ) ) ) );
+    const QString    rule = QString( qMax( width, qsizetype( 3 ) ), adornment );
     return overline ? QStringLiteral( "%1\n%2\n%1\n" ).arg( rule, title )
                     : QStringLiteral( "%1\n%2\n" ).arg( title, rule );
 }

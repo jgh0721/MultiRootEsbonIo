@@ -1,6 +1,9 @@
 ﻿#include "stdafx.h"
 #include "core/solRstSubstitutionIndex.hpp"
 
+#include "core/solRstLineUtils.hpp"
+#include "editor/RstStructure.hpp"
+
 #include "core/solRestOutlineService.hpp"
 #include "utils/solBackgroundWork.hpp"
 
@@ -20,38 +23,12 @@ namespace {
 /// 치환을 뽑을 때 훑을 문서 수의 상한. 프로젝트 개요·용어집과 같은 규모로 잡는다.
 constexpr int kMaxDocuments = 2000;
 
-/// 줄 앞 공백의 개수. 탭은 8칸으로 센다 (docutils 규칙).
-int indentWidth( const QString& line )
-{
-    int width = 0;
-    for( const QChar ch : line )
-    {
-        if( ch == QLatin1Char( ' ' ) )
-            ++width;
-        else if( ch == QLatin1Char( '\t' ) )
-            width += 8 - ( width % 8 );
-        else
-            break;
-    }
-    return width;
-}
+// 줄 나누기·들여쓰기·빈 줄 판정은 공용 도우미가 한다. 예전에는 이 셋이 이 파일과
+// 다른 인덱서에 바이트 단위로 같은 사본으로 있었다.
+using mrst::rstline::indentWidth;
+using mrst::rstline::isBlank;
 
-bool isBlank( const QString& line )
-{
-    return line.trimmed().isEmpty();
-}
-
-/// 줄 끝 문자가 무엇이든 같은 결과가 나오게 나눈다.
-QStringList splitLines( const QString& text )
-{
-    QStringList lines = text.split( QLatin1Char( '\n' ) );
-    for( QString& line : lines )
-    {
-        if( line.endsWith( QLatin1Char( '\r' ) ) )
-            line.chop( 1 );
-    }
-    return lines;
-}
+using mrst::rstline::splitLines;
 
 /// 파이썬 문자열의 이스케이프를 푼다 (raw 문자열이 아닐 때만 부른다).
 ///
@@ -148,12 +125,45 @@ QVector< SubstitutionEntry > parseSubstitutions( const QString& text, const QStr
 {
     // `.. |이름| directive:: 인자`
     //
-    // 이름에는 `|` 만 못 들어간다 (공백도 한글도 된다). directive 이름에는
-    // 도메인 접두(`cpp:function`)가 붙을 수 있어 콜론 하나를 허용한다.
-    static const QRegularExpression defineRe( QStringLiteral(
-        R"(^([ \t]*)\.\.[ \t]+\|([^|]+)\|[ \t]+([a-zA-Z0-9_.+-]+(?::[a-zA-Z0-9_.+-]+)?)::[ \t]*(.*)$)" ) );
-    // directive 옵션(`:format: html`)은 본문이 아니다.
-    static const QRegularExpression optionRe( QStringLiteral( R"(^[ \t]*:[a-zA-Z0-9_.-]+:)" ) );
+    // 판정은 공용 파서가 한다. 예전에는 여기에 정규식이 한 벌 더 있었고, 다섯 벌
+    // 중 이것만 directive 이름의 `+` 를 허용하는 식으로 조금씩 갈라져 있었다.
+    // 이름에는 `|` 만 못 들어간다 (공백도 한글도 된다).
+    struct Definition
+    {
+        QString name;
+        QString directive;
+        QString argument;
+    };
+    const auto parseDefinition = []( const QString& line ) -> std::optional< Definition > {
+        const QByteArray                          utf8 = line.toUtf8();
+        const std::string_view                    view( utf8.constData(),
+                                    static_cast< std::size_t >( utf8.size() ) );
+        const std::optional< rst::DirectiveParts > parts = rst::parseDirective( view );
+        if( !parts || !parts->hasSubstitution() )
+            return std::nullopt;
+
+        Definition definition;
+        // `|이름|` 에서 막대를 뗀다.
+        definition.name = QString::fromUtf8( utf8.constData() + parts->subStart + 1,
+                                             static_cast< qsizetype >( parts->subEnd - parts->subStart ) - 2 );
+        definition.directive =
+            QString::fromUtf8( utf8.constData() + parts->nameStart,
+                               static_cast< qsizetype >( parts->nameEnd - parts->nameStart ) );
+        definition.argument =
+            QString::fromUtf8( utf8.constData() + parts->colonsEnd,
+                               utf8.size() - static_cast< qsizetype >( parts->colonsEnd ) );
+        return definition;
+    };
+
+    // directive 옵션(`:format: html`)은 본문이 아니다. 판정은 공용 파서에 맡긴다 —
+    // 그쪽은 닫는 콜론 뒤에 공백이나 줄끝을 요구하므로, 본문 첫머리에 놓인
+    // `:ref:`대상`` 을 옵션으로 오인하지 않는다. 예전 정규식은 오인하였다.
+    const auto isOptionLine = []( const QString& line ) {
+        const QByteArray utf8 = line.toUtf8();
+        return rst::parseField(
+                   std::string_view( utf8.constData(), static_cast< std::size_t >( utf8.size() ) ) )
+            .has_value();
+    };
 
     const QStringList lines = splitLines( text );
 
@@ -164,18 +174,18 @@ QVector< SubstitutionEntry > parseSubstitutions( const QString& text, const QStr
         if( !lines.at( index ).contains( QLatin1Char( '|' ) ) )
             continue;
 
-        const QRegularExpressionMatch match = defineRe.match( lines.at( index ) );
-        if( !match.hasMatch() )
+        const std::optional< Definition > definition = parseDefinition( lines.at( index ) );
+        if( !definition )
             continue;
 
         SubstitutionEntry entry;
         // docutils 는 치환 이름의 공백을 정규화해서 대조한다.
-        entry.name = match.captured( 2 ).simplified();
+        entry.name = definition->name.simplified();
         if( entry.name.isEmpty() )
             continue;
 
-        entry.directive = match.captured( 3 );
-        entry.argument = match.captured( 4 ).trimmed();
+        entry.directive = definition->directive;
+        entry.argument = definition->argument.trimmed();
         entry.path = path;
         entry.line = static_cast< int >( index ) + 1 + lineOffset;
         entry.origin = origin;
@@ -200,7 +210,7 @@ QVector< SubstitutionEntry > parseSubstitutions( const QString& text, const QStr
             if( indentWidth( next ) <= directiveIndent )
                 break;
             // 옵션은 빈 줄 앞에만 온다. 그 뒤의 `:foo:` 는 본문 글이다.
-            if( !sawBlank && optionRe.match( next ).hasMatch() )
+            if( !sawBlank && isOptionLine( next ) )
                 continue;
 
             if( bodyIndent < 0 )

@@ -245,13 +245,17 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 	// 유발했다. 게다가 핸들러가 다시 scheduleContainerFoldUpdate() 를 걸어 스스로를
 	// 먹인다. 진단 마커(setDiagnosticMarks)도 같은 경로로 폭주할 수 있었다.
 	connect(m_editor, &ScintillaEditBase::modified, this,
-			[this](Scintilla::ModificationFlags type, Scintilla::Position, Scintilla::Position,
-				   Scintilla::Position, const QByteArray&, Scintilla::Position,
+			[this](Scintilla::ModificationFlags type, Scintilla::Position position,
+				   Scintilla::Position length, Scintilla::Position linesAdded,
+				   const QByteArray& changedText, Scintilla::Position,
 				   Scintilla::FoldLevel, Scintilla::FoldLevel) {
-				const bool insertedOrDeleted =
-					(static_cast<int>(type) & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT)) != 0;
-				if (!insertedOrDeleted)
+				const bool inserted = (static_cast<int>(type) & SC_MOD_INSERTTEXT) != 0;
+				const bool deleted = (static_cast<int>(type) & SC_MOD_DELETETEXT) != 0;
+				if (!inserted && !deleted)
 					return;
+
+				emitDocumentEdited(inserted, static_cast<int>(position), static_cast<int>(length),
+								   static_cast<int>(linesAdded), changedText);
 
 				syncLineCountState(true);
 				// 제목 장식 한 줄만 고쳐도 그 아래 섹션 깊이가 통째로 바뀐다.
@@ -259,6 +263,21 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 				scheduleContainerFoldUpdate();
 				emit textChanged();
 			});
+	// 위 핸들러가 INSERTTEXT/DELETETEXT 이외를 즉시 기각하지만, 그 지점에 도달하기까지의
+	// 비용은 이미 치른 값이다 — Qt 포트가 통지마다 SCI_GETTEXTLENGTH 를 직접 호출하고
+	// QByteArray::fromRawData 를 만든 뒤 인자 8개짜리 시그널을 발화한다
+	// (ScintillaEditBase.cpp 의 case Notification::Modified).
+	//
+	// 마스크로 미리 거르면 Editor::NotifyModified() 의 FlagSet 검사에서 통지 자체가
+	// 생성되지 않는다. 접기 깊이 주입(SC_MOD_CHANGEFOLD)과 스타일링(SC_MOD_CHANGESTYLE,
+	// Document::SetStyles) 두 경로가 함께 정리된다.
+	//
+	// 위 런타임 필터는 그대로 둔다. 마스크는 Scintilla 측 계약이고 필터는 우리 측
+	// 계약이며, 하나만 남기면 나중에 마스크를 넓힐 때 조용히 어긋난다.
+	//
+	// linesAdded 시그널도 같은 case 안에서 발화하므로 마스크를 통과해야 도달한다.
+	// 줄 수 변동은 삽입·삭제에서만 생기므로 축소된 마스크로 보존된다.
+	m_editor->send(sciMessage(SCI_SETMODEVENTMASK), SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT);
 	connect(m_editor, &ScintillaEditBase::updateUi,
 			this, [this](Scintilla::Update updated) {
 				updateBraceHighlight();
@@ -367,8 +386,12 @@ void ScintillaQtDirectBackend::applySettings(const ScintillaEditorSettings& sett
 	updateBraceHighlight();
 	updateLineNumberMargin(m_lineNumberMarginDigits);
 
-	// 설정 변경 후 전체 화면 갱신 (탭 폭 등 즉시 반영)
-	m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
+	// 설정 변경 후 전체 화면 갱신 (탭 폭 등 즉시 반영).
+	//
+	// 여기서 SCI_COLOURISE 를 보내지 않는다. 탭 폭·공백 표시·들여쓰기 가이드는 전부
+	// 렌더링 속성이고 컨테이너 렉서의 산출물은 그중 어느 것에도 의존하지 않는다.
+	// 이 함수는 QBaseEditor 에서만 17곳이 부르므로, 한 번에 문서 전체를 동기 렉싱하면
+	// 그 값을 매번 치르게 된다.
 	m_editor->update();
 }
 
@@ -1036,12 +1059,6 @@ void ScintillaQtDirectBackend::setStylingEx(const QByteArray& styleBytes)
 		reinterpret_cast<sptr_t>(styleBytes.constData()));
 }
 
-void ScintillaQtDirectBackend::colouriseAll()
-{
-	if (m_editor)
-		m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
-}
-
 void ScintillaQtDirectBackend::setStyleForeground(int style, const QColor& color)
 {
 	if (m_editor && color.isValid())
@@ -1151,7 +1168,9 @@ bool ScintillaQtDirectBackend::applyLanguage(const QString& displayName)
 		// 문서를 훑어 직접 넣는다.
 		m_currentLexerKey = lexerKey;
 		applySyntaxStyles(m_darkTheme);
-		m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
+		// setText() 의 삽입으로 endStyled 는 이미 0 이다. 재그리기만 요청하면
+		// 페인트가 보이는 범위를, 유휴 스타일링이 나머지를 가져간다.
+		invalidateStyling();
 		configureCodeFolding(m_codeFoldingEnabled);
 		updateContainerFoldLevels();
 		writeLexerTrace(displayName, lexerKey, true);
@@ -1260,6 +1279,16 @@ void ScintillaQtDirectBackend::updateContainerFoldLevels()
 		                                      : mrst::rst::computeFoldLevels(source);
 
 	const int lines = qMin(totalLines, static_cast<int>(folds.size()));
+
+	// 직전에 넣은 값을 우리가 들고 있으면 SCI_GETFOLDLEVEL 왕복이 필요 없다.
+	// 예전에는 줄마다 조회 1회 + 조건부 설정 1회를 보내서 9,452줄 문서에서
+	// 최대 18,904번을 왕복했다. 이제 실제로 바뀐 줄만 한 번씩 보낸다.
+	//
+	// 줄 수가 달라졌으면(적재·재적재) 캐시를 버리고 전부 다시 넣는다.
+	const bool cacheUsable = (static_cast<int>(m_foldLevelCache.size()) == lines);
+	if (!cacheUsable)
+		m_foldLevelCache.assign(static_cast<std::size_t>(lines), -1);
+
 	for (int line = 0; line < lines; ++line) {
 		const mrst::rst::FoldLine& fold = folds[static_cast<std::size_t>(line)];
 		int level = SC_FOLDLEVELBASE + qBound(0, fold.level, kMaxFoldDepth);
@@ -1268,12 +1297,18 @@ void ScintillaQtDirectBackend::updateContainerFoldLevels()
 		if (fold.blank)
 			level |= SC_FOLDLEVELWHITEFLAG;
 
-		// 값이 그대로면 보내지 않는다. SCI_SETFOLDLEVEL 은 값이 바뀔 때마다
-		// SC_MOD_CHANGEFOLD 통지와 마진 다시 그리기를 유발한다.
-		if (static_cast<int>(m_editor->send(sciMessage(SCI_GETFOLDLEVEL), line)) == level)
+		int& cached = m_foldLevelCache[static_cast<std::size_t>(line)];
+		if (cached == level)
 			continue;
+		cached = level;
 		m_editor->send(sciMessage(SCI_SETFOLDLEVEL), line, level);
 	}
+}
+
+void ScintillaQtDirectBackend::invalidateFoldLevelCache()
+{
+	// 문서가 통째로 바뀌면 우리가 든 사본은 남의 문서 것이다.
+	m_foldLevelCache.clear();
 }
 
 void ScintillaQtDirectBackend::scheduleContainerFoldUpdate()
@@ -1500,6 +1535,7 @@ void ScintillaQtDirectBackend::clearLexer()
 		m_editor->send(sciMessage(SCI_SETILEXER), 0, 0);
 	m_currentLexer = nullptr;
 	m_currentLexerKey.clear();
+	invalidateFoldLevelCache();
 }
 
 mrst::rst::RstMetadataCache* ScintillaQtDirectBackend::rstMetadataCache() const
@@ -1507,14 +1543,73 @@ mrst::rst::RstMetadataCache* ScintillaQtDirectBackend::rstMetadataCache() const
 	return m_rstLexer ? &m_rstLexer->metadataCache() : nullptr;
 }
 
-void ScintillaQtDirectBackend::restyleDocument()
+void ScintillaQtDirectBackend::emitDocumentEdited(const bool inserted, const int position,
+												  const int length, const int linesAdded,
+												  const QByteArray& changedText)
 {
 	if (!m_editor)
 		return;
 
-	// SCI_STARTSTYLING(0) 으로 endStyled 를 되돌려야 문서 전체가 다시 요청된다.
+	const int startLine = lineFromPosition(position);
+	const int startColumn = position - positionFromLine(startLine);
+
+	int oldEndLine = startLine;
+	int oldEndColumn = startColumn;
+	if (!inserted) {
+		// 통지는 삭제가 끝난 뒤에 온다. 지워지기 전의 끝 좌표는 조회할 수 없으므로
+		// 통지가 실어 온 삭제된 본문에서 되살린다. linesAdded 는 삭제에서 음수다.
+		oldEndLine = startLine - linesAdded;
+		const int lastNewline = static_cast<int>(changedText.lastIndexOf('\n'));
+		oldEndColumn = (lastNewline < 0) ? (startColumn + length) : (length - lastNewline - 1);
+	}
+
+	// changedText 는 QByteArray::fromRawData 로 감싼 **소유권 없는 뷰**다
+	// (ScintillaEditBase 의 case Notification::Modified). 수신자가 슬롯 밖으로
+	// 들고 나가지 않도록 삽입일 때만 깊은 사본을 만들어 넘긴다.
+	emit documentEdited(startLine, startColumn, oldEndLine, oldEndColumn,
+						inserted ? QByteArray(changedText.constData(), changedText.size())
+								 : QByteArray());
+}
+
+void ScintillaQtDirectBackend::invalidateStyling()
+{
+	if (!m_editor)
+		return;
+
+	// SCI_COLOURISE 를 보내지 않는 것이 요점이다. 컨테이너 렉싱에서 그 메시지는
+	// ScintillaBase 가 문서 길이 전체를 담은 SCN_STYLENEEDED 한 번으로 바꿔 버려,
+	// 생성자에서 설정한 SC_IDLESTYLING_ALL 의 시간 예산을 통째로 건너뛴다.
+	// 677KB 한국어 문서에서 그 한 번이 364ms 다(실측).
+	//
+	// endStyled 만 0 으로 되돌리고 재그리기를 요청하면 다음 페인트가 보이는 범위만
+	// 요청하고(Editor::StyleAreaBounded) 나머지는 Editor::IdleStyle() 이
+	// PositionAfterMaxStyling 단위로 나누어 처리한다.
 	m_editor->send(sciMessage(SCI_STARTSTYLING), 0);
-	m_editor->send(sciMessage(SCI_COLOURISE), 0, -1);
+	m_editor->update();
+}
+
+int ScintillaQtDirectBackend::literalSeedLine(int contextFirstLine) const
+{
+	if (!m_editor || contextFirstLine <= 0)
+		return qMax(0, contextFirstLine);
+
+	// 리터럴 블록은 줄 사이 상태라 창이 블록 한가운데에서 시작하면 알 수 없다.
+	// 비어 있지 않은 0열 줄까지 창을 위로 넓힌다 — 리터럴 본문은 도입부보다 깊게
+	// 들여쓴 줄이므로 0열 줄은 블록 밖임이 보장된다.
+	//
+	// 상한은 아주 긴 code-block 안에서 창이 통째로 길어지는 것을 막는다. 걸리면
+	// 그 창의 리터럴 색이 빠질 수 있지만 나머지 스타일은 그대로 정확하다.
+	constexpr int kMaxSeedWalk = 500;
+
+	int line = contextFirstLine;
+	for (int walked = 0; line > 0 && walked < kMaxSeedWalk; ++walked)
+	{
+		const sptr_t first = m_editor->send(sciMessage(SCI_GETCHARAT), positionFromLine(line));
+		if (first != ' ' && first != '\t' && first != '\r' && first != '\n' && first != 0)
+			break;
+		--line;
+	}
+	return line;
 }
 
 void ScintillaQtDirectBackend::handleStyleNeeded(int endPosition)
@@ -1537,7 +1632,7 @@ void ScintillaQtDirectBackend::handleStyleNeeded(int endPosition)
 
 	// 렉서는 제목/구분선 판정을 위해 앞뒤 두 줄을 문맥으로 요구한다.
 	// 문맥까지 포함해 렉싱한 뒤, 실제로 칠할 구간만 잘라 쓴다.
-	const int contextFirstLine = qMax(0, paintFirstLine - 2);
+	const int contextFirstLine = literalSeedLine(qMax(0, paintFirstLine - 2));
 	const int contextLastLine = qMin(totalLines - 1, lastLine + 2);
 
 	const int contextStart = positionFromLine(contextFirstLine);
@@ -1734,10 +1829,10 @@ void ScintillaQtDirectBackend::applyThemeColors(bool dark)
 	configureBraceHighlightIndicators();
 	applySyntaxStyles(m_darkTheme);
 
-	// SCI_STYLECLEARALL 이 컨테이너 스타일까지 초기화하므로 다시 칠해야 한다.
-	if (m_rstLexer)
-		restyleDocument();
-
+	// SCI_STYLECLEARALL 은 다시 칠할 이유가 되지 못한다. 그것은 ViewStyle::ClearStyles()
+	// 로 **스타일 정의(팔레트)** 만 기본값으로 되돌릴 뿐, CellBuffer 의 위치별 스타일
+	// 바이트에는 손대지 않는다. 바로 위 applySyntaxStyles() 가 팔레트를 다시 채우므로
+	// 남은 것은 재그리기뿐이다(InvalidateStyleRedraw 가 이미 Redraw 를 포함한다).
 	m_editor->update();
 }
 

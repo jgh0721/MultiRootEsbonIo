@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+﻿cmake_minimum_required(VERSION 3.21)
 
 project("MultiRoot-reST-Editor" VERSION 0.6.0 LANGUAGES CXX)
 
@@ -164,6 +164,7 @@ add_executable(${PROJECT_NAME}
         src/core/solRestWorkspaceController.hpp
         src/core/solRstOfflineCompletions.cpp
         src/core/solRstOfflineCompletions.hpp
+        src/core/solRstLineUtils.hpp
         src/core/solRstPathCompletion.cpp
         src/core/solRstPathCompletion.hpp
         src/core/solRstPathIndex.cpp
@@ -206,6 +207,7 @@ add_executable(${PROJECT_NAME}
         src/editor/QBaseEditor.cpp
         src/editor/QBaseEditor.hpp
         src/editor/RstContainerLexer.cpp
+        src/editor/RstStructure.cpp
         src/editor/RstContainerLexer.hpp
         src/editor/MarkdownStructure.cpp
         src/editor/MarkdownStructure.hpp
@@ -357,6 +359,7 @@ if(MRST_BUILD_TESTS)
             tests/main.cpp
             tests/TestRunner.hpp
             tests/tst_RstContainerLexer.cpp
+            tests/tst_RstLexerPerf.cpp
             tests/tst_RstFolding.cpp
             tests/tst_MdFolding.cpp
             tests/tst_MdOutline.cpp
@@ -378,6 +381,7 @@ if(MRST_BUILD_TESTS)
             # 테스트 대상 프로덕션 소스는 OBJECT 라이브러리로 빼지 않고 명시 나열한다
             # (globbing 금지 + 단일 타깃이라는 이 프로젝트의 규칙을 따른다).
             src/editor/RstContainerLexer.cpp
+            src/editor/RstStructure.cpp
             src/editor/MarkdownStructure.cpp
             src/core/solRstOfflineCompletions.cpp
             src/core/solRstPathCompletion.cpp
@@ -459,6 +463,8 @@ if(MRST_BUILD_TESTS)
             src/editor/CompletionDetailPopup.hpp
             src/core/solRstOfflineCompletions.cpp
             src/core/solRstPathCompletion.cpp
+            # 자동완성 문맥 판정이 directive 파서를 쓴다. 규칙은 한 곳에만 있다.
+            src/editor/RstStructure.cpp
             src/core/solFileKinds.cpp
             src/core/solThemeManager.cpp
             src/core/solThemeManager.hpp

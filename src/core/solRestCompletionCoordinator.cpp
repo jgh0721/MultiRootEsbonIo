@@ -3,6 +3,7 @@
 
 #include "editor/QBaseEditor.hpp"
 #include "editor/RstContainerLexer.hpp"
+#include "solRstLineUtils.hpp"
 #include "solGlossaryIndex.hpp"
 #include "solRstPathIndex.hpp"
 
@@ -1039,19 +1040,26 @@ rstcomplete::Context CompletionCoordinator::contextAtCaret() const
 
     const int line = activeView_->caretLine();
     return rstcomplete::detectContext( activeView_->lineText( line ), activeView_->caretColumn(),
-                                      previousLinesAtCaret( 12 ) );
+                                      previousLinesAtCaret() );
 }
 
-QStringList CompletionCoordinator::previousLinesAtCaret( const int count ) const
+QStringList CompletionCoordinator::previousLinesAtCaret() const
 {
     if( activeView_.isNull() )
         return {};
 
-    QStringList lines;
     const int current = activeView_->caretLine();
-    for( int line = current - 1; line >= 1 && lines.size() < count; --line )
-        lines << activeView_->lineText( line );
-    return lines;   // 역순: 바로 앞 줄이 [0]
+    const int caretIndent = rstline::leadingSpaceCount( activeView_->lineText( current ) );
+
+    // 창 크기를 여기서 정하지 않는다. 블록 경계까지 거슬러 올라가는 규칙은
+    // rstcomplete 가 갖고 있고 단위 테스트도 그쪽에 붙는다.
+    return rstcomplete::collectPreviousLines(
+        current, caretIndent,
+        [ this ]( const int line ) -> std::optional< QString > {
+            if( activeView_.isNull() || line < 1 )
+                return std::nullopt;
+            return activeView_->lineText( line );
+        } );
 }
 
 QString CompletionCoordinator::editorPath() const

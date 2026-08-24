@@ -127,13 +127,18 @@ void TestPanelActionIcons::drawsSomethingAtEverySize()
     const QIcon icon = allIcons().at( index ).make( lightPalette() );
 
     QVERIFY( !icon.isNull() );
-    for( const int size : { 16, 20, 24, 32 } )
+    for( const int size : { 16, 20, 24, 32, 48 } )
     {
         const QPixmap pixmap = icon.pixmap( size, size );
         QVERIFY( !pixmap.isNull() );
         // **논리** 크기로 본다. QIcon::pixmap() 은 화면 배율만큼 키운 것을
         // 돌려주므로(125% 화면에서 16 을 청하면 20x20 이 온다) 픽셀 수로 비교하면
         // 이 테스트가 검사원의 모니터 설정에 달라붙는다.
+        //
+        // 논리 크기로 봐도 배율에서 완전히 자유롭지는 않다. 청한 물리 크기보다
+        // 큰 그림이 없으면 Qt 는 있는 것을 주고 배율을 되계산하는데, 그 값이
+        // 반올림되면 논리 크기가 어긋난다 — 배율 1.5 에서 24 를 청하면 36 이
+        // 필요하고, kSizes 의 최대가 32 이던 시절에는 24.06 이 나왔다.
         QCOMPARE( pixmap.deviceIndependentSize(), QSizeF( size, size ) );
         // 빈 도안은 없어야 한다. 경로를 잘못 닫으면 아무것도 안 그려진다.
         QVERIFY2( opaquePixelCount( pixmap ) > size, allIcons().at( index ).name );

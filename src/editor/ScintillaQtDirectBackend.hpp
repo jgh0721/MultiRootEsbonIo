@@ -28,9 +28,15 @@ public:
 	QAbstractScrollArea* scrollArea() const;
 
 	void applySettings(const ScintillaEditorSettings& settings);
-	/// 자동 줄넘김 관련 메시지만 보낸다. applySettings() 는 끝에서 문서 전체를
-	/// 다시 렉싱하므로(SCI_COLOURISE + 접기 깊이 재계산) 줄넘김만 바뀌는
-	/// 경로에서 그 비용을 치를 이유가 없다.
+	/// 자동 줄넘김 관련 메시지만 보내고, **화면 맨 위 문서 줄을 지킨다.**
+	///
+	/// 줄넘김을 켜고 끄면 문서 전체가 다시 배치되면서 화면이 튄다. 그것을 되돌리는
+	/// 것이 이 함수의 본래 이유이며 applySettings() 에는 없는 동작이다.
+	///
+	/// 예전 주석은 "applySettings() 가 끝에서 SCI_COLOURISE 로 문서 전체를 다시
+	/// 렉싱하므로" 를 이유로 들었으나 그 호출은 제거되었다. 남은 것은 접기 깊이
+	/// 재주입인데 그것도 이제 값이 달라진 줄만 보낸다 — 성능 논거는 더 이상
+	/// 이 함수를 지탱하지 않는다. 스크롤 위치 보존이 지탱한다.
 	void applyWrapSettings(const ScintillaEditorSettings& settings);
 	void setText(const QString& text);
 	QString text() const;
@@ -128,7 +134,6 @@ public:
 	int endStyled() const;
 	void startStyling(int position);
 	void setStylingEx(const QByteArray& styleBytes);
-	void colouriseAll();
 	void setStyleForeground(int style, const QColor& color);
 	void setStyleBackground(int style, const QColor& color);
 	void setStyleBold(int style, bool bold);
@@ -145,7 +150,11 @@ public:
 	/// 넣으면 directive/role 이 UNKNOWN -> VALID/INVALID 로 바뀐다.
 	/// 컨테이너 렉싱 중이 아니면 nullptr.
 	[[nodiscard]] mrst::rst::RstMetadataCache* rstMetadataCache() const;
-	void restyleDocument();
+	/// 스타일을 무효화하고 다음 페인트에 다시 칠하게 한다.
+	///
+	/// SCI_COLOURISE 를 쓰지 않는다 — 컨테이너 렉싱에서 그것은 문서 전체를 한 번에
+	/// 동기 렉싱하게 만들어 SC_IDLESTYLING_ALL 의 시간 예산을 우회한다.
+	void invalidateStyling();
 
 	// ── 코드 접기 ──
 	/// 그 문서 줄이 지금 화면에 보이는가 (접혀 있지 않은가).
@@ -167,6 +176,15 @@ signals:
 	/// 컨테이너 렉싱 모드에서 Scintilla 가 스타일을 요구하는 구간의 끝 위치.
 	/// SCI_SETIDLESTYLING 때문에 문서 전체가 아니라 청크 단위로 도착한다.
 	void styleNeeded(int endPosition);
+	/// 본문이 삽입되거나 삭제되었다. 좌표는 **LSP 규약 그대로** — 0-based 줄과
+	/// 줄머리로부터의 **바이트 수**다(SCI_GETCOLUMN 의 표시 열이 아니다).
+	///
+	/// 삽입이면 oldEnd 가 start 와 같고 newText 가 넣은 본문이다.
+	/// 삭제면 oldEnd 가 지워지기 전의 끝이고 newText 가 비어 있다.
+	///
+	/// 위치 인코딩을 utf-8 로 협상하면 이 값이 LSP Position 에 그대로 들어간다.
+	void documentEdited(int startLine, int startColumn, int oldEndLine, int oldEndColumn,
+						const QByteArray& newText);
 	/// 사용자가 문자를 입력했다. 자동완성 트리거 감지에 쓴다.
 	void charAdded(int ch);
 	/// 세로 스크롤이 변했다. 프리뷰 동기화에 쓴다.
@@ -188,6 +206,12 @@ private:
 	void applyMarkdownSyntaxStyles();
 	void setKeywordsForLexer(const QString& lexerKey);
 	void handleStyleNeeded(int endPosition);
+	/// 렉싱 창의 시작 줄을 리터럴 블록 상태가 확실한 곳까지 위로 넓힌다.
+	[[nodiscard]] int literalSeedLine(int contextFirstLine) const;
+	/// 접기 깊이 캐시를 버린다. 본문을 통째로 갈아 끼웠을 때 부른다.
+	void invalidateFoldLevelCache();
+	void emitDocumentEdited(bool inserted, int position, int length, int linesAdded,
+							const QByteArray& changedText);
 	/// 접기 깊이를 누가 채우는가.
 	///
 	/// Lexilla 렉서에 folder 함수가 있으면 Scintilla 가 알아서 하지만 둘은 그렇지
@@ -210,6 +234,9 @@ private:
 	void scheduleContainerFoldUpdate();
 
 	QPointer<ScintillaEditBase> m_editor;
+	/// 직전에 Scintilla 에 넣은 접기 깊이. SCI_GETFOLDLEVEL 왕복을 없애고
+	/// 실제로 바뀐 줄만 보내기 위한 것이다.
+	std::vector<int> m_foldLevelCache;
 	std::unique_ptr<mrst::rst::RstContainerLexer> m_rstLexer;   // 컨테이너 렉싱 중에만 유효
 	Scintilla::ILexer5*         m_currentLexer = nullptr; // Non-owning after SCI_SETILEXER while the editor is alive; cleared when the editor dies.
 	QFont               m_editorFont;
