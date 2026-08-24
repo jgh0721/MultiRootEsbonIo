@@ -330,7 +330,13 @@
         <number>0</number>
        </property>
        <item>
-        <widget class="QPlainTextEdit" name="logView"/>
+        <widget class="QPlainTextEdit" name="logView">
+         <!-- 읽기 전용이 아니면 로그 창에 글자를 칠 수 있다. 눌러서 고쳐지는
+              기록은 기록이 아니다. -->
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+        </widget>
        </item>
       </layout>
      </widget>

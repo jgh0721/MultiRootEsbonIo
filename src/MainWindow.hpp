@@ -225,6 +225,10 @@ private:
     void                                addRecentFile( const QString& filePath );
     void                                updateRecentFilesMenu();
     void                                shutdownUi();
+
+    /// 로그 한 건에 시각을 찍는다. `[ MM-dd HH:mm:ss.zzz ] ` 를 앞에 두고,
+    /// 여러 줄이면 이어지는 줄을 같은 칸만큼 밀어 한 덩어리로 보이게 한다.
+    [[nodiscard]] static QString        stampLogLine( const QString& text );
     int                                 addViewTab( QBaseView* view );
     void                                disconnectViewSignals( QBaseView* view );
     void                                removeViewTabWithoutSignals( QBaseView* view );

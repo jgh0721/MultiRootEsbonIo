@@ -2594,6 +2594,28 @@ void MainWindow::showTabSwitcher( const bool forward )
     tabSwitcher_->showEntries( entries, forward ? 1 : entries.size() - 1 );
 }
 
+QString MainWindow::stampLogLine( const QString& text )
+{
+    // 시각은 번역하지 않는다 — 언어에 따라 자릿수가 달라지면 칸이 어긋난다.
+    // 월은 MM, 분은 mm 이다(Qt 형식 문자열). 연도는 넣지 않는다: 로그는 이번
+    // 실행 동안의 것이고, 한 줄이 길어지면 정작 메시지가 밀려난다.
+    const QString stamp = QStringLiteral( "[ %1 ] " )
+                                  .arg( QDateTime::currentDateTime().toString(
+                                          QStringLiteral( "MM-dd HH:mm:ss.zzz" ) ) );
+
+    if( !text.contains( QChar( QChar::LineFeed ) ) )
+        return stamp + text;
+
+    // 여러 줄짜리 메시지(빌드 출력, 파이썬 트레이스백)는 한 사건이다. 줄마다
+    // 같은 시각을 되풀이하면 읽기 어려우므로 첫 줄에만 찍고 나머지는 같은 칸만큼
+    // 밀어 한 덩어리로 보이게 한다.
+    const QString indent( stamp.size(), QLatin1Char( ' ' ) );
+    QStringList   lines = text.split( QChar( QChar::LineFeed ) );
+    for( int i = 1; i < lines.size(); ++i )
+        lines[ i ].prepend( indent );
+    return stamp + lines.join( QChar( QChar::LineFeed ) );
+}
+
 void MainWindow::appendLog( const QString& text )
 {
     if( Ui.logView == nullptr )
@@ -2603,7 +2625,8 @@ void MainWindow::appendLog( const QString& text )
     if( trimmed.isEmpty() == true )
         return;
 
-    Ui.logView->appendPlainText( trimmed );
+    const QString stamped = stampLogLine( trimmed );
+    Ui.logView->appendPlainText( stamped );
 
     // MRST_LOG_FILE 이 지정되면 로그 창 내용을 파일로도 남긴다.
     // (MV_TEXT_LEXER_TRACE_FILE 과 같은 방식. GUI 없이 동작을 확인할 때 쓴다.)
@@ -2617,7 +2640,7 @@ void MainWindow::appendLog( const QString& text )
     {
         QTextStream stream( &logFile );
         stream.setEncoding( QStringConverter::Utf8 );
-        stream << trimmed << Qt::endl;
+        stream << stamped << Qt::endl;
     }
 }
 
