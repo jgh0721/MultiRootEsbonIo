@@ -36,6 +36,16 @@ struct WorkspaceSession
     /// 탭을 전부 잃는다. 비어 있으면 기본 배치를 쓰면 되니 그럴 이유가 없다.
     QString                             dockLayout;
 
+    /// 창의 크기·위치·최대화 여부. QWidget::saveGeometry() 를 base64 로 담는다.
+    ///
+    /// dockLayout 과 같은 이유로 스키마를 올리지 않는다. 비어 있으면 기본 크기로
+    /// 뜨면 될 뿐이고, 올리면 이 버전으로 올라오는 사용자의 열린 탭이 사라진다.
+    ///
+    /// **전체 화면 상태는 담지 않는다.** F11(프리뷰 전체 화면)이 켜진 채로 종료하면
+    /// saveGeometry() 가 그 플래그까지 담아, 다음 실행이 메뉴도 편집기도 없는
+    /// 전체 화면으로 뜬다. 저장하는 쪽이 전체 화면에 들어가기 직전 값을 쓴다.
+    QString                             windowGeometry;
+
     [[nodiscard]] bool isEmpty() const { return workspaceRoot.isEmpty() && documents.isEmpty(); }
 };
 

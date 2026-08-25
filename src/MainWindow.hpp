@@ -43,6 +43,7 @@ class TabSwitcherPopup;
 class UpdateService;
 class WorkspaceController;
 struct UpdateInfo;
+struct WorkspaceSession;
 }
 
 class MainWindow final : public QMainWindow
@@ -224,7 +225,15 @@ private:
     void                                advanceLoadingAnimation();
     void                                onCancelLoading();
     void                                addRecentFile( const QString& filePath );
+    void                                addRecentWorkspace( const QString& folderPath );
+    /// 파일과 워크스페이스 두 묶음을 한 메뉴에 다시 그린다.
     void                                updateRecentFilesMenu();
+    /// 사라진 항목을 목록에서 빼고 메뉴와 설정을 갱신한다.
+    void                                dropRecentFile( const QString& filePath );
+    void                                dropRecentWorkspace( const QString& folderPath );
+    /// 최근 목록에서 고른 항목을 연다. 그 사이 사라졌으면 알리고 목록에서 뺀다.
+    void                                openRecentFile( const QString& filePath );
+    void                                openRecentWorkspace( const QString& folderPath );
     void                                shutdownUi();
 
     /// 로그 한 건에 시각을 찍는다. `[ MM-dd HH:mm:ss.zzz ] ` 를 앞에 두고,
@@ -368,7 +377,7 @@ private:
     QTimer*                             transientStatusTimer_ = nullptr;
 
     QLabel*                             m_statusLabel = nullptr;   // 상태 표시줄 정보(오른쪽)
-    QMenu*                              m_recentMenu = nullptr;   // 최근 파일 메뉴
+    QMenu*                              m_recentMenu = nullptr;   // 최근 파일 / 워크스페이스 메뉴
     QAction*                            m_saveAction = nullptr;
     QAction*                            m_saveAsAction = nullptr;
     QAction*                            m_captureAction = nullptr;
@@ -378,7 +387,8 @@ private:
     QTimer*                             m_loadingAnimationTimer = nullptr;
     int                                 m_loadingAnimationFrame = 0;
     QStringList                         m_recentFiles;
-    static constexpr int                MaxRecentFiles = 10;
+    /// 최근에 연 워크스페이스 폴더. 파일 목록과 같은 메뉴에 아래쪽으로 놓인다.
+    QStringList                         m_recentWorkspaces;
     bool                                m_shuttingDown = false;
 
     mrst::ExternalChangeWatcher*        externalWatcher_ = nullptr;
@@ -468,6 +478,10 @@ private:
     {
         bool                            active = false;
         Qt::WindowStates                windowStates = Qt::WindowNoState;
+        /// 들어가기 직전의 창 크기·위치. 세션에 저장할 때 이 값을 쓴다 —
+        /// 전체 화면 중에 saveGeometry() 를 찍으면 그 플래그까지 담기고,
+        /// 다음 실행이 메뉴도 편집기도 없는 전체 화면으로 뜬다.
+        QByteArray                      windowGeometry;
         QList< int >                    previewSplitSizes;
         /// 좌측·하단 도크의 배치 전체. bool 세 개로는 모자란다 — 어느 패널을
         /// 가장자리에 핀 고정해 두었는지, 하단에서 어느 탭을 보고 있었는지,
@@ -552,6 +566,24 @@ private:
     // ── 세션 영속성 ──
     /// 지금 워크스페이스의 열린 탭/캐럿/스플리터를 <root>/.multiroot/workspace.json 에 쓴다.
     void                                saveWorkspaceSessionNow();
+
+    /// 창 크기·위치·패널 배치를 워크스페이스마다 기억하는가 (설정
+    /// `window/restoreLayout`, 기본 켜짐).
+    [[nodiscard]] static bool           layoutRestoreEnabled();
+    /// 지금 창 상태를 base64 로 만든다. 전체 화면 중이면 들어가기 직전 값을 쓴다.
+    [[nodiscard]] QString               currentWindowGeometry() const;
+    /// 세션에 담긴 창 상태(base64)를 되살린다. 비었거나 못 읽으면 아무것도 하지
+    /// 않는다. **show() 보다 먼저** 불러야 창이 한 번 떴다가 크기가 바뀌지 않는다.
+    void                                restoreWindowGeometry( const QString& base64 );
+    /// 마지막 워크스페이스의 세션에서 창 상태만 꺼내 적용한다. 생성자가 부른다 —
+    /// 탭 복원(restoreLastSession)은 첫 페인트 뒤라서 그때는 이미 늦다.
+    void                                restoreWindowGeometryForLastWorkspace();
+    /// 세션에 담긴 화면 배치(도크 · 편집기|프리뷰 스플리터 · 창)를 적용한다.
+    /// 탭은 건드리지 않는다. 배치 기억 설정이 꺼져 있으면 아무것도 하지 않는다.
+    void                                applySessionLayout( const mrst::WorkspaceSession& session );
+    /// 창 크기를 이미 세션에서 되살렸는가. 두 번 적용해 사용자가 그 사이 옮긴
+    /// 창을 되돌리지 않기 위한 표시다.
+    bool                                windowGeometryRestored_ = false;
 
     // ── 워크스페이스 검색 ──
     void                                setupWorkspaceSearchTab();

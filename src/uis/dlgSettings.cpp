@@ -581,6 +581,30 @@ QWidget* QSettingsDialog::createGeneralPage()
 
     layout->addWidget( languageGroup );
 
+    // ── 창 배치 ──
+    // 테마 그룹이 stretch 1 을 먹으므로 자동 업데이트 그룹과 같은 이유로 그 앞에 둔다.
+    auto* windowGroup  = new QGroupBox( tr( "창 배치" ), page );
+    auto* windowLayout = new QVBoxLayout( windowGroup );
+
+    m_restoreLayoutCheck = new QCheckBox( tr( "창 크기와 패널 배치를 워크스페이스마다 기억" ), windowGroup );
+    m_restoreLayoutCheck->setToolTip(
+        tr( "창의 크기와 위치, 좌측·하단 패널의 크기, 편집기와 프리뷰의 분할 비율을\n"
+            "워크스페이스 폴더의 .multiroot/workspace.json 에 저장하고 다음에 그 폴더를\n"
+            "열 때 되살립니다.\n"
+            "끄면 언제나 기본 배치로 시작합니다." ) );
+    {
+        const QSignalBlocker blocker( m_restoreLayoutCheck );
+        m_restoreLayoutCheck->setChecked(
+            AppSettings().value( QStringLiteral( "window/restoreLayout" ), true ).toBool() );
+    }
+    // 공통 페이지의 관용구대로 즉시 저장한다(자동 업데이트 그룹 옆 주석 참고).
+    connect( m_restoreLayoutCheck, &QCheckBox::toggled, this, [this]( const bool checked ) {
+        AppSettings().setValue( QStringLiteral( "window/restoreLayout" ), checked );
+        emit settingsApplied();
+    } );
+    windowLayout->addWidget( m_restoreLayoutCheck );
+    layout->addWidget( windowGroup );
+
     auto* themeGroup  = new QGroupBox( tr( "테마" ), page );
     auto* themeLayout = new QVBoxLayout( themeGroup );
 
