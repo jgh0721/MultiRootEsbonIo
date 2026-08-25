@@ -160,6 +160,8 @@ add_executable(${PROJECT_NAME}
         src/core/solMarkdownAssets.hpp
         src/core/solMarkdownPreviewController.cpp
         src/core/solMarkdownPreviewController.hpp
+        src/core/solRecentItems.cpp
+        src/core/solRecentItems.hpp
         src/core/solRestCompletionCoordinator.cpp
         src/core/solRestCompletionCoordinator.hpp
         src/core/solRestOutlineService.cpp
@@ -381,6 +383,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_DiagnosticsStore.cpp
             tests/tst_SphinxBuilders.cpp
             tests/tst_WorkspaceSessionActive.cpp
+            tests/tst_RecentItems.cpp
             tests/tst_UpdateVersioning.cpp
             tests/tst_AuthenticodeVerifier.cpp
             tests/tst_ExternalChangeWatch.cpp
@@ -403,6 +406,7 @@ if(MRST_BUILD_TESTS)
             src/core/solRestOutlineService.cpp
             src/core/solWorkspaceSearch.cpp
             src/core/solWorkspaceSession.cpp
+            src/core/solRecentItems.cpp
             src/core/solExternalChangeWatcher.cpp
             src/core/solEsbonioLspClient.cpp
             src/core/solEsbonioLspClient.hpp

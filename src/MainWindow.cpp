@@ -6,6 +6,7 @@
 #include "core/solExternalChangeWatcher.hpp"
 #include "core/solFileKinds.hpp"
 #include "core/solPythonEnvMgr.hpp"
+#include "core/solRecentItems.hpp"
 #include "core/solRestWorkspaceController.hpp"
 #include "core/solSettingsWriter.hpp"
 #include "core/solSphinxDiagnosticsStore.hpp"
@@ -400,6 +401,11 @@ MainWindow::MainWindow( QWidget* parent )
     mrst::traceP( "ui.setupUi.end" );
     setWindowTitle( tr( "MultiRoot reST Editor" ) );
     resize( 1024, 768 );
+    // 지난 워크스페이스의 창 크기·위치가 있으면 위 기본값을 덮는다. **show()
+    // 보다 앞이어야** 창이 1024x768 로 한 번 떴다가 커지는 것이 보이지 않는다.
+    // 도크와 스플리터는 탭이 다 열린 뒤라야 의미가 있어 여기서 하지 않는다
+    // (applySessionLayout).
+    restoreWindowGeometryForLastWorkspace();
     setAcceptDrops( true );
     if( auto* app = QCoreApplication::instance() )
         app->installEventFilter( this );
@@ -492,9 +498,10 @@ MainWindow::MainWindow( QWidget* parent )
     m_loadingAnimationTimer->setInterval( kLoadingAnimationIntervalMs );
     connect( m_loadingAnimationTimer, &QTimer::timeout, this, &MainWindow::advanceLoadingAnimation );
 
-    // 최근 파일 복원
+    // 최근 파일 / 워크스페이스 복원
     AppSettings settings;
     m_recentFiles = settings.value( "recentFiles" ).toStringList();
+    m_recentWorkspaces = settings.value( "recentWorkspaces" ).toStringList();
     updateRecentFilesMenu();
 
     if( auto* clipboard = QApplication::clipboard() )
@@ -1052,7 +1059,7 @@ void MainWindow::retranslateMenus()
     actionText( "file.openWorkspace", tr( "워크스페이스 열기(&O)..." ) );
     actionText( "file.save",          tr( "저장(&S)" ) );
     actionText( "file.saveAs",        tr( "다른 이름으로 저장(&A)..." ) );
-    menuTitle ( "menu.recent",        tr( "최근 파일(&R)" ) );
+    menuTitle ( "menu.recent",        tr( "최근 파일/워크스페이스(&R)" ) );
     actionText( "tab.close",          tr( "현재 탭 닫기(&C)" ) );
     actionText( "app.quit",           tr( "종료(&X)" ) );
 
@@ -1497,6 +1504,8 @@ void MainWindow::openFile( const QString& filePath )
         auto* view = dynamic_cast< QBaseView* >( m_tabWidget->widget( i ) );
         if( view && normalizeFilePath( view->currentFilePath() ) == normalizedPath )
         {
+            // 이미 열려 있어도 "방금 본 문서" 다. 목록의 맨 앞으로 올린다.
+            addRecentFile( normalizedPath );
             m_tabWidget->setCurrentIndex( i );
             // 트리뷰·진단 표·개요에서 문서를 불러낸 경우 포커스는 아직 그 패널에
             // 있다. 문서를 앞에 냈으면 키보드도 문서에 있어야 한다. 미루는 이유는
@@ -1577,6 +1586,10 @@ void MainWindow::openFile( const QString& filePath )
         applyThemeToView( view );
         addViewTab( view );
     }
+
+    // 여기까지 왔으면 열기가 시작됐다(비동기 경로는 아직 읽는 중이다). 실패
+    // 경로는 모두 위에서 돌아갔으므로, 못 여는 파일이 목록에 쌓이지 않는다.
+    addRecentFile( normalizedPath );
 }
 
 QString MainWindow::normalizeFilePath( const QString& filePath ) const
@@ -2503,6 +2516,10 @@ void MainWindow::setPreviewFullScreen( const bool enabled )
         const auto restoreUpdates = qScopeGuard( [this] { setUpdatesEnabled( true ); } );
 
         previewFullScreen_.windowStates = windowState();
+        // 세션에 남길 창 크기도 여기서 뜬다. 전체 화면 도중의 saveGeometry() 에는
+        // 전체 화면 플래그가 담겨, 그대로 저장하면 다음 실행이 메뉴도 편집기도
+        // 없는 창으로 열린다(currentWindowGeometry 참고).
+        previewFullScreen_.windowGeometry = saveGeometry();
         previewFullScreen_.previewSplitSizes = Ui.splitter_2->sizes();
         // 좌측·하단은 도크 배치 전체를 한 덩어리로 기억한다. "보였는가" 만
         // 남기면 핀 고정해 둔 패널이 핀이 풀린 채로, 하단에서 로그를 보고
@@ -3417,17 +3434,57 @@ bool MainWindow::confirmOpenBinaryTextFile( const QString& filePath ) const
 }
 
 // ═══════════════════════════════════════════════════════════
-// 최근 파일
+// 최근 파일 / 워크스페이스
+//
+// 두 목록을 **한 메뉴**에 위아래로 놓는다. 파일 메뉴에 형제 항목을 하나 더
+// 늘리는 대신 이렇게 하는 이유는, 둘이 답하는 질문이 "지난번에 뭘 하고
+// 있었나" 하나로 같기 때문이다. 섹션 제목이 어느 쪽인지 알려 준다.
 // ═══════════════════════════════════════════════════════════
 void MainWindow::addRecentFile( const QString& filePath )
 {
-    m_recentFiles.removeAll( filePath );
-    m_recentFiles.prepend( filePath );
-    while( m_recentFiles.size() > MaxRecentFiles )
-        m_recentFiles.removeLast();
+    const QStringList updated = mrst::prependRecentEntry( m_recentFiles, filePath );
+    if( updated == m_recentFiles )
+        return;   // 이미 맨 앞이다. 메뉴를 다시 그릴 이유도 없다.
 
-    AppSettings settings;
-    settings.setValue( "recentFiles", m_recentFiles );
+    m_recentFiles = updated;
+    // 세션 복원은 문서 수만큼 이 함수를 부른다. AppSettings 는 소멸할 때마다
+    // ini 를 통째로 다시 쓰므로(solSettingsWriter.hpp 참고) 기록기를 거친다.
+    mrst::SettingsWriter::instance().setValue( QStringLiteral( "recentFiles" ), m_recentFiles );
+    updateRecentFilesMenu();
+}
+
+void MainWindow::addRecentWorkspace( const QString& folderPath )
+{
+    const QStringList updated = mrst::prependRecentEntry( m_recentWorkspaces, folderPath );
+    if( updated == m_recentWorkspaces )
+        return;
+
+    m_recentWorkspaces = updated;
+    mrst::SettingsWriter::instance().setValue( QStringLiteral( "recentWorkspaces" ),
+                                              m_recentWorkspaces );
+    updateRecentFilesMenu();
+}
+
+void MainWindow::dropRecentFile( const QString& filePath )
+{
+    const QStringList pruned = mrst::removeRecentEntry( m_recentFiles, filePath );
+    if( pruned == m_recentFiles )
+        return;
+
+    m_recentFiles = pruned;
+    mrst::SettingsWriter::instance().setValue( QStringLiteral( "recentFiles" ), m_recentFiles );
+    updateRecentFilesMenu();
+}
+
+void MainWindow::dropRecentWorkspace( const QString& folderPath )
+{
+    const QStringList pruned = mrst::removeRecentEntry( m_recentWorkspaces, folderPath );
+    if( pruned == m_recentWorkspaces )
+        return;
+
+    m_recentWorkspaces = pruned;
+    mrst::SettingsWriter::instance().setValue( QStringLiteral( "recentWorkspaces" ),
+                                              m_recentWorkspaces );
     updateRecentFilesMenu();
 }
 
@@ -3435,12 +3492,93 @@ void MainWindow::updateRecentFilesMenu()
 {
     if( !m_recentMenu ) return;
     m_recentMenu->clear();
-    for( const auto& f : m_recentFiles )
-    {
-        m_recentMenu->addAction( QFileInfo( f ).fileName(), this, [this, f] { openFile( f ); } );
-    }
+
+    // 항목 글자는 이름만 쓰고 전체 경로는 툴팁에 둔다. 워크스페이스마다
+    // `index.rst` 가 있으므로 이름만으로는 어느 것인지 알 수 없는데, 그렇다고
+    // 전체 경로를 글자로 쓰면 메뉴가 화면 밖까지 넓어진다.
+    const auto addEntry = [this]( const QString& path, const QString& text,
+                                  void ( MainWindow::*activate )( const QString& ) ) {
+        QAction* action = m_recentMenu->addAction( text, this, [this, path, activate] {
+            // **여는 일을 미룬다.** 무엇을 열든 그 항목은 목록의 맨 앞으로
+            // 올라오고, 그러면 이 함수가 다시 돌면서 `QMenu::clear()` 가 **지금
+            // 시그널을 내고 있는 이 QAction 을 즉시 delete** 한다(메뉴가 소유자다).
+            // 미루면 그 삭제가 QAction::activate() 의 스택이 다 빠져나간 뒤에 온다.
+            QTimer::singleShot( 0, this, [this, path, activate] {
+                ( this->*activate )( path );
+            } );
+        } );
+        action->setToolTip( QDir::toNativeSeparators( path ) );
+        action->setStatusTip( QDir::toNativeSeparators( path ) );
+    };
+
+    // **`addSection()` 을 쓰지 않는다.** 이 앱의 스타일(qlementine)에서는 섹션의
+    // 글자가 그려지지 않아, 두 묶음이 제목도 구분선도 없이 붙어 나온다. 실측으로
+    // 확인했다. 어느 쪽이 파일이고 어느 쪽이 워크스페이스인지 알 수 없는 메뉴가
+    // 되므로, 스타일에 기대지 않는 비활성 항목으로 제목을 만든다.
+    const auto addHeader = [this]( const QString& text ) {
+        m_recentMenu->addAction( text )->setEnabled( false );
+    };
+
+    addHeader( tr( "파일" ) );
     if( m_recentFiles.isEmpty() )
         m_recentMenu->addAction( tr( "(없음)" ) )->setEnabled( false );
+    for( const QString& path : m_recentFiles )
+        addEntry( path, QFileInfo( path ).fileName(), &MainWindow::openRecentFile );
+
+    m_recentMenu->addSeparator();
+    addHeader( tr( "워크스페이스" ) );
+    if( m_recentWorkspaces.isEmpty() )
+        m_recentMenu->addAction( tr( "(없음)" ) )->setEnabled( false );
+    for( const QString& path : m_recentWorkspaces )
+    {
+        // 폴더 이름만으로는 `docs` 가 여럿이라 구분되지 않는다. 한 단계 위까지
+        // 붙여 "부모/폴더" 로 보인다 (경로 전체는 툴팁에 있다).
+        const QDir dir( path );
+        const QString parent = QFileInfo( dir.absolutePath() ).dir().dirName();
+        const QString label = parent.isEmpty()
+            ? QDir::toNativeSeparators( path )
+            : QStringLiteral( "%1 / %2" ).arg( parent, dir.dirName() );
+        addEntry( path, label, &MainWindow::openRecentWorkspace );
+    }
+
+    // QMenu 는 기본적으로 툴팁을 띄우지 않는다. 위에서 넣은 경로가 보이려면
+    // 이 한 줄이 필요하다.
+    m_recentMenu->setToolTipsVisible( true );
+}
+
+void MainWindow::openRecentFile( const QString& filePath )
+{
+    if( !QFileInfo::exists( filePath ) )
+    {
+        // 지워졌거나 옮겨졌다. 실패를 알리고 목록에서 뺀다 — 그대로 두면 같은
+        // 실패를 반복할 때까지 자리를 차지한다.
+        showTransientStatus( tr( "파일을 찾을 수 없습니다: %1" )
+                                 .arg( QDir::toNativeSeparators( filePath ) ), 4000 );
+        dropRecentFile( filePath );
+        return;
+    }
+
+    openFile( filePath );
+}
+
+void MainWindow::openRecentWorkspace( const QString& folderPath )
+{
+    if( !QFileInfo( folderPath ).isDir() )
+    {
+        showTransientStatus( tr( "워크스페이스 폴더를 찾을 수 없습니다: %1" )
+                                 .arg( QDir::toNativeSeparators( folderPath ) ), 4000 );
+        dropRecentWorkspace( folderPath );
+        return;
+    }
+
+    // 지금 워크스페이스와 같으면 아무것도 하지 않는다. setWorkspace() 를 그냥
+    // 다시 부르면 트리 루트를 새로 잡고 전체 스캔이 한 번 더 돈다.
+    if( !workspaceRoot_.isEmpty()
+        && QFileInfo( folderPath ).absoluteFilePath().compare(
+               workspaceRoot_, Qt::CaseInsensitive ) == 0 )
+        return;
+
+    setWorkspace( folderPath );
 }
 
 void MainWindow::shutdownUi()
@@ -3580,7 +3718,9 @@ void MainWindow::setWorkspace( const QString& Folder )
         saveWorkspaceSessionNow();
     workspaceRoot_ = workspaceRoot;
     AppSettings().setValue( QStringLiteral( "workspace/lastRoot" ), workspaceRoot );
-    //SettingsStore::addRecent( &appState_.recentFolders, workspaceRoot_ );
+    // 세션 복원으로 들어온 경로도 그대로 넣는다. 맨 앞으로 올라올 뿐이고,
+    // 그것이 "지난번에 보고 있던 워크스페이스" 라는 사실과도 맞다.
+    addRecentWorkspace( workspaceRoot );
     //if( workspaceSearch_ != nullptr )
     //{
     //    workspaceSearch_->setWorkspaceRoot( workspaceRoot_ );
@@ -4871,7 +5011,93 @@ void MainWindow::saveWorkspaceSessionNow()
             session.previewSplitterSizes = splitter->sizes();
     }
 
+    // 배치를 기억하지 않기로 했으면 창 크기도 남기지 않는다. 남겨 두면 설정을
+    // 껐다 켠 사용자가 **설정을 끄기 전**의 창으로 돌아가고, 그 사이의 조작이
+    // 어디로 갔는지 알 수 없게 된다.
+    if( layoutRestoreEnabled() )
+        session.windowGeometry = currentWindowGeometry();
+
     mrst::saveWorkspaceSession( session );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 창·패널 배치의 복원
+//
+// 배치는 **워크스페이스에 속한 상태**다(solWorkspaceSession.hpp 참고). 어떤 폴더는
+// 좌측 탐색기를 넓게 쓰고 어떤 폴더는 프리뷰만 크게 보는 것이 자연스럽고, 그 둘을
+// 전역 설정 한 벌로 묶으면 워크스페이스를 옮길 때마다 배치를 다시 잡게 된다.
+// ═══════════════════════════════════════════════════════════
+bool MainWindow::layoutRestoreEnabled()
+{
+    return AppSettings().value( QStringLiteral( "window/restoreLayout" ), true ).toBool();
+}
+
+QString MainWindow::currentWindowGeometry() const
+{
+    // 전체 화면 중이면 들어가기 직전 값을 쓴다. 지금 saveGeometry() 를 찍으면
+    // 전체 화면 플래그까지 담겨, 다음 실행이 메뉴도 편집기도 없는 창으로 뜬다.
+    const QByteArray geometry = previewFullScreen_.active
+        ? previewFullScreen_.windowGeometry
+        : saveGeometry();
+    if( geometry.isEmpty() )
+        return {};
+    return QString::fromLatin1( geometry.toBase64() );
+}
+
+void MainWindow::restoreWindowGeometry( const QString& base64 )
+{
+    if( base64.isEmpty() || !layoutRestoreEnabled() )
+        return;
+
+    const QByteArray geometry = QByteArray::fromBase64( base64.toLatin1() );
+    if( geometry.isEmpty() )
+        return;
+
+    // restoreGeometry() 는 화면 밖으로 나간 창을 스스로 화면 안으로 당겨 준다
+    // (모니터를 떼고 온 경우). 실패하면 손대지 않고 false 를 돌려주므로 지금
+    // 크기가 그대로 남는다.
+    windowGeometryRestored_ = restoreGeometry( geometry );
+}
+
+void MainWindow::restoreWindowGeometryForLastWorkspace()
+{
+    if( !layoutRestoreEnabled() )
+        return;
+
+    const QString lastRoot = AppSettings().value( QStringLiteral( "workspace/lastRoot" ) ).toString();
+    if( lastRoot.isEmpty() || !QFileInfo( lastRoot ).isDir() )
+        return;
+
+    // 세션 파일을 여기서 한 번, restoreLastSession() 에서 또 한 번 읽는다. 창
+    // 크기는 **show() 보다 먼저** 정해져야 창이 한 번 떴다가 크기가 바뀌는 것이
+    // 보이지 않는데, 탭 복원은 첫 페인트 뒤라서 한쪽으로 몰 수가 없다. 파일은
+    // 수 KB 짜리 JSON 하나다.
+    restoreWindowGeometry( mrst::loadWorkspaceSession( lastRoot ).windowGeometry );
+}
+
+void MainWindow::applySessionLayout( const mrst::WorkspaceSession& session )
+{
+    if( !layoutRestoreEnabled() )
+        return;
+
+    // 도크 배치가 먼저다. restoreState() 가 편집기|프리뷰 스플리터를 담은 중앙
+    // 도크를 재배치하므로, 순서를 뒤집으면 아래 setSizes() 가 그것에 덮인다.
+    restoreDockLayout( session.dockLayout );
+
+    const auto restoreSizes = [ this ]( QSplitter* splitter, const QList< int >& sizes ) {
+        if( splitter == nullptr || sizes.size() != splitter->count() )
+            return false;
+        splitter->setSizes( sizes );
+        return true;
+    };
+    previewSplitFromSession_ = restoreSizes( Ui.splitter_2, session.previewSplitterSizes );
+
+    // 창 크기는 생성자가 이미 잡았으면 그대로 둔다. 여기까지 오는 사이에
+    // 사용자가 창을 움직였을 수 있고, 그것을 되돌릴 이유가 없다. 남은 경로는
+    // 명령줄 인자로 다른 워크스페이스를 연 경우다 — 그때는 생성자가 본 것과
+    // 다른 세션이므로 지금 적용해야 한다.
+    if( !windowGeometryRestored_ )
+        restoreWindowGeometry( session.windowGeometry );
 }
 
 void MainWindow::restoreLastSession()
@@ -4901,18 +5127,7 @@ void MainWindow::restoreLastSession()
     }
 
     // 배치는 탭을 다 만든 뒤에 적용해야 레이아웃이 다시 계산되며 덮이지 않는다.
-    //
-    // 도크 배치가 먼저다. restoreState() 가 편집기|프리뷰 스플리터를 담은 중앙
-    // 도크를 재배치하므로, 순서를 뒤집으면 아래 setSizes() 가 그것에 덮인다.
-    restoreDockLayout( session.dockLayout );
-
-    auto restoreSizes = [ this ]( QSplitter* splitter, const QList< int >& sizes ) {
-        if( splitter == nullptr || sizes.size() != splitter->count() )
-            return false;
-        splitter->setSizes( sizes );
-        return true;
-    };
-    previewSplitFromSession_ = restoreSizes( Ui.splitter_2, session.previewSplitterSizes );
+    applySessionLayout( session );
 
     // activeIndex 는 **세션 문서 목록**의 번호다. 탭 위젯의 번호로 쓰면 안 된다.
     //
@@ -5373,4 +5588,9 @@ void MainWindow::openStartupPaths( const QStringList& paths )
         controller_->setActiveDocument( textViewOf( currentView() ) );
         controller_->endBatchRestore();
     }
+
+    // 탭은 명령줄이 정했지만 화면 배치는 이 워크스페이스의 것이다. 지난번에
+    // 이 폴더에서 잡아 둔 패널 크기로 열리는 편이, 인자를 주고 열었다는 이유만으로
+    // 기본 배치로 돌아가는 것보다 낫다.
+    applySessionLayout( mrst::loadWorkspaceSession( workspaceRoot_ ) );
 }

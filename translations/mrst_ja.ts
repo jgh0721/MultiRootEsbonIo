@@ -554,6 +554,10 @@
         <translation type="unfinished">エラー</translation>
     </message>
     <message>
+        <source>워크스페이스</source>
+        <translation type="unfinished">ワークスペース</translation>
+    </message>
+    <message>
         <source>워크스페이스 바꾸기: 파일 %1개 변경</source>
         <translation type="unfinished">ワークスペースの置換: ファイル %1 件を変更</translation>
     </message>
@@ -564,6 +568,10 @@
     <message>
         <source>워크스페이스 폴더 열기</source>
         <translation type="unfinished">ワークスペースフォルダーを開く</translation>
+    </message>
+    <message>
+        <source>워크스페이스 폴더를 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">ワークスペースフォルダーが見つかりません: %1</translation>
     </message>
     <message>
         <source>워크스페이스와 찾을 내용을 지정하세요.</source>
@@ -719,7 +727,11 @@
     </message>
     <message>
         <source>최근 파일(&amp;R)</source>
-        <translation type="unfinished">最近使ったファイル(&amp;R)</translation>
+        <translation type="obsolete">最近使ったファイル(&amp;R)</translation>
+    </message>
+    <message>
+        <source>최근 파일/워크스페이스(&amp;R)</source>
+        <translation type="unfinished">最近使ったファイル/ワークスペース(&amp;R)</translation>
     </message>
     <message>
         <source>최신 버전을 사용하고 있습니다.</source>
@@ -822,6 +834,10 @@
         <translation type="unfinished">ファイルを削除します。元に戻せません。
 
 %1</translation>
+    </message>
+    <message>
+        <source>파일을 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">ファイルが見つかりません: %1</translation>
     </message>
     <message>
         <source>파일이 밖에서 사라졌습니다. 편집 중인 내용은 그대로 두었습니다: %1</source>
@@ -1688,8 +1704,26 @@
         <translation type="unfinished">現在は KaTeX のみ対応しています。Markdown プレビューにのみ適用され、数式はインターネットから取得して描くため、上の外部リソース項目がオンである必要があります。</translation>
     </message>
     <message>
+        <source>창 배치</source>
+        <translation type="unfinished">ウィンドウ配置</translation>
+    </message>
+    <message>
+        <source>창 크기와 패널 배치를 워크스페이스마다 기억</source>
+        <translation type="unfinished">ウィンドウサイズとパネル配置をワークスペースごとに記憶</translation>
+    </message>
+    <message>
         <source>창 폭에 맞춰 긴 줄을 접어서 보여 줍니다. 편집기에서 Alt+Z 로도 켜고 끌 수 있습니다.</source>
         <translation type="unfinished">ウィンドウ幅に合わせて長い行を折り返して表示します。エディター上では Alt+Z でも切り替えられます。</translation>
+    </message>
+    <message>
+        <source>창의 크기와 위치, 좌측·하단 패널의 크기, 편집기와 프리뷰의 분할 비율을
+워크스페이스 폴더의 .multiroot/workspace.json 에 저장하고 다음에 그 폴더를
+열 때 되살립니다.
+끄면 언제나 기본 배치로 시작합니다.</source>
+        <translation type="unfinished">ウィンドウのサイズと位置、左側・下部パネルのサイズ、エディターとプレビューの
+分割比率をワークスペースフォルダーの .multiroot/workspace.json に保存し、次に
+そのフォルダーを開いたときに復元します。
+オフにすると常に既定の配置で起動します。</translation>
     </message>
     <message>
         <source>찾기</source>

@@ -558,6 +558,10 @@ You will be asked about any unsaved documents first. Continue?</translation>
         <translation type="unfinished">Error</translation>
     </message>
     <message>
+        <source>워크스페이스</source>
+        <translation type="unfinished">Workspace</translation>
+    </message>
+    <message>
         <source>워크스페이스 바꾸기: 파일 %1개 변경</source>
         <translation type="unfinished">Workspace replace: %1 files changed</translation>
     </message>
@@ -568,6 +572,10 @@ You will be asked about any unsaved documents first. Continue?</translation>
     <message>
         <source>워크스페이스 폴더 열기</source>
         <translation type="unfinished">Open workspace folder</translation>
+    </message>
+    <message>
+        <source>워크스페이스 폴더를 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">Workspace folder not found: %1</translation>
     </message>
     <message>
         <source>워크스페이스와 찾을 내용을 지정하세요.</source>
@@ -723,7 +731,11 @@ You will be asked about any unsaved documents first. Continue?</translation>
     </message>
     <message>
         <source>최근 파일(&amp;R)</source>
-        <translation type="unfinished">&amp;Recent files</translation>
+        <translation type="obsolete">&amp;Recent files</translation>
+    </message>
+    <message>
+        <source>최근 파일/워크스페이스(&amp;R)</source>
+        <translation type="unfinished">&amp;Recent files / workspaces</translation>
     </message>
     <message>
         <source>최신 버전을 사용하고 있습니다.</source>
@@ -828,6 +840,10 @@ Open it as text anyway?
         <translation type="unfinished">This deletes the file. It cannot be undone.
 
 %1</translation>
+    </message>
+    <message>
+        <source>파일을 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">File not found: %1</translation>
     </message>
     <message>
         <source>파일이 밖에서 사라졌습니다. 편집 중인 내용은 그대로 두었습니다: %1</source>
@@ -1695,8 +1711,26 @@ When turned off, existing hot exit backups are deleted immediately.</translation
         <translation type="unfinished">Only KaTeX is available for now. It applies to the Markdown preview, and because math is fetched from the internet the external resources option above must be on.</translation>
     </message>
     <message>
+        <source>창 배치</source>
+        <translation type="unfinished">Window layout</translation>
+    </message>
+    <message>
+        <source>창 크기와 패널 배치를 워크스페이스마다 기억</source>
+        <translation type="unfinished">Remember window size and panel layout per workspace</translation>
+    </message>
+    <message>
         <source>창 폭에 맞춰 긴 줄을 접어서 보여 줍니다. 편집기에서 Alt+Z 로도 켜고 끌 수 있습니다.</source>
         <translation type="unfinished">Folds long lines to the window width. You can also toggle it with Alt+Z in the editor.</translation>
+    </message>
+    <message>
+        <source>창의 크기와 위치, 좌측·하단 패널의 크기, 편집기와 프리뷰의 분할 비율을
+워크스페이스 폴더의 .multiroot/workspace.json 에 저장하고 다음에 그 폴더를
+열 때 되살립니다.
+끄면 언제나 기본 배치로 시작합니다.</source>
+        <translation type="unfinished">Saves the window size and position, the left and bottom panel sizes, and the
+editor/preview split ratio in .multiroot/workspace.json inside the workspace
+folder, and restores them the next time you open that folder.
+When turned off, the default layout is always used.</translation>
     </message>
     <message>
         <source>찾기</source>

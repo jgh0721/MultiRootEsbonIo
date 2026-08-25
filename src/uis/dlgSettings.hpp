@@ -83,6 +83,8 @@ private:
 
     /// 공통 페이지
     QComboBox*                          m_languageCombo = nullptr;
+    /// 창 크기·패널 배치를 워크스페이스마다 기억할지 (`window/restoreLayout`).
+    QCheckBox*                          m_restoreLayoutCheck = nullptr;
     QComboBox*                          m_themeCombo    = nullptr;
     QComboBox*                          m_themeScopeCombo = nullptr;
     QLabel*                             m_themeLexerListLabel = nullptr;

@@ -42,6 +42,25 @@
 namespace {
 /// 한쪽 스크롤이 상대를 움직이고, 그 움직임이 다시 되돌아오는 것을 막는 창.
 constexpr qint64 kSyncGuardMs = 250;
+
+/// 프리뷰가 새 내용을 받은 뒤 레이아웃이 자리를 잡는 데 주는 시간.
+///
+/// 페이지를 다시 읽거나 body 를 갈아 끼운 직후에도 프리뷰의 높이는 한동안
+/// 계속 바뀐다 — 이미지가 뒤늦게 도착하고, KaTeX 와 mermaid 가 자기 자리를
+/// 다시 잡는다. 브라우저는 그때마다 scroll 이벤트를 낸다. 그것을 "사용자가
+/// 프리뷰를 굴렸다" 로 읽으면 에디터가 따라 움직이고, 편집하던 줄이 눈앞에서
+/// 사라진다. kSyncGuardMs(250) 로는 짧다 — 22 MB 짜리 페이지에서는 그 구간이
+/// 초 단위다.
+constexpr qint64 kPreviewSettleMs = 1200;
+
+/// 글자를 고친 뒤 스크롤의 주인이 에디터로 남는 시간.
+///
+/// 미저장 편집을 프리뷰에 반영하는 설정이 켜져 있으면 타이핑 중에 재빌드가
+/// 계속 돈다. 그 결과가 돌아올 때마다 에디터가 프리뷰를 따라 움직이면 캐럿이
+/// 있는 줄이 아래위로 흔들린다. 타이핑을 멈추면 곧 평소의 양방향 동기화로
+/// 돌아온다.
+constexpr qint64 kEditOwnershipMs = 1500;
+
 /// 스크롤 동기화의 기준점. 0.5 = 창의 정중앙.
 /// 에디터 정중앙에 있는 줄이 프리뷰에서도 정중앙에 오게 한다.
 constexpr double kAnchorRatio = 0.5;
@@ -415,6 +434,10 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
         // 다시 시도할 수 있다.
         previewLoadInFlight_ = false;
         previewLoadedOk_ = ok;
+        // 새 페이지가 들어왔다. 지금부터 한동안 프리뷰의 스크롤 보고는 레이아웃이
+        // 자리를 잡는 과정이지 사용자의 뜻이 아니다. 아래 bridgeReady 에서도
+        // 다시 세운다 — 스크립트가 붙지 않는 페이지에서는 여기가 유일한 자리다.
+        previewSettleUntilMs_ = QDateTime::currentMSecsSinceEpoch() + kPreviewSettleMs;
         if( !ok )
         {
             emit logMessage( tr( "프리뷰 HTML 로드 실패" ) );
@@ -443,6 +466,9 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
                 if( ok )
                 {
                     setPreviewStatus( {} );
+                    // body 를 갈아 끼웠다. 전체 로드와 마찬가지로 높이가 한동안
+                    // 계속 바뀐다.
+                    previewSettleUntilMs_ = QDateTime::currentMSecsSinceEpoch() + kPreviewSettleMs;
                     syncPreviewFromEditor();
                     return;
                 }
@@ -478,6 +504,9 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
         // 같은 줄" 이어도 반드시 한 번은 보내야 한다.
         lastSyncedSourceIndex_ = -1;
         lastSyncedLine_ = -1.0;
+        // 핸드셰이크는 로드 완료보다 뒤다. 자리를 잡는 구간은 여기서부터 세는
+        // 편이 실제에 가깝다.
+        previewSettleUntilMs_ = QDateTime::currentMSecsSinceEpoch() + kPreviewSettleMs;
         syncPreviewFromEditor();
     } );
 
@@ -499,6 +528,13 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
     // 내장 렌더러가 올리는 사실들. 문장은 컨트롤러가 만든다.
     connect( previewBridge_, &PreviewBridge::markdownRenderCompleted, markdownPreview_,
             &MarkdownPreviewController::onRenderCompleted );
+    // 내장 렌더러 경로도 body 를 갈아 끼운다. 타이핑 중에 가장 자주 도는 길이라
+    // 자리잡기 구간을 여기서 반드시 세워야 한다(kPreviewSettleMs 참고).
+    connect( previewBridge_, &PreviewBridge::markdownRenderCompleted, this,
+            [this]( int, const bool ok, const QString& ) {
+                if( ok )
+                    previewSettleUntilMs_ = QDateTime::currentMSecsSinceEpoch() + kPreviewSettleMs;
+            } );
     connect( previewBridge_, &PreviewBridge::markdownRendererOrigin, markdownPreview_,
             &MarkdownPreviewController::onRendererOrigin );
     connect( previewBridge_, &PreviewBridge::markdownAssetLoadFailed, markdownPreview_,
@@ -616,11 +652,31 @@ void WorkspaceController::syncEditorFromPreview( const int sourceIndex, const do
     if( activeView_.isNull() )
         return;
 
-    // 에디터를 굴리는 중이라면 프리뷰의 보고는 우리가 방금 만든 결과다.
-    // 그것으로 에디터를 되돌리면 스크롤이 제자리에서 튄다.
-    // 프리뷰를 직접 클릭한 이동은 사용자의 뜻이므로 가드를 넘긴다.
-    if( !userInitiated && QDateTime::currentMSecsSinceEpoch() < previewDrivenIgnoreUntilMs_ )
-        return;
+    // 프리뷰를 직접 클릭한 이동은 사용자의 뜻이므로 아래 가드를 모두 넘긴다.
+    if( !userInitiated )
+    {
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+
+        // 에디터를 굴리는 중이라면 프리뷰의 보고는 우리가 방금 만든 결과다.
+        // 그것으로 에디터를 되돌리면 스크롤이 제자리에서 튄다.
+        if( nowMs < previewDrivenIgnoreUntilMs_ )
+            return;
+
+        // 프리뷰가 방금 새 내용을 받았다. 지금 오는 보고는 사용자가 굴린 것이
+        // 아니라 레이아웃이 자리를 잡는 과정이다(kPreviewSettleMs 참고).
+        if( nowMs < previewSettleUntilMs_ )
+        {
+            traceP( "sync.editor.skip", QStringLiteral( "settling" ) );
+            return;
+        }
+
+        // 사용자가 지금 글을 쓰고 있다. 그동안 스크롤의 주인은 에디터다.
+        if( nowMs - lastEditorEditMs_ < kEditOwnershipMs )
+        {
+            traceP( "sync.editor.skip", QStringLiteral( "editing" ) );
+            return;
+        }
+    }
 
     const QString path = pathForSourceIndex( sourceIndex );
     DocumentContext* context = contextFor( activeView_ );
@@ -636,6 +692,11 @@ void WorkspaceController::syncEditorFromPreview( const int sourceIndex, const do
     // 에디터를 움직이면 viewportScrolled 가 나오고, 그게 다시 프리뷰를
     // 스크롤시킨다. 그 왕복을 여기서 끊는다.
     suppressSyncUntilMs_ = QDateTime::currentMSecsSinceEpoch() + kSyncGuardMs;
+    // "편집하던 줄이 눈앞에서 사라졌다" 는 이 한 줄에서 온다. 어느 가드도
+    // 걸리지 않았을 때만 여기 닿으므로, 트레이스에 이 태그가 몇 번 찍히는지가
+    // 곧 위 가드들이 실제로 하는 일의 측정이다.
+    traceP( "sync.editor",
+           QStringLiteral( "line=%1 user=%2" ).arg( line, 0, 'f', 1 ).arg( userInitiated ? 1 : 0 ) );
     activeView_->scrollFractionalLineToViewportRatio( line, ratio );
 }
 
@@ -1580,6 +1641,9 @@ void WorkspaceController::attachDocument( QTextView* view )
     connect( view, &QTextView::sigTextEdited, this, [this, view] {
         if( activeView_ != view )
             return;
+        // 지금부터 잠깐은 스크롤의 주인이 에디터다. 이 값이 없으면 타이핑 중에
+        // 돌아온 재빌드 결과가 캐럿이 있는 줄을 아래위로 흔든다.
+        lastEditorEditMs_ = QDateTime::currentMSecsSinceEpoch();
         requestPreviewBuild( false );
         if( DocumentContext* context = contextFor( view ) )
             syncDocumentToServer( *context, false );
