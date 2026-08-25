@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project("MultiRoot-reST-Editor" VERSION 0.8.0 LANGUAGES CXX)
+project("MultiRoot-reST-Editor" VERSION 0.8.1 LANGUAGES CXX)
 
 # 실행 파일 아이콘(resources/app.rc)을 컴파일하려면 RC 언어가 필요하다.
 if(WIN32)
