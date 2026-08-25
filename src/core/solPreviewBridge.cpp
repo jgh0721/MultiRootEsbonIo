@@ -121,9 +121,10 @@ void PreviewBridge::sourceLocationClicked( const int sourceIndex, const double l
     emit editorNavigationRequested( sourceIndex, line, viewportRatio );
 }
 
-void PreviewBridge::previewScrolled( const int sourceIndex, const double line, const double viewportRatio )
+void PreviewBridge::previewScrolled( const int sourceIndex, const double line, const double viewportRatio,
+                                     const bool userDriven )
 {
-    emit previewScrollChanged( sourceIndex, line, viewportRatio );
+    emit previewScrollChanged( sourceIndex, line, viewportRatio, userDriven );
 }
 
 void PreviewBridge::requestHotSwap( const QString& documentHtml, const QString& baseUrl, const int token )

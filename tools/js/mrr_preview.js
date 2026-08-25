@@ -20,14 +20,24 @@
     }
     window.__mrrPreviewInstalled = true;
 
-    var PROTOCOL_VERSION = 2;   // 2: markdownSourceChanged 위임 추가
+    // 3: previewScrolled 에 "사용자가 만든 스크롤인가" 를 실어 보낸다
+    var PROTOCOL_VERSION = 3;
     // 스크롤 위치를 대표하는 기준점. 0.5 = 창의 정중앙.
     var ANCHOR_RATIO = 0.5;
     // C++ 이 우리를 스크롤시킨 직후 우리가 다시 C++ 에 보고하면 무한 왕복이 된다.
     var FEEDBACK_GUARD_MS = 250;
 
+    // 사용자 입력이 만들어 낸 스크롤의 꼬리. 이 시간이 지나도록 새 입력이 없으면
+    // 그다음 스크롤은 페이지가 스스로 움직인 것으로 본다.
+    //
+    // 휠·키 반복·스크롤바 드래그는 스크롤이 이어지는 동안 이벤트도 계속 오므로
+    // 이 값이 그 길이를 정하지 않는다. 마지막 입력과 그것이 만든 마지막 scroll
+    // 사이의 틈만 덮으면 된다.
+    var USER_INTENT_TAIL_MS = 400;
+
     var bridge = null;
     var suppressUntil = 0;
+    var userIntentUntil = 0;
     var scrollTimer = null;
     var cachedRanges = null;
     var cachedAnchors = null;
@@ -36,6 +46,40 @@
     function now() {
         return new Date().getTime();
     }
+
+    /// 지금 온 스크롤이 사용자가 만든 것인가.
+    ///
+    /// **이 판정이 없으면 프리뷰가 편집기를 밀어낸다.** 페이지는 내용이 바뀐 뒤에도
+    /// 한참 동안 스스로 스크롤한다 — 이미지가 뒤늦게 도착하고, 폰트가 바뀌고,
+    /// KaTeX 와 mermaid 가 자리를 다시 잡고, 그러면서 문서 높이가 계속 달라진다.
+    /// 그 스크롤을 C++ 에 올리면 저쪽은 "사용자가 프리뷰를 굴렸다" 로 읽고 편집기를
+    /// 그리로 옮긴다. 편집하던 줄이 눈앞에서 사라지는 것이 이것이다.
+    ///
+    /// 시간으로 가르려던 적이 있다 — 내용을 바꾼 뒤 얼마 동안은 무시하는 방식.
+    /// 실측에서 1773줄 문서를 저장했을 때 로드가 끝나고 **32초 뒤까지** 스스로
+    /// 움직였고, 그 사이 편집기가 네 번 밀렸다. 무시 구간을 그만큼 늘리면 그동안
+    /// 사용자가 굴린 것까지 함께 버리게 된다. 구분의 근거는 시간이 아니라
+    /// **직전에 사용자 입력이 있었는가** 다.
+    function scrollIsUserDriven() {
+        return now() < userIntentUntil;
+    }
+
+    function markUserIntent() {
+        userIntentUntil = now() + USER_INTENT_TAIL_MS;
+    }
+
+    // capture 로 잡는다. 페이지 안의 스크립트가 이벤트를 삼켜도 우리가 먼저 본다.
+    ["wheel", "keydown", "mousedown", "pointerdown", "pointermove", "touchstart", "touchmove"]
+        .forEach(function (type) {
+            window.addEventListener(type, function (event) {
+                // 포인터가 그냥 지나가는 것은 입력이 아니다. 단추를 누른 채
+                // 움직이는 것만 — 스크롤바를 끌고 있는 중이다.
+                if (type === "pointermove" && !event.buttons) {
+                    return;
+                }
+                markUserIntent();
+            }, { passive: true, capture: true });
+        });
 
     function invalidateCache() {
         cachedRanges = null;
@@ -259,7 +303,10 @@
         invalidateIfResized();
         var hit = lineForDocumentY(window.scrollY + window.innerHeight * ANCHOR_RATIO);
         if (hit) {
-            bridge.previewScrolled(hit.src, hit.line, ANCHOR_RATIO);
+            // 판정은 여기서 한다. C++ 에는 이 정보가 없다 — 저쪽에서 보이는 것은
+            // "프리뷰가 어느 줄에 있다" 뿐이고, 그것이 사용자의 뜻인지 페이지가
+            // 스스로 움직인 것인지는 입력 이벤트를 받는 이 창만 안다.
+            bridge.previewScrolled(hit.src, hit.line, ANCHOR_RATIO, scrollIsUserDriven());
         }
     }
 
