@@ -469,16 +469,34 @@ MainWindow::MainWindow( QWidget* parent )
     // addWidget 은 왼쪽, addPermanentWidget 은 오른쪽이다. 진행 상황은 왼쪽에 둔다 —
     // 오른쪽은 줄·열·인코딩처럼 **가만히 있는** 값의 자리이고, 그 사이에 끼우면
     // 진행 중에만 나타나는 위젯 때문에 옆 칩들이 매번 좌우로 밀린다.
+    //
+    // ⚠ 이 셋은 **창의 최소 폭을 요구하면 안 된다.**
+    //
+    // QStatusBar 는 QBoxLayout 이고, 그 안의 위젯이 요구하는 최소 폭은 그대로
+    // 창의 최소 폭이 된다. 셋 다 평소에는 숨어 있어(레이아웃에서 빠진다) 아무
+    // 영향이 없지만, 빌드가 시작되어 **나타나는 순간** 창의 최소 폭이 그만큼
+    // 커지고 Qt 가 창을 강제로 넓힌다. 표시가 사라져도 창은 넓어진 채 남는다 —
+    // 최소 폭이 줄었다고 창을 다시 좁혀 주지는 않는다.
+    //
+    // 실측(1773줄 .rst, 저장 한 번): 창이 1413 → 1609 로 자랐다. 그 순간 편집기
+    // 폭이 달라지면서 자동 줄넘김이 다시 계산되고, 보고 있던 줄의 화면 위치가
+    // 통째로 흔들린다. 저장할 때마다 반복된다.
     statusMessageLabel_ = new QLabel( this );
     statusMessageLabel_->setVisible( false );
+    // 남는 자리에 맞춘다. 긴 문구가 창을 밀지 않는다.
+    statusMessageLabel_->setSizePolicy( QSizePolicy::Ignored, QSizePolicy::Preferred );
     statusProgressBar_ = new QProgressBar( this );
     statusProgressBar_->setVisible( false );
     statusProgressBar_->setTextVisible( true );
     statusProgressBar_->setAlignment( Qt::AlignCenter );
     statusProgressBar_->setFormat( QStringLiteral( "%p%" ) );
-    statusProgressBar_->setFixedWidth( 180 );
+    // setFixedWidth 는 최소 폭도 180 으로 못 박는다. 자리가 있으면 180, 없으면
+    // 줄어들도록 상한만 준다.
+    statusProgressBar_->setMinimumWidth( 0 );
+    statusProgressBar_->setMaximumWidth( 180 );
     statusCancelButton_ = new QPushButton( tr( "취소" ), this );
     statusCancelButton_->setVisible( false );
+    statusCancelButton_->setSizePolicy( QSizePolicy::Ignored, QSizePolicy::Fixed );
     statusCancelButton_->setAutoDefault( false );
     statusCancelButton_->setDefault( false );
     connect( statusCancelButton_, &QPushButton::clicked, this, &MainWindow::onCancelLoading );
