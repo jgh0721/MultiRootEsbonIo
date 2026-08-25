@@ -51,7 +51,15 @@ public:
 public slots:   // JS 에서 호출한다
     void                                ready( int protocolVersion );
     void                                sourceLocationClicked( int sourceIndex, double line, double viewportRatio );
-    void                                previewScrolled( int sourceIndex, double line, double viewportRatio );
+    /// 프리뷰의 스크롤 위치가 바뀌었다.
+    ///
+    /// `userDriven` 은 **그 스크롤을 사용자가 만들었는가** 다. 페이지는 내용이
+    /// 바뀐 뒤에도 한참 스스로 움직이므로(이미지·폰트·수식·다이어그램이 자리를
+    /// 잡는다) 그 둘을 가르지 않으면 편집기가 따라 밀린다. 판정은 입력 이벤트를
+    /// 받는 페이지 쪽에서만 할 수 있어 JS 가 실어 보낸다 — mrr_preview.js 의
+    /// `scrollIsUserDriven()` 에 그 근거가 적혀 있다.
+    void                                previewScrolled( int sourceIndex, double line, double viewportRatio,
+                                                          bool userDriven );
     void                                hotSwapResult( int token, bool ok, const QString& message );
     /// 렌더 결과. 실패하면 C++ 이 전체 리로드로 되돌린다(핫스왑과 같은 규칙).
     void                                markdownRendered( int token, bool ok, const QString& message );
@@ -75,7 +83,9 @@ signals:
     void                                bridgeReady();
     void                                hotSwapCompleted( int token, bool ok, const QString& message );
     void                                editorNavigationRequested( int sourceIndex, double line, double viewportRatio );
-    void                                previewScrollChanged( int sourceIndex, double line, double viewportRatio );
+    /// `userDriven` 의 뜻은 위 슬롯과 같다.
+    void                                previewScrollChanged( int sourceIndex, double line, double viewportRatio,
+                                                              bool userDriven );
     void                                markdownRenderCompleted( int token, bool ok, const QString& message );
     void                                markdownRendererOrigin( const QString& origin, const QString& version );
     void                                markdownAssetLoadFailed( const QString& assetId, const QString& reason );

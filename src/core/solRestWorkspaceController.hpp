@@ -387,12 +387,11 @@ private:
     /// 한쪽이 유발한 스크롤이 되돌아와 무한 왕복하는 것을 막는다.
     qint64                              suppressSyncUntilMs_ = 0;
     /// 에디터가 주도권을 쥔 구간. 이 동안 프리뷰의 스크롤 보고는 무시한다.
+    ///
+    /// **페이지가 스스로 움직인 스크롤을 막는 것은 이 값이 아니다.** 그 판정은
+    /// 입력 이벤트를 받는 페이지 쪽에서 하고 `previewScrolled` 의 `userDriven`
+    /// 으로 온다. 여기 남은 것은 "우리가 방금 프리뷰를 굴렸다" 는 왕복 차단뿐이다.
     qint64                              previewDrivenIgnoreUntilMs_ = 0;
-    /// 프리뷰가 새 내용을 받아 레이아웃이 자리를 잡는 중인 구간의 끝.
-    /// 이 동안의 스크롤 보고는 사용자의 뜻이 아니다(kPreviewSettleMs 참고).
-    qint64                              previewSettleUntilMs_ = 0;
-    /// 사용자가 에디터에서 마지막으로 글자를 고친 시각.
-    qint64                              lastEditorEditMs_ = 0;
     /// 가드에 걸려 버려진 에디터->프리뷰 동기화를 가드 해제 후 되살린다.
     QTimer*                             previewSyncRetry_ = nullptr;
 
