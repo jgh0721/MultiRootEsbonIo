@@ -469,6 +469,7 @@ if(MRST_BUILD_TESTS)
             tests/ui/tst_ScintillaDocumentLoad.cpp
             tests/ui/tst_EditorMetrics.cpp
             tests/ui/tst_PanelActionIcons.cpp
+            tests/ui/tst_PreviewMorph.cpp
 
             src/uis/PanelActionIcons.cpp
             src/uis/PanelActionIcons.hpp
@@ -491,6 +492,12 @@ if(MRST_BUILD_TESTS)
             "${CMAKE_SOURCE_DIR}/src"
             "${CMAKE_SOURCE_DIR}/tests"
             "${CMAKE_SOURCE_DIR}/uniqueLibs"
+    )
+    # tst_PreviewMorph 가 앱과 **같은 파일**을 읽어 주입한다. qrc 사본을 만들면
+    # 그것이 낡아도 테스트는 계속 통과한다. mrst_tests 의 MRST_I18N_TS_DIR 과
+    # 같은 방식이다.
+    target_compile_definitions(mrst_ui_tests PRIVATE
+            MRST_PREVIEW_JS="${CMAKE_SOURCE_DIR}/tools/js/mrr_preview.js"
     )
     # mrst_tests 와 같은 이유로 WebEngine 을 링크한다. stdafx.h 가 Qt 전 모듈을
     # 끌어오므로 실제로 쓰지 않아도 헤더 경로가 필요하다.

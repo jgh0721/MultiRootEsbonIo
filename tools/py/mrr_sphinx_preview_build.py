@@ -649,6 +649,31 @@ def _plan_shadow(app: Sphinx, args, read_costs: dict[str, int],
     return applied, skipped
 
 
+def _disable_mermaid_fullscreen(app: Sphinx) -> bool:
+    """프리뷰에서는 sphinxcontrib-mermaid 의 전체화면 장식을 끈다.
+
+    켜져 있으면(기본값이 True 다) 그쪽 스크립트가 도형마다 `<pre class="mermaid">`
+    를 `<div class="mermaid-container">` 로 **감싸고** 단추를 붙이며 `<body>` 끝에
+    모달을 만든다. 셋 다 우리가 보낸 HTML 에 없는 노드다. 그러면 프리뷰가 본문을
+    갱신할 때 짝지을 상대가 없어 도형을 통째로 갈아 끼우게 되고, 이미 그려 둔
+    SVG 가 매번 버려진다 (mrr_preview.js 의 `rerenderDiagrams` 참고).
+
+    끄면 도형은 그대로 그려지고 `<pre class="mermaid">` 가 제자리에 남는다.
+    잃는 것은 **프리뷰에서** 도형을 눌러 크게 보는 기능뿐이며, 사용자가 실제로
+    내는 문서(`sphinx-build`)에는 영향이 없다.
+
+    `confoverrides` 로 넘기지 않는 이유: 그 값을 모르는 프로젝트에서는 Sphinx 가
+    「unknown config value ... in override, ignoring」 경고를 내고, 그 줄이 빌드마다
+    로그에 쌓인다. 확장이 실제로 실려 설정이 등록된 뒤에만 손대면 조용하다.
+    `install_js` 가 `html-page-context` 에서 이 값을 읽으므로 시점도 늦지 않다.
+    """
+    if "mermaid_fullscreen" not in app.config:
+        return False
+
+    app.config.mermaid_fullscreen = False
+    return True
+
+
 def _install_read_cost_meter(app: Sphinx, costs: dict[str, int]) -> None:
     """문서별 읽기(파싱) 소요 시간을 ms 로 잰다.
 
@@ -985,6 +1010,9 @@ def main(argv: list[str] | None = None) -> int:
             status=status_stream,
             warning=warning_stream,
         )
+
+        if _disable_mermaid_fullscreen(app):
+            report["previewDecorationsOff"] = ["mermaid_fullscreen"]
 
         read_costs: dict[str, int] = {
             name: int(value)

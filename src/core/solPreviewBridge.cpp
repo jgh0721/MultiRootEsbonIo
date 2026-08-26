@@ -127,12 +127,13 @@ void PreviewBridge::previewScrolled( const int sourceIndex, const double line, c
     emit previewScrollChanged( sourceIndex, line, viewportRatio, userDriven );
 }
 
-void PreviewBridge::requestHotSwap( const QString& documentHtml, const QString& baseUrl, const int token )
+void PreviewBridge::requestHotSwap( const QString& documentHtml, const QString& baseUrl,
+                                    const bool allowMorph, const int token )
 {
     if( !ready_ )
         return;
 
-    emit hotSwapRequested( documentHtml, baseUrl, token );
+    emit hotSwapRequested( documentHtml, baseUrl, allowMorph, token );
 }
 
 void PreviewBridge::hotSwapResult( const int token, const bool ok, const QString& message )
