@@ -158,6 +158,11 @@ QString MarkdownPreviewController::buildOptionsJson() const
         { QStringLiteral( "allowRemote" ),
           settings.value( QStringLiteral( "preview/allowRemoteContent" ), true ).toBool() },
         { QStringLiteral( "cdnBase" ), QString::fromLatin1( mdassets::kCdnBase ) },
+        // 본문을 갈아 끼울 것인가, 제자리에서 고칠 것인가. .rst 핫스왑과 같은
+        // 설정을 쓴다 — 두 프리뷰가 같은 morph 구현(mrr_preview.js)을 쓰므로
+        // 스위치도 하나여야 한다.
+        { QStringLiteral( "domMorph" ),
+          settings.value( QStringLiteral( "preview/domMorph" ), true ).toBool() },
         { QStringLiteral( "markdownItVersion" ), QString::fromLatin1( mdassets::kMarkdownItVersion ) },
         // 지연 로드 대상. 문서에 해당 문법이 있을 때만 실제로 받는다.
         { QStringLiteral( "katexVersion" ), QString::fromLatin1( mdassets::kKatexVersion ) },

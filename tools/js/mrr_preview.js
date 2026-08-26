@@ -361,8 +361,8 @@
         bridge.scrollFeedbackSuppressed.connect(function (milliseconds) {
             suppressUntil = now() + milliseconds;
         });
-        bridge.hotSwapRequested.connect(function (documentHtml, baseUrl, token) {
-            hotSwap(documentHtml, baseUrl, token);
+        bridge.hotSwapRequested.connect(function (documentHtml, baseUrl, allowMorph, token) {
+            hotSwap(documentHtml, baseUrl, allowMorph, token);
         });
         bridge.markdownSourceChanged.connect(function (text, baseUrl, optionsJson, token) {
             // 이 파일은 markdown 을 모른다. 셸 페이지가 심어 둔 훅에 넘기기만 한다 —
@@ -401,25 +401,331 @@
         bridge.ready(PROTOCOL_VERSION);
     }
 
-    /// 핫스왑으로 들어온 다이어그램을 다시 그린다.
+    // ── DOM morph ────────────────────────────────────────────────────────────
+    //
+    // 새 HTML 로 통째로 갈아 끼우는 대신 **기존 DOM 을 제자리에서 고친다.**
+    //
+    // innerHTML 대입은 문서의 모든 노드를 버리고 다시 만든다. 그러면 브라우저가
+    // 트리 전체의 스타일과 레이아웃을 다시 계산한다 — 본문 2.5MB / 높이 333,000px
+    // 짜리 페이지에서 강제 레이아웃만 122.6ms 였고(실측), 그것이 편집 중에 화면이
+    // 출렁이는 정체다. 같은 문서를 morph 로 고치면 9ms 이고, 줄 번호만 밀린
+    // 경우에는 **0ms** 다 — data-mrr-* 는 어떤 CSS 규칙도 쓰지 않아 값을 바꿔도
+    // 레이아웃이 무효화되지 않는다.
+    //
+    // 노드가 살아남는 것 자체도 이득이다. 코드 블록의 가로 스크롤, <details> 의
+    // 펼침, 프리뷰에서 끌어 둔 선택, <iframe> 임베드가 갱신을 견딘다.
+    //
+    // 결과는 innerHTML 경로와 **같다**. 세 가지 변형(한 글자·줄번호 전체 시프트·
+    // 문단 20% 교체)에서 morph 를 거친 DOM 의 innerHTML 이 innerHTML 경로의 결과와
+    // 문자열 단위로 일치함을 확인했다. 그래서 실패하면 옛 경로로 되돌아가도 된다.
+    //
+    // 이 파일에 두는 이유: Sphinx 가 만든 file:// 페이지와 qrc 의 Markdown 셸,
+    // **두 프리뷰 모두에 주입되는 유일한 파일**이다. mrr_markdown.js 는 셸에만
+    // 있으므로 그쪽은 window.__mrrMorph 로 불러 쓴다.
+
+    /// 짝을 못 찾았을 때 형제를 몇 칸까지 훑을 것인가.
     ///
-    /// 핫스왑은 <body> 만 갈아 끼운다. <head> 에 있는 mermaid 모듈 자체는 살아
-    /// 있지만 그것이 이미 그려 둔 SVG 는 옛 본문과 함께 사라지고, 새로 들어온
-    /// <pre class="mermaid"> 를 그려 주는 쪽은 아무도 없다 (mermaid 는
+    /// 문단 하나를 새로 만들면 그 아래 형제가 한 칸씩 밀린다. 앞보기가 없으면
+    /// 밀린 자리마다 짝이 어긋나 그림·표가 있는 자리에서 노드 교체까지 간다.
+    /// 8은 한 번의 편집이 만드는 블록 증감의 현실적인 상한이다.
+    var MORPH_LOOKAHEAD = 8;
+
+    /// morph 한 판마다 올라가는 번호. touched 목록의 중복 제거에 쓴다.
+    var morphSession = 0;
+
+    /// 32비트 FNV-1a.
+    ///
+    /// data-mrr-keep 지문에만 쓴다. 충돌이 나도 서브트리를 한 번 더 그릴 뿐이라
+    /// 암호학적 강도가 필요 없다.
+    function fingerprint(text) {
+        var hash = 0x811c9dc5;
+        for (var i = 0; i < text.length; i += 1) {
+            hash ^= text.charCodeAt(i);
+            // * 16777619 를 시프트로 편다. 곱셈은 53비트를 넘겨 정밀도를 잃는다.
+            hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7)
+                            + (hash << 8) + (hash << 24))) >>> 0;
+        }
+        return hash.toString(16);
+    }
+
+    /// 순회에서 아예 보이지 않는 노드.
+    ///
+    /// <script> 는 양쪽 모두에서 건너뛴다. 지금의 innerHTML 대입은 스크립트를
+    /// DOM 에 넣기는 하되 **실행하지 않는다**(HTML 명세). morph 가 importNode 로
+    /// 넣으면 실행된다 — 본문 스크립트가 편집할 때마다 다시 도는 것은 원하는 바가
+    /// 아니다. 그래서 새 것을 넣지 않고 옛 것을 지우지도 않는다.
+    function isTransparent(node) {
+        return node.nodeType === 1 && node.nodeName === "SCRIPT";
+    }
+
+    function compatible(a, b) {
+        if (a.nodeType !== b.nodeType) {
+            return false;
+        }
+        if (a.nodeType === 1) {
+            return a.nodeName === b.nodeName;
+        }
+        return true;
+    }
+
+    function touch(session, element) {
+        if (!element || element.nodeType !== 1) {
+            return;
+        }
+        if (element.__mrrTouched === session.mark) {
+            return;
+        }
+        element.__mrrTouched = session.mark;
+        session.touched.push(element);
+    }
+
+    /// 새 요소에 있는 속성만 맞춘다. 값이 같으면 **쓰지 않는다** — 같은 class 를
+    /// 다시 써도 스타일이 무효화된다.
+    function applyAttributes(oldEl, newEl) {
+        var attributes = newEl.attributes;
+        for (var i = 0; i < attributes.length; i += 1) {
+            var attribute = attributes[i];
+            if (oldEl.getAttribute(attribute.name) !== attribute.value) {
+                oldEl.setAttribute(attribute.name, attribute.value);
+            }
+        }
+    }
+
+    function syncAttributes(oldEl, newEl) {
+        applyAttributes(oldEl, newEl);
+        var existing = oldEl.attributes;
+        for (var i = existing.length - 1; i >= 0; i -= 1) {
+            if (!newEl.hasAttribute(existing[i].name)) {
+                oldEl.removeAttribute(existing[i].name);
+            }
+        }
+    }
+
+    function morphNode(oldNode, newNode, session) {
+        if (oldNode.nodeType !== 1) {
+            if (oldNode.nodeValue !== newNode.nodeValue) {
+                oldNode.nodeValue = newNode.nodeValue;
+                session.changed += 1;
+                touch(session, oldNode.parentNode);
+            }
+            return;
+        }
+
+        // 네이티브 깊은 비교가 1차 관문이다. 문서의 대부분은 매 편집에서 그대로
+        // 이므로 이 한 줄이 순회를 바뀐 부분에만 가둔다. JS 순회보다 훨씬 싸고
+        // 할당이 없다.
+        if (oldNode.isEqualNode(newNode)) {
+            return;
+        }
+
+        // 이 서브트리는 렌더된 뒤 **변형되었다**(mermaid 가 SVG 로 바꿨거나 KaTeX 가
+        // 조판했다). 값은 변형 **전** 내용의 지문이다. 들어온 내용이 그때와 같으면
+        // 손대지 않는다 — 그래야 타이핑 중에 도형과 수식이 원문으로 되돌아갔다가
+        // 다시 나타나는 일이 없다.
+        //
+        // 지문이 어긋나면 아래 syncAttributes 가 data-mrr-keep 을 지운다(새 요소에는
+        // 없으므로). 낡은 지문이 남지 않는다.
+        var keep = oldNode.getAttribute("data-mrr-keep");
+        if (keep !== null && keep === fingerprint(newNode.innerHTML)) {
+            // 속성은 맞추되 **지우지는 않는다.** 렌더러가 붙인 data-processed 를
+            // 지우면 다시 그릴 것이 없는데도 다시 그리게 된다.
+            applyAttributes(oldNode, newNode);
+            return;
+        }
+
+        syncAttributes(oldNode, newNode);
+        morphChildren(oldNode, newNode, session);
+    }
+
+    function morphChildren(oldParent, newParent, session) {
+        var oldChild = oldParent.firstChild;
+        var newChild = newParent.firstChild;
+
+        while (newChild) {
+            var nextNew = newChild.nextSibling;
+            if (isTransparent(newChild)) {
+                newChild = nextNew;
+                continue;
+            }
+            while (oldChild && isTransparent(oldChild)) {
+                oldChild = oldChild.nextSibling;
+            }
+
+            if (!oldChild) {
+                oldParent.appendChild(document.importNode(newChild, true));
+                session.changed += 1;
+                touch(session, oldParent);
+                newChild = nextNew;
+                continue;
+            }
+
+            if (compatible(oldChild, newChild)) {
+                var nextOld = oldChild.nextSibling;
+                morphNode(oldChild, newChild, session);
+                oldChild = nextOld;
+                newChild = nextNew;
+                continue;
+            }
+
+            // 옛 노드가 사라진 것인가? 옛 쪽을 앞보기 한다.
+            var probe = oldChild;
+            var steps = 0;
+            var found = null;
+            while (probe && steps < MORPH_LOOKAHEAD) {
+                if (!isTransparent(probe) && compatible(probe, newChild)) {
+                    found = probe;
+                    break;
+                }
+                probe = probe.nextSibling;
+                steps += 1;
+            }
+            if (found) {
+                while (oldChild !== found) {
+                    var dead = oldChild;
+                    oldChild = oldChild.nextSibling;
+                    if (!isTransparent(dead)) {
+                        oldParent.removeChild(dead);
+                        session.changed += 1;
+                        touch(session, oldParent);
+                    }
+                }
+                continue;   // 같은 newChild 로 다시 판정한다
+            }
+
+            // 새 노드가 끼어든 것인가? 새 쪽을 앞보기 한다.
+            probe = newChild;
+            steps = 0;
+            found = null;
+            while (probe && steps < MORPH_LOOKAHEAD) {
+                if (!isTransparent(probe) && compatible(oldChild, probe)) {
+                    found = probe;
+                    break;
+                }
+                probe = probe.nextSibling;
+                steps += 1;
+            }
+            if (found) {
+                var cursor = newChild;
+                while (cursor !== found) {
+                    var nextCursor = cursor.nextSibling;
+                    if (!isTransparent(cursor)) {
+                        oldParent.insertBefore(document.importNode(cursor, true), oldChild);
+                        session.changed += 1;
+                        touch(session, oldParent);
+                    }
+                    cursor = nextCursor;
+                }
+                newChild = found;
+                continue;
+            }
+
+            // 둘 다 아니면 그냥 갈아 끼운다. 앞보기가 빗나가도 결과는 틀리지 않고,
+            // 최악의 경우 지금까지 하던 만큼 다시 쓸 뿐이다.
+            var replacement = document.importNode(newChild, true);
+            var after = oldChild.nextSibling;
+            oldParent.replaceChild(replacement, oldChild);
+            session.changed += 1;
+            touch(session, oldParent);
+            oldChild = after;
+            newChild = nextNew;
+        }
+
+        while (oldChild) {
+            var tail = oldChild.nextSibling;
+            if (!isTransparent(oldChild)) {
+                oldParent.removeChild(oldChild);
+                session.changed += 1;
+                touch(session, oldParent);
+            }
+            oldChild = tail;
+        }
+    }
+
+    /// oldParent 의 자식들을 newParent 의 자식들에 맞춘다.
+    ///
+    /// 돌려주는 것:
+    ///   changed  실제로 고친 횟수. 0 이면 화면이 움직이지 않았다는 뜻이다.
+    ///   touched  자식 목록이나 텍스트가 바뀐 **부모 요소**들. 호출자가 조판·
+    ///            다이어그램 같은 후처리를 그 범위로만 좁히는 데 쓴다.
+    function morph(oldParent, newParent) {
+        morphSession += 1;
+        var session = { changed: 0, touched: [], mark: morphSession };
+        morphChildren(oldParent, newParent, session);
+        return session;
+    }
+
+    /// 이 서브트리는 렌더 뒤 변형되었다고 표시한다. sourceHtml 은 변형 **전**의
+    /// innerHTML 이다. mrr_markdown.js 가 mermaid / KaTeX 뒤에 부른다.
+    function stampKeep(element, sourceHtml) {
+        element.setAttribute("data-mrr-keep", fingerprint(sourceHtml));
+    }
+
+    window.__mrrMorph = morph;
+    window.__mrrStampKeep = stampKeep;
+
+    /// 아직 그리지 않은 다이어그램만 그린다.
+    ///
+    /// 본문을 갱신해도 <head> 의 mermaid 모듈은 살아 있지만, 새로 들어온
+    /// `<pre class="mermaid">` 를 그려 주는 쪽은 아무도 없다 (mermaid 는
     /// startOnLoad=false 로 초기화되고 load 이벤트는 다시 오지 않는다).
-    /// sphinxcontrib-mermaid 가 window 에 남겨 둔 재실행 훅을 직접 부른다.
+    /// sphinxcontrib-mermaid 가 window 에 남겨 둔 재실행 훅을 부른다.
+    ///
+    /// **그 훅은 전부 아니면 전무다.** `runMermaid(true)` 는 문서의 모든
+    /// `.mermaid` 를 `data-original-code` 로 되돌린 뒤 다시 그린다. mermaid 모듈은
+    /// `type="module"` 안에 있어 `window.mermaid` 가 없으므로 우리가 골라서 그릴
+    /// 방법이 없다. 그래서 **이미 그린 것을 그쪽 시야에서 잠깐 숨긴다** — 클래스를
+    /// 떼면 그쪽 querySelectorAll 에 잡히지 않는다.
+    ///
+    /// 숨긴 것을 곧바로 되돌려도 되는 근거: `runMermaid` 는 async 이지만 목록을
+    /// 확정하고 `mermaid.run(...)` 을 부르는 데까지가 **동기 구간**이다. 첫 await
+    /// 에서 제어가 돌아온 시점에는 그릴 대상이 이미 배열로 잡혀 있다. 이 가정이
+    /// 미래의 확장 버전에서 깨지면 결과는 "전부 다시 그린다" 로 되돌아갈 뿐이다.
     function rerenderDiagrams() {
         if (typeof window.runMermaid !== "function") {
             return;
         }
-        try {
-            var pending = window.runMermaid(true);
-            // 다이어그램이 그려지면 문서 높이가 달라진다. 스크롤 동기화가 쓰는
-            // 좌표 캐시는 그 뒤에 버려야 의미가 있다.
-            if (pending && typeof pending.then === "function") {
-                pending.then(invalidateCache, invalidateCache);
+
+        var all = document.querySelectorAll(".mermaid");
+        var undrawn = [];
+        var drawn = [];
+        for (var i = 0; i < all.length; i += 1) {
+            // data-processed 는 mermaid 가, data-mrr-keep 은 우리가 남긴다. 둘 다
+            // 있어야 "그려졌고 morph 가 지켜 줄 것" 이 된다.
+            if (all[i].getAttribute("data-processed") === "true"
+                && all[i].getAttribute("data-mrr-keep") !== null) {
+                drawn.push(all[i]);
             } else {
+                undrawn.push(all[i]);
+            }
+        }
+        if (!undrawn.length) {
+            return;   // 그릴 것이 없다. 산문만 고쳤을 때 여기서 끝난다.
+        }
+
+        try {
+            for (i = 0; i < drawn.length; i += 1) {
+                drawn[i].classList.remove("mermaid");
+            }
+            var pending;
+            try {
+                pending = window.runMermaid(true);
+            } finally {
+                // 예외가 나도 반드시 되돌린다. 클래스를 잃으면 테마 CSS 까지 빠진다.
+                for (i = 0; i < drawn.length; i += 1) {
+                    drawn[i].classList.add("mermaid");
+                }
+            }
+
+            var settle = function () {
+                stampDrawnDiagrams();
+                // 다이어그램이 그려지면 문서 높이가 달라진다. 스크롤 동기화가 쓰는
+                // 좌표 캐시는 그 뒤에 버려야 의미가 있다.
                 invalidateCache();
+            };
+            if (pending && typeof pending.then === "function") {
+                pending.then(settle, settle);
+            } else {
+                settle();
             }
         } catch (error) {
             // 다이어그램을 못 그린 것과 본문 교체가 실패한 것은 다른 문제다.
@@ -427,46 +733,115 @@
         }
     }
 
-    /// 전체 리로드 없이 body 만 교체한다.
+    /// 그려진 다이어그램에 morph 가 알아볼 지문을 남긴다.
+    ///
+    /// 지문의 원본은 sphinxcontrib-mermaid 가 그리기 **전에** 떠 둔
+    /// `data-original-code` 다. 그 값이 곧 HTML 파일에 있던 innerHTML 이므로,
+    /// 다음 갱신에서 들어오는 요소의 innerHTML 과 같은 문자열이 된다.
+    function stampDrawnDiagrams() {
+        var nodes = document.querySelectorAll(".mermaid[data-processed='true']");
+        for (var i = 0; i < nodes.length; i += 1) {
+            var source = nodes[i].getAttribute("data-original-code");
+            if (source === null) {
+                continue;   // 그쪽이 원본을 남기지 않았다면 지켜 줄 근거가 없다
+            }
+            stampKeep(nodes[i], source);
+        }
+    }
+
+    /// 출력 디렉터리가 빌드마다 바뀌므로 상대 경로(_static/, 이미지)가 새
+    /// 디렉터리를 가리키도록 <base> 를 갱신한다.
+    function updatePreviewBase(baseUrl) {
+        if (!baseUrl) {
+            return;
+        }
+        var base = document.querySelector("base[data-mrr-preview-base]");
+        if (!base) {
+            base = document.createElement("base");
+            base.setAttribute("data-mrr-preview-base", "");
+            document.head.insertBefore(base, document.head.firstChild);
+        }
+        if (base.getAttribute("href") !== baseUrl) {
+            base.setAttribute("href", baseUrl);
+        }
+    }
+
+    /// 옛 경로 — 본문을 통째로 갈아 끼운다.
+    ///
+    /// morph 가 던졌을 때의 그물이다. 결과 DOM 은 morph 와 같으므로 여기로
+    /// 떨어져도 화면은 맞다. 다만 레이아웃을 전부 다시 계산하므로 출렁인다.
+    function replaceBody(parsedBody) {
+        // 교체 도중 문서 높이가 줄면 브라우저가 스크롤을 잘라버린다.
+        var previousMinHeight = document.body.style.minHeight;
+        document.body.style.minHeight = document.body.scrollHeight + "px";
+        document.body.innerHTML = parsedBody.innerHTML;
+        document.body.style.minHeight = previousMinHeight;
+    }
+
+    /// 전체 리로드 없이 본문만 갱신한다.
     ///
     /// 재빌드마다 페이지를 새로 로드하면 흰 화면이 한 번 깜빡이고 스크롤이
     /// 튄다. <head> 가 그대로일 때만 C++ 이 이 경로를 고르므로, 이미 적용된
     /// 스타일시트는 그대로 두고 본문만 바꾸면 된다.
-    function hotSwap(documentHtml, baseUrl, token) {
+    ///
+    /// 본문을 **갈아 끼우지 않고 고친다**(morph). 근거는 이 파일의 「DOM morph」
+    /// 절에 있다. allowMorph 는 C++ 이 preview/domMorph 설정을 실어 보낸 것으로,
+    /// 문제가 생긴 사용자가 옛 경로로 되돌릴 수 있게 한다.
+    ///
+    /// 실패는 세 단계로 물러선다: morph → 본문 통째 교체 → (C++ 이) 전체 리로드.
+    function hotSwap(documentHtml, baseUrl, allowMorph, token) {
         try {
             var parsed = new DOMParser().parseFromString(documentHtml, "text/html");
             if (!parsed || !parsed.body) {
                 throw new Error("parse failed");
             }
 
-            // 출력 디렉터리가 빌드마다 바뀌므로 상대 경로(_static/, 이미지)가
-            // 새 디렉터리를 가리키도록 <base> 를 갱신한다.
-            if (baseUrl) {
-                var base = document.querySelector("base[data-mrr-preview-base]");
-                if (!base) {
-                    base = document.createElement("base");
-                    base.setAttribute("data-mrr-preview-base", "");
-                    document.head.insertBefore(base, document.head.firstChild);
-                }
-                base.setAttribute("href", baseUrl);
-            }
+            updatePreviewBase(baseUrl);
+
+            // **morph 보다 먼저** 지문을 남긴다.
+            //
+            // 페이지를 처음 읽었을 때 도형을 그리는 것은 우리가 아니라 그 페이지의
+            // load 처리다(sphinxcontrib-mermaid). 그래서 첫 갱신 시점에는 그려진
+            // 도형에 지문이 없고, 그대로 두면 첫 편집에서만 도형이 통째로 다시
+            // 그려진다. 여기서 한 번 훑어 주면 그 한 번도 없어진다.
+            stampDrawnDiagrams();
 
             var keepX = window.scrollX;
             var keepY = window.scrollY;
 
-            // 교체 도중 문서 높이가 줄면 브라우저가 스크롤을 잘라버린다.
-            var previousMinHeight = document.body.style.minHeight;
-            document.body.style.minHeight = document.body.scrollHeight + "px";
+            var session = null;
+            if (allowMorph) {
+                try {
+                    // <body> 자신의 속성은 건드리지 않는다. 지금까지의 innerHTML
+                    // 대입도 그랬고, 더 중요한 이유가 있다 — sphinxcontrib-mermaid 가
+                    // document.body 의 class/style/data-theme 에 MutationObserver 를
+                    // 걸어 두고, 바뀌면 테마가 바뀐 줄 알고 전 도형을 다시 그린다.
+                    session = morph(document.body, parsed.body);
+                } catch (error) {
+                    session = null;   // 아래에서 옛 경로로 떨어진다
+                }
+            }
+            if (!session) {
+                replaceBody(parsed.body);
+                session = { changed: 1, touched: [] };
+            }
 
-            document.body.innerHTML = parsed.body.innerHTML;
-            invalidateCache();
+            if (session.changed > 0) {
+                invalidateCache();
+                // morph 경로에서는 문서가 한순간도 비지 않아 스크롤이 잘리지
+                // 않는다. 그래도 높이가 실제로 줄어든 경우가 있으므로 어긋났을
+                // 때만 되돌린다 — 늘 부르면 사용자가 방금 굴린 것을 되감는다.
+                if (window.scrollX !== keepX || window.scrollY !== keepY) {
+                    window.scrollTo(keepX, keepY);
+                }
+                suppressUntil = now() + FEEDBACK_GUARD_MS;
+            }
 
-            window.scrollTo(keepX, keepY);
-            document.body.style.minHeight = previousMinHeight;
-
+            // changed 와 무관하게 부른다. 그릴 것이 없으면 곧바로 돌아오고, 있으면
+            // 그리는 것이 맞다 — 앞선 갱신에서 렌더러가 실패해 남은 도형이 다음
+            // 갱신에 그려질 길을 changed 로 막을 이유가 없다.
             rerenderDiagrams();
 
-            suppressUntil = now() + FEEDBACK_GUARD_MS;
             bridge.hotSwapResult(token, true, "");
         } catch (error) {
             // 실패하면 C++ 이 전체 리로드로 되돌린다.
@@ -484,7 +859,15 @@
         documentYForLine: documentYForLine,
         lineForDocumentY: lineForDocumentY,
         anchorTable: anchorTable,
-        ranges: ranges
+        ranges: ranges,
+        // morph 는 눈으로 보기 어렵다. 결과 동등성(같은 DOM 에 도달하는가)과 노드
+        // 보존(같은 객체가 남는가)을 테스트가 직접 확인할 수 있게 연다.
+        morph: morph,
+        stampKeep: stampKeep,
+        fingerprint: fingerprint,
+        // 이미 그린 도형을 렌더러 시야에서 숨기는 처리는 남의 스크립트의 모양에
+        // 기대고 있다. 가짜 runMermaid 를 세워 그 계약을 붙들어 둔다.
+        rerenderDiagrams: rerenderDiagrams
     };
 
     function boot() {

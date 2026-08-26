@@ -33,9 +33,15 @@ public:
     void                                requestRebind();
     /// milliseconds 동안 프리뷰의 스크롤 보고를 무시한다 (피드백 루프 차단).
     void                                suppressScrollFeedback( int milliseconds );
-    /// 전체 리로드 없이 body 만 교체한다 (재빌드 깜빡임 제거).
+    /// 전체 리로드 없이 본문만 갱신한다 (재빌드 깜빡임 제거).
+    ///
+    /// allowMorph 는 `preview/domMorph` 설정이다. 참이면 페이지가 본문을 갈아
+    /// 끼우지 않고 **제자리에서 고친다** — 레이아웃 재계산이 사라져 편집 중
+    /// 화면이 출렁이지 않는다. 거짓이면 예전처럼 통째로 교체한다. 결과 DOM 은
+    /// 어느 쪽이든 같으므로, 새 경로가 말썽을 부리는 사용자가 되돌릴 수 있게
+    /// 남겨 둔 스위치다.
     void                                requestHotSwap( const QString& documentHtml, const QString& baseUrl,
-                                                        int token );
+                                                        bool allowMorph, int token );
     /// Markdown **원문**을 밀어 페이지가 렌더하게 한다.
     ///
     /// requestHotSwap 을 재사용하지 않는다. 그 계약은 "이 HTML 로 body 를 갈아라" 인데
@@ -75,7 +81,7 @@ signals:
     void                                rebindRequested();
     void                                scrollFeedbackSuppressed( int milliseconds );
     void                                hotSwapRequested( const QString& documentHtml, const QString& baseUrl,
-                                                          int token );
+                                                          bool allowMorph, int token );
     void                                markdownSourceChanged( const QString& text, const QString& baseUrl,
                                                                const QString& optionsJson, int token );
 

@@ -1013,7 +1013,11 @@ void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QStrin
                                                  + QLatin1Char( '/' ) ).toString();
     pendingFullLoadPath_ = htmlPath;
     pendingFullLoadUrl_ = url;
-    previewBridge_->requestHotSwap( html, baseUrl, ++hotSwapToken_ );
+    // 본문을 갈아 끼울 것인가, 제자리에서 고칠 것인가. 기본은 고치는 쪽이고
+    // (PreviewBridge::requestHotSwap 주석), 설정은 UI 없이 되돌리는 스위치다.
+    const bool allowMorph =
+        AppSettings().value( QStringLiteral( "preview/domMorph" ), true ).toBool();
+    previewBridge_->requestHotSwap( html, baseUrl, allowMorph, ++hotSwapToken_ );
 }
 
 bool WorkspaceController::previewUrlIsOurs() const

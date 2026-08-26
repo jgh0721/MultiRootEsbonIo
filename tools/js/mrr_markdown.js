@@ -64,6 +64,9 @@
     var mermaidState = "idle";
     var mermaidPromise = null;
     var diagramTimer = 0;
+    /// 조판 대상을 모을 때 중복을 거르는 회차 번호. Set 대신 쓴다 — 요소 수만큼
+    /// 해시를 만들지 않고 property 비교 한 번으로 끝난다.
+    var mathTargetPass = 0;
 
     /// 셸 URL 쿼리에서 코어 로드에 필요한 것만 읽는다.
     ///
@@ -500,17 +503,42 @@
         }
         diagramTimer = window.setTimeout(function () {
             diagramTimer = 0;
-            var blocks = document.querySelectorAll("pre.mermaid");
+            var blocks = pendingDiagrams();
             if (!blocks.length) {
                 return;
             }
+            var sources = snapshotHtml(blocks);
             ensureMermaid().then(function () {
                 if (mermaidState !== "ready") {
                     return null;
                 }
                 return window.mermaid.run({ nodes: blocks });
-            }).then(invalidatePreviewCache, invalidatePreviewCache);
+            }).then(function () {
+                stampRendered(blocks, sources);
+                invalidatePreviewCache();
+            }, invalidatePreviewCache);
         }, DIAGRAM_IDLE_MS);
+    }
+
+    /// 아직 그리지 않은 다이어그램.
+    ///
+    /// 이미 그린 것에는 morph 가 알아보는 지문(data-mrr-keep)이 남아 있고, 원문이
+    /// 그대로면 morph 가 그 서브트리를 건드리지 않으므로 SVG 가 살아 있다. 그러니
+    /// **지문이 없는 것 = 이번에 새로 들어왔거나 원문이 바뀐 것**이다.
+    ///
+    /// 예전에는 렌더마다 문서의 모든 도형을 다시 그렸다. 산문 한 글자를 고쳐도
+    /// 도형이 전부 원문으로 되돌아갔다가 수백 ms 뒤에 다시 나타났다.
+    function pendingDiagrams() {
+        var root = document.getElementById("mrr-md-root");
+        if (!root) {
+            return [];
+        }
+        var found = root.querySelectorAll("pre.mermaid:not([data-mrr-keep])");
+        var out = [];
+        for (var i = 0; i < found.length; i += 1) {
+            out.push(found[i]);
+        }
+        return out;
     }
 
     // ── 파서 ──────────────────────────────────────────────
@@ -600,7 +628,8 @@
         }
 
         var root = rootElement();
-        root.innerHTML = md.render(source, { mrrLineCount: source.split("\n").length });
+        var html = md.render(source, { mrrLineCount: source.split("\n").length });
+        var session = applyHtml(root, html);
 
         // 다이어그램은 유휴 시간에 따로 그린다.
         scheduleDiagrams();
@@ -613,7 +642,132 @@
             if (mathState !== "ready") {
                 return null;
             }
-            return currentMathRenderer().typeset(root);
+            return typesetMath(root, session);
+        });
+    }
+
+    /// 새 HTML 을 본문에 적용한다.
+    ///
+    /// morph 구현은 mrr_preview.js 가 준다. 그 파일만 Sphinx 페이지와 이 셸 양쪽에
+    /// 주입되므로 두 프리뷰가 같은 구현을 쓴다 — 여기에 한 벌 더 두면 갈라진다.
+    /// 훅이 없거나 던지면 예전처럼 통째로 갈아 끼운다. 결과 DOM 은 같다.
+    ///
+    /// 돌려주는 것은 morph 세션이다. touched 가 조판 범위를 정한다.
+    function applyHtml(root, html) {
+        if (renderOptions.domMorph !== false && typeof window.__mrrMorph === "function") {
+            try {
+                // <body> 로 감싼다. 그러지 않으면 맨 앞의 <style> 같은 것이 파서
+                // 규칙에 따라 <head> 로 끌려 올라가 본문에서 사라진다.
+                var parsed = new DOMParser().parseFromString(
+                    "<body>" + html + "</body>", "text/html");
+                if (parsed && parsed.body) {
+                    return window.__mrrMorph(root, parsed.body);
+                }
+            } catch (error) {
+                // 아래 통째 교체로 떨어진다
+            }
+        }
+        root.innerHTML = html;
+        // 통째로 갈았으므로 문서 전체가 후처리 대상이다.
+        return { changed: 1, touched: [root] };
+    }
+
+    /// 이 서브트리는 렌더 뒤 변형되었다고 표시한다.
+    ///
+    /// morph 는 지문이 맞는 서브트리를 건드리지 않으므로, 표시를 남긴 도형과
+    /// 수식은 다음 렌더에서도 그대로 살아 있다. **실제로 변형된 것에만** 남긴다 —
+    /// 바뀌지 않은 것까지 표시하면 morph 가 매 요소마다 지문을 계산하게 되어
+    /// 문서 전체를 직렬화하는 비용이 키 입력마다 붙는다.
+    function stampRendered(nodes, sources) {
+        if (typeof window.__mrrStampKeep !== "function") {
+            return;
+        }
+        for (var i = 0; i < nodes.length; i += 1) {
+            var node = nodes[i];
+            // 조판/작도가 도는 사이에 다음 렌더가 이 노드를 떼어냈을 수 있다.
+            if (!node.isConnected || node.innerHTML === sources[i]) {
+                continue;
+            }
+            window.__mrrStampKeep(node, sources[i]);
+        }
+    }
+
+    function snapshotHtml(nodes) {
+        var out = [];
+        for (var i = 0; i < nodes.length; i += 1) {
+            out.push(nodes[i].innerHTML);
+        }
+        return out;
+    }
+
+    /// 조판이 필요한 **잎 블록**을 morph 가 건드린 범위에서만 모은다.
+    ///
+    /// 잎 블록이란 data-mrr-start-line 을 가지면서 그것을 가진 자손이 없는 요소다.
+    /// 서브트리를 보존하면 그 안의 줄 번호는 갱신되지 않으므로, 다른 블록을 품은
+    /// 요소에는 표시를 남기면 안 된다 — 남기면 스크롤 동기화가 낡은 줄을 읽는다.
+    ///
+    /// 이미 표시가 있는 것은 morph 가 손대지 않았으니 조판도 필요 없다. 그것이
+    /// 타이핑 중에 수식이 원문으로 되돌아가지 않는 이유다.
+    function pendingMathTargets(session) {
+        var out = [];
+        mathTargetPass += 1;
+        var mark = mathTargetPass;
+
+        function add(element) {
+            if (!element || element.nodeType !== 1 || !element.isConnected) {
+                return;
+            }
+            if (!element.hasAttribute("data-mrr-start-line")
+                || element.hasAttribute("data-mrr-keep")) {
+                return;
+            }
+            // 다이어그램 원문은 조판 대상이 아니다. 도형 안의 $ 를 수식으로 읽으면
+            // 작도가 깨진다.
+            if (element.matches("pre.mermaid")) {
+                return;
+            }
+            if (element.querySelector("[data-mrr-start-line]")) {
+                return;   // 잎이 아니다
+            }
+            if (element.__mrrMathSeen === mark) {
+                return;
+            }
+            element.__mrrMathSeen = mark;
+            out.push(element);
+        }
+
+        for (var i = 0; i < session.touched.length; i += 1) {
+            var parent = session.touched[i];
+            if (!parent || parent.nodeType !== 1 || !parent.isConnected) {
+                continue;
+            }
+            add(parent);
+            var inner = parent.querySelectorAll("[data-mrr-start-line]:not([data-mrr-keep])");
+            for (var j = 0; j < inner.length; j += 1) {
+                add(inner[j]);
+            }
+        }
+        return out;
+    }
+
+    /// 수식을 조판한다. **이미 조판된 블록은 건드리지 않는다.**
+    ///
+    /// 블록마다 따로 조판한다. 구분자가 블록 경계를 넘는 경우가 달라지지만,
+    /// markdown 에서 $$ 블록은 빈 줄로 갈리기 전까지 한 문단 안에 들어오므로
+    /// 실제 문서에서는 차이가 없다.
+    function typesetMath(root, session) {
+        var targets = pendingMathTargets(session);
+        if (!targets.length) {
+            return Promise.resolve();
+        }
+        var sources = snapshotHtml(targets);
+        var renderer = currentMathRenderer();
+        var pending = [];
+        for (var i = 0; i < targets.length; i += 1) {
+            pending.push(renderer.typeset(targets[i]));
+        }
+        return Promise.all(pending).then(function () {
+            stampRendered(targets, sources);
         });
     }
 
