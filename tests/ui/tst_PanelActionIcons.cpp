@@ -42,7 +42,7 @@ const QVector< IconEntry >& allIcons()
     static const QVector< IconEntry > entries{
         { "newFile", &panelicons::newFile },     { "newFolder", &panelicons::newFolder },
         { "rename", &panelicons::rename },       { "remove", &panelicons::remove },
-        { "filter", &panelicons::filter },
+        { "filter", &panelicons::filter },       { "showAllFiles", &panelicons::showAllFiles },
     };
     return entries;
 }

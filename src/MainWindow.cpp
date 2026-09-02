@@ -60,6 +60,7 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QProgressBar>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QSet>
 #include <QSignalBlocker>
@@ -72,6 +73,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 
 namespace
@@ -3620,6 +3622,9 @@ void MainWindow::shutdownUi()
     // 직전까지 배경 I/O 가 계속 돈다.
     if( treLeftFolderTreeModel_ != nullptr )
     {
+        // 트리를 훑던 일감을 먼저 버린다. 남겨 두면 모델을 떼어낸 뒤에도 타이머가
+        // 한 번 더 깨어나 죽은 인덱스를 만진다.
+        stopExplorerFilterWalk();
         if( Ui.treLeftSideFolterTree != nullptr )
             Ui.treLeftSideFolterTree->setModel( nullptr );
         // 프록시도 놓아야 한다. 뷰에서만 떼면 프록시가 여전히 원본을 붙들고
@@ -3760,6 +3765,8 @@ void MainWindow::setWorkspace( const QString& Folder )
     //        }
     //    } );
     //}
+    // 지난 워크스페이스를 좇던 일감을 버린다. 그 인덱스들은 이제 트리 밖이다.
+    stopExplorerFilterWalk();
     treLeftFolderTreeModel_->setRootPath( workspaceRoot );
 
     const QModelIndex sourceRoot = treLeftFolderTreeModel_->index( workspaceRoot );
@@ -3777,6 +3784,10 @@ void MainWindow::setWorkspace( const QString& Folder )
 
     for( int column = 1; column < treLeftFolderTreeModel_->columnCount(); ++column )
         Ui.treLeftSideFolterTree->hideColumn( column );
+
+    // 필터를 걸어 둔 채로 워크스페이스를 옮겼으면 새 뿌리에서 다시 훑는다.
+    if( explorerProxy_ != nullptr && explorerProxy_->isFiltering() )
+        beginExplorerFilterWalk();
 
     // 스캔은 컨트롤러가 백그라운드로 수행하고 결과를 로그/시그널로 알려준다.
     if( controller_ )
@@ -3845,15 +3856,75 @@ void MainWindow::setupDiagnosticsTable()
 // ═══════════════════════════════════════════════════════════
 namespace {
 
-/// 필터가 걸린 동안 한 번에 펼칠 폴더 수의 상한.
+/// 필터 한 번에 훑을 디렉터리 수의 상한.
 ///
-/// QFileSystemModel 은 게을러서 펼쳐야 읽는다. 상한이 없으면 사용자가 드라이브
-/// 루트를 워크스페이스로 열었을 때 한 글자에 디스크 전체를 훑는다. 예산이
-/// 떨어지면 거기서 멈추고, 폴더가 뒤늦게 읽히면 다시 한 바퀴 돈다.
-constexpr int kExplorerExpandBudget = 3000;
+/// QFileSystemModel 은 게을러서 읽으라고 해야 읽는다. 상한이 없으면 사용자가
+/// 드라이브 루트를 워크스페이스로 열었을 때 한 글자에 디스크 전체를 훑는다.
+/// 예산이 떨어지면 거기서 멈춘다 — 결과가 모자랄 수는 있어도 앱이 멎지는 않는다.
+///
+/// 폴더 하나는 예산을 둘 쓴다(읽으라고 넣을 때 한 번, 다 읽히고 그 안을 볼 때
+/// 한 번). 그러니 실제로 닿는 폴더 수는 이 값의 절반쯤이다.
+constexpr int kExplorerWalkBudget = 4000;
 
-/// 필터 한 글자마다 트리를 다시 펼치지 않도록.
+/// 한 차례에 쓸 시간. 이만큼 지나면 남은 일감을 두고 이벤트 루프로 돌아간다.
+///
+/// **개수가 아니라 시간으로 끊는다.** 폴더 하나를 펼치는 값은 그 안에 몇 개가
+/// 들었는지, Debug 인지 Release 인지, 디스크가 무엇인지에 따라 열 배씩 다르다.
+/// 개수로 끊으면 그중 한 경우에만 맞고 나머지에서는 너무 길거나(입력이 밀린다)
+/// 너무 짧다(훑기가 하염없다). 12ms 는 60Hz 한 프레임(16.7ms) 안쪽이라, 훑는
+/// 동안에도 화면이 계속 그려진다.
+constexpr int kExplorerWalkSliceMs = 12;
+
+/// 필터 한 글자마다 트리를 다시 훑지 않도록.
 constexpr int kExplorerFilterDebounceMs = 180;
+
+/// 도구 단추 묶음을 접고 펴는 시간.
+constexpr int kExplorerActionsAnimMs = 130;
+
+/// 탐색기가 기본으로 보여 주는 확장자.
+///
+/// setNameFilterDisables(false) 와 함께 쓰므로, 여기 없는 파일은 흐려지는 것이
+/// 아니라 트리에서 아예 빠진다. "모든 파일 표시" 를 켜면 이 목록을 걷어낸다.
+QStringList explorerNameFilters()
+{
+    return { QStringLiteral( "*.rst" ), QStringLiteral( "*.md" ), QStringLiteral( "*.py" ),
+            QStringLiteral( "*.json" ), QStringLiteral( "*.txt" ) };
+}
+
+/// "모든 파일 표시" 가 켜져 있는가. 창을 다시 열어도 그대로여야 한다.
+constexpr auto kExplorerShowAllKey = "explorer/showAllFiles";
+
+/// 위젯 하나의 포커스 진입·이탈만 알려 주는 이벤트 필터.
+///
+/// MainWindow 는 이미 앱 전역 eventFilter 를 걸고 있지만 그쪽은 모든 위젯의
+/// 모든 이벤트가 지나는 길목이다. 입력칸 하나를 보자고 그 길을 넓히지 않는다.
+/// 신호 대신 콜백을 쓰므로 Q_OBJECT 도, moc 도 필요 없다.
+class FocusWatcher final : public QObject
+{
+public:
+    FocusWatcher( QWidget* target, std::function< void( bool ) > onFocusChanged )
+        : QObject( target )
+        , onFocusChanged_( std::move( onFocusChanged ) )
+    {
+        target->installEventFilter( this );
+    }
+
+protected:
+    bool eventFilter( QObject* watched, QEvent* event ) override
+    {
+        if( event != nullptr && onFocusChanged_ )
+        {
+            if( event->type() == QEvent::FocusIn )
+                onFocusChanged_( true );
+            else if( event->type() == QEvent::FocusOut )
+                onFocusChanged_( false );
+        }
+        return QObject::eventFilter( watched, event );
+    }
+
+private:
+    std::function< void( bool ) > onFocusChanged_;
+};
 
 /// 파일 이름으로 쓸 수 있는가.
 ///
@@ -3907,9 +3978,6 @@ void MainWindow::setupExplorerPanel()
 
     treLeftFolderTreeModel_ = new QFileSystemModel( this );
     treLeftFolderTreeModel_->setRootPath( QString{} );
-    treLeftFolderTreeModel_->setNameFilters( { QStringLiteral( "*.rst" ), QStringLiteral( "*.md" ),
-                                              QStringLiteral( "*.py" ), QStringLiteral( "*.json" ),
-                                              QStringLiteral( "*.txt" ) } );
     treLeftFolderTreeModel_->setNameFilterDisables( false );
 
     explorerProxy_ = new mrst::FileTreeFilterProxy( this );
@@ -3940,29 +4008,44 @@ void MainWindow::setupExplorerPanel()
     explorerFilterDebounce_->setSingleShot( true );
     explorerFilterDebounce_->setInterval( kExplorerFilterDebounceMs );
     connect( explorerFilterDebounce_, &QTimer::timeout, this, &MainWindow::refreshExplorerFilter );
+
+    // 트리를 훑는 일감을 조금씩 비운다. 간격 0 은 "지금 밀려 있는 이벤트를 다
+    // 처리한 뒤" 라는 뜻이다 — 그림도 그려지고 키 입력도 들어온다.
+    explorerWalkTimer_ = new QTimer( this );
+    explorerWalkTimer_->setSingleShot( true );
+    explorerWalkTimer_->setInterval( 0 );
+    connect( explorerWalkTimer_, &QTimer::timeout, this, &MainWindow::stepExplorerFilterWalk );
+
     if( Ui.edtExplorerFilter != nullptr )
     {
         connect( Ui.edtExplorerFilter, &QLineEdit::textChanged, this,
                 [ this ] { explorerFilterDebounce_->start(); } );
+        // 포커스가 오면 단추 묶음을 접어 입력칸에 줄 전체를 내준다.
+        new FocusWatcher( Ui.edtExplorerFilter,
+                         [ this ]( const bool focused ) { setExplorerActionsCollapsed( focused ); } );
     }
 
-    // 폴더를 뒤늦게 읽으면 그 안까지 걸러 볼 수 있게 된다. 필터가 걸려 있는
-    // 동안에만 다시 돈다 — 평소에는 워크스페이스를 훑을 이유가 없다.
+    // 폴더를 뒤늦게 읽으면 그 안까지 걸러 볼 수 있게 된다. **그 폴더만** 다시
+    // 본다 — 예전에는 여기서 트리 전체를 처음부터 다시 훑었고, 큰 워크스페이스는
+    // 폴더가 읽힐 때마다 그 일을 되풀이하다 멎었다.
     connect( treLeftFolderTreeModel_, &QFileSystemModel::directoryLoaded, this,
-            [ this ]( const QString& ) {
-                if( explorerProxy_ != nullptr && explorerProxy_->isFiltering() )
-                    explorerFilterDebounce_->start();
+            [ this ]( const QString& path ) {
+                if( explorerProxy_ == nullptr || !explorerProxy_->isFiltering() )
+                    return;
+                queueExplorerDirectory( treLeftFolderTreeModel_->index( path ) );
             } );
 
-    for( QToolButton* button : { Ui.btnExplorerNewFile, Ui.btnExplorerNewFolder,
-                                Ui.btnExplorerRename, Ui.btnExplorerDelete } )
+    for( QToolButton* button : { Ui.btnExplorerShowAll, Ui.btnExplorerNewFile,
+                                Ui.btnExplorerNewFolder, Ui.btnExplorerRename,
+                                Ui.btnExplorerDelete } )
     {
         if( button == nullptr )
             continue;
         button->setToolButtonStyle( Qt::ToolButtonIconOnly );
         button->setIconSize( QSize( 16, 16 ) );
-        // 탭 순서에서 빠진다. 필터칸에서 Tab 을 치면 트리로 가야지 단추 넷을
-        // 지나가야 하는 것이 아니다.
+        // 탭 순서에서 빠진다. 필터칸에서 Tab 을 치면 트리로 가야지 단추 다섯을
+        // 지나가야 하는 것이 아니다. 포커스를 받지 않으므로 단추를 눌러도
+        // 필터칸이 포커스를 잃지 않는다는 뜻이기도 하다.
         button->setFocusPolicy( Qt::NoFocus );
     }
 
@@ -3970,9 +4053,79 @@ void MainWindow::setupExplorerPanel()
     connect( Ui.btnExplorerNewFolder, &QToolButton::clicked, this, &MainWindow::onExplorerNewFolder );
     connect( Ui.btnExplorerRename, &QToolButton::clicked, this, &MainWindow::onExplorerRename );
     connect( Ui.btnExplorerDelete, &QToolButton::clicked, this, &MainWindow::onExplorerDelete );
+    if( Ui.btnExplorerShowAll != nullptr )
+    {
+        connect( Ui.btnExplorerShowAll, &QToolButton::toggled, this,
+                &MainWindow::setExplorerShowAllFiles );
+    }
+
+    // 지난번에 켜 두었으면 그대로 켠 채로 연다. 확장자 필터를 세우는 것도
+    // 여기서 함께 한다 — setExplorerShowAllFiles 가 두 경우를 모두 다룬다.
+    setExplorerShowAllFiles( AppSettings().value( kExplorerShowAllKey, false ).toBool() );
 
     applyExplorerIcons();
     retranslateExplorerPanel();
+}
+
+void MainWindow::setExplorerShowAllFiles( const bool showAll )
+{
+    if( treLeftFolderTreeModel_ == nullptr )
+        return;
+
+    // 이름 필터를 비우면 QFileSystemModel 이 전부 내보낸다. 흐리게 만드는 것이
+    // 아니라 아예 내보내지 않는 설정이므로(setNameFilterDisables(false)) 목록을
+    // 갈아 끼우는 것으로 충분하다.
+    treLeftFolderTreeModel_->setNameFilters( showAll ? QStringList{} : explorerNameFilters() );
+
+    if( Ui.btnExplorerShowAll != nullptr && Ui.btnExplorerShowAll->isChecked() != showAll )
+    {
+        const QSignalBlocker blocker( Ui.btnExplorerShowAll );
+        Ui.btnExplorerShowAll->setChecked( showAll );
+    }
+
+    AppSettings().setValue( kExplorerShowAllKey, showAll );
+
+    // 보이는 파일이 달라졌으니 필터도 다시 판정해야 한다. 켜져 있을 때만 —
+    // 꺼져 있으면 프록시가 전부 통과시키므로 다시 볼 것이 없다.
+    if( explorerProxy_ != nullptr && explorerProxy_->isFiltering() )
+        refreshExplorerFilter();
+}
+
+void MainWindow::setExplorerActionsCollapsed( const bool collapsed )
+{
+    QWidget* actions = Ui.pnlExplorerActions;
+    if( actions == nullptr )
+        return;
+
+    // sizeHint() 는 레이아웃이 계산하므로 maximumWidth 를 0 으로 눌러 둔 동안에도
+    // 제 너비를 돌려준다. 접기 전에 재어 둘 필요가 없다.
+    const int target = collapsed ? 0 : actions->sizeHint().width();
+
+    if( explorerActionsAnimation_ == nullptr )
+    {
+        explorerActionsAnimation_ = new QPropertyAnimation( actions, "maximumWidth", this );
+        explorerActionsAnimation_->setDuration( kExplorerActionsAnimMs );
+        explorerActionsAnimation_->setEasingCurve( QEasingCurve::InOutQuad );
+        connect( explorerActionsAnimation_, &QPropertyAnimation::finished, this, [ this ] {
+            // 다 펴졌으면 상한을 풀어 준다. 재어 둔 값에 묶어 두면 테마나 화면
+            // 배율이 바뀌어 아이콘이 커졌을 때 단추가 잘린다.
+            if( Ui.pnlExplorerActions != nullptr
+                && explorerActionsAnimation_->endValue().toInt() > 0 )
+            {
+                Ui.pnlExplorerActions->setMaximumWidth( QWIDGETSIZE_MAX );
+            }
+        } );
+    }
+    else if( explorerActionsAnimation_->state() == QAbstractAnimation::Running
+             && explorerActionsAnimation_->endValue().toInt() == target )
+    {
+        return;   // 이미 그리로 가는 중이다
+    }
+
+    explorerActionsAnimation_->stop();
+    explorerActionsAnimation_->setStartValue( actions->width() );
+    explorerActionsAnimation_->setEndValue( target );
+    explorerActionsAnimation_->start();
 }
 
 void MainWindow::applyExplorerIcons()
@@ -3986,6 +4139,8 @@ void MainWindow::applyExplorerIcons()
     Ui.btnExplorerNewFolder->setIcon( mrst::panelicons::newFolder( palette ) );
     Ui.btnExplorerRename->setIcon( mrst::panelicons::rename( palette ) );
     Ui.btnExplorerDelete->setIcon( mrst::panelicons::remove( palette ) );
+    if( Ui.btnExplorerShowAll != nullptr )
+        Ui.btnExplorerShowAll->setIcon( mrst::panelicons::showAllFiles( palette ) );
 
     const QIcon magnifier = mrst::panelicons::filter( palette );
     setSearchIcon( Ui.edtExplorerFilter, magnifier );
@@ -4008,6 +4163,8 @@ void MainWindow::retranslateExplorerPanel()
         button->setText( text );
         button->setToolTip( tip );
     };
+    label( Ui.btnExplorerShowAll, tr( "모든 파일 표시" ),
+          tr( "지원하지 않는 확장자까지 트리에 보여 줍니다." ) );
     label( Ui.btnExplorerNewFile, tr( "새 파일" ), tr( "새 파일 만들기" ) );
     label( Ui.btnExplorerNewFolder, tr( "새 폴더" ), tr( "새 폴더 만들기" ) );
     label( Ui.btnExplorerRename, tr( "이름 바꾸기" ), tr( "고른 항목의 이름 바꾸기" ) );
@@ -4059,44 +4216,117 @@ void MainWindow::refreshExplorerFilter()
         explorerExpandedBeforeFilter_ = expandedExplorerPaths();
     }
 
+    // 지난 문구를 좇던 일감을 버린다. 남겨 두면 이제 아무도 찾지 않는 폴더를
+    // 계속 읽는다.
+    stopExplorerFilterWalk();
+
     explorerProxy_->setFilterText( Ui.edtExplorerFilter->text() );
 
     if( explorerProxy_->isFiltering() )
     {
-        expandExplorerForFilter();
+        beginExplorerFilterWalk();
         return;
     }
 
     if( wasFiltering )
     {
+        // 접었다 되돌리는 두 걸음을 한 번에 그린다. 그러지 않으면 트리가 통째로
+        // 접혔다 펴지는 것이 그대로 보인다.
+        tree->setUpdatesEnabled( false );
         tree->collapseAll();
         restoreExplorerExpansion( explorerExpandedBeforeFilter_ );
+        tree->setUpdatesEnabled( true );
         explorerExpandedBeforeFilter_.clear();
     }
 }
 
-void MainWindow::expandExplorerForFilter()
+void MainWindow::beginExplorerFilterWalk()
 {
     QTreeView* tree = Ui.treLeftSideFolterTree;
-    if( tree == nullptr || explorerProxy_ == nullptr )
+    if( tree == nullptr || explorerProxy_ == nullptr || treLeftFolderTreeModel_ == nullptr )
         return;
 
-    int budget = kExplorerExpandBudget;
-    const std::function< void( const QModelIndex& ) > walk = [ & ]( const QModelIndex& parent ) {
-        const int rows = explorerProxy_->rowCount( parent );
-        for( int row = 0; row < rows && budget > 0; ++row )
+    // 워크스페이스가 없으면 훑지 않는다. 그때 트리의 뿌리는 모델의 최상위,
+    // 곧 이 컴퓨터의 드라이브 전부다 — 거기서 시작하면 한 글자에 디스크를 훑는다.
+    const QModelIndex root = tree->rootIndex();
+    if( !root.isValid() )
+        return;
+
+    explorerWalkBudget_ = kExplorerWalkBudget;
+    queueExplorerDirectory( explorerProxy_->mapToSource( root ) );
+}
+
+void MainWindow::queueExplorerDirectory( const QModelIndex& sourceIndex )
+{
+    if( !sourceIndex.isValid() || explorerWalkBudget_ <= 0 || explorerWalkTimer_ == nullptr )
+        return;
+
+    --explorerWalkBudget_;
+    explorerWalkQueue_.append( QPersistentModelIndex( sourceIndex ) );
+    explorerWalkTimer_->start();
+}
+
+void MainWindow::stepExplorerFilterWalk()
+{
+    QTreeView* tree = Ui.treLeftSideFolterTree;
+    if( tree == nullptr || explorerProxy_ == nullptr || treLeftFolderTreeModel_ == nullptr
+        || !explorerProxy_->isFiltering() )
+    {
+        stopExplorerFilterWalk();
+        return;
+    }
+
+    const QModelIndex treeRoot = tree->rootIndex();
+
+    QElapsedTimer slice;
+    slice.start();
+    while( !explorerWalkQueue_.isEmpty() && slice.elapsed() < kExplorerWalkSliceMs )
+    {
+        const QModelIndex source = explorerWalkQueue_.takeFirst();
+        if( !source.isValid() )
+            continue;
+
+        // 아직 안 읽은 폴더는 **읽으라고만** 한다. 뷰를 펼치지 않는 것이 요점이다.
+        //
+        // 읽고 나서야 필터를 통과하는지 알 수 있는데, 먼저 펼쳐 두면 통과하지
+        // 못한 폴더가 펼쳐졌다가 사라지는 것이 그대로 보인다 — "디렉터리가
+        // 펼쳐졌다 접힌다" 는 증상이 그것이었다. 다 읽히면 directoryLoaded 가
+        // 이 폴더를 다시 큐에 넣고, 그때 아래로 내려간다.
+        if( treLeftFolderTreeModel_->canFetchMore( source ) )
         {
-            const QModelIndex index = explorerProxy_->index( row, 0, parent );
-            if( !explorerProxy_->hasChildren( index ) )
-                continue;
-            --budget;
-            // 아직 읽지 않은 폴더면 여기서 읽기가 시작되고, 끝나면
-            // directoryLoaded 가 우리를 다시 부른다.
-            tree->expand( index );
-            walk( index );
+            treLeftFolderTreeModel_->fetchMore( source );
+            continue;
         }
-    };
-    walk( tree->rootIndex() );
+
+        const QModelIndex parent = explorerProxy_->mapFromSource( source );
+        if( !parent.isValid() )
+            continue;   // 그새 필터에 걸러졌다
+
+        if( parent != treeRoot )
+            tree->expand( parent );
+
+        const int rows = explorerProxy_->rowCount( parent );
+        for( int row = 0; row < rows; ++row )
+        {
+            const QModelIndex child = explorerProxy_->index( row, 0, parent );
+            // hasChildren() 은 QFileSystemModel 에서 그대로 isDir() 이다.
+            // 파일은 여기서 걸러진다.
+            if( !explorerProxy_->hasChildren( child ) )
+                continue;
+            queueExplorerDirectory( explorerProxy_->mapToSource( child ) );
+        }
+    }
+
+    if( !explorerWalkQueue_.isEmpty() )
+        explorerWalkTimer_->start();
+}
+
+void MainWindow::stopExplorerFilterWalk()
+{
+    if( explorerWalkTimer_ != nullptr )
+        explorerWalkTimer_->stop();
+    explorerWalkQueue_.clear();
+    explorerWalkBudget_ = 0;
 }
 
 QStringList MainWindow::expandedExplorerPaths() const
@@ -4214,6 +4444,15 @@ void MainWindow::onExplorerContextMenu( const QPoint& pos )
     QAction* remove = menu.addAction( tr( "삭제(&D)…" ) );
     menu.addSeparator();
     QAction* reveal = menu.addAction( tr( "파일 관리자에서 보기(&E)" ) );
+    menu.addSeparator();
+
+    // 도구 줄에도 같은 토글이 있지만, 필터칸이 포커스를 쥐고 있으면 그 단추
+    // 묶음이 접혀 있어 누를 수 없다. 여기에 하나 더 두어 길을 막지 않는다.
+    QAction* showAll = menu.addAction( tr( "모든 파일 표시(&A)" ) );
+    showAll->setCheckable( true );
+    showAll->setChecked( treLeftFolderTreeModel_ != nullptr
+                        && treLeftFolderTreeModel_->nameFilters().isEmpty() );
+    connect( showAll, &QAction::toggled, this, &MainWindow::setExplorerShowAllFiles );
 
     const bool hasTarget = info.exists();
     rename->setEnabled( hasTarget );

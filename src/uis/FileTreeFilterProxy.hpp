@@ -50,6 +50,9 @@ protected:
 
 private:
     [[nodiscard]] bool                  matches( const QModelIndex& sourceIndex ) const;
+    /// 이 인덱스가 뷰의 뿌리이거나 그 조상인가. 그런 행은 걸러 내면 안 된다 —
+    /// 이유는 filterAcceptsRow 안에 적어 두었다.
+    [[nodiscard]] bool                  isRootOrAncestor( const QModelIndex& sourceIndex ) const;
     [[nodiscard]] bool                  isDirectory( const QModelIndex& sourceIndex ) const;
 
     QString                             filterText_;

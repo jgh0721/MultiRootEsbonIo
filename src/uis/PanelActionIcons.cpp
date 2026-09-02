@@ -156,6 +156,22 @@ void drawFilter( QPainter& painter, const QColor& color )
     painter.drawLine( QPointF( 10.3, 10.3 ), QPointF( 14.2, 14.2 ) );
 }
 
+void drawShowAllFiles( QPainter& painter, const QColor& color )
+{
+    painter.setPen( strokePen( color ) );
+
+    // 눈. 조절점을 격자 밖(-0.6 · 16.6)에 두는 것이 요점이다 — 이차 베지에는
+    // 조절점까지 가지 않고 그 절반만 부풀므로, 격자 안에 두면 눈이 납작해져
+    // 16px 에서 그냥 가로줄로 보인다. 이렇게 두면 위아래로 3.7 ~ 12.3 을 차지한다.
+    QPainterPath eye;
+    eye.moveTo( 1.6, 8.0 );
+    eye.quadTo( QPointF( 8.0, -0.6 ), QPointF( 14.4, 8.0 ) );
+    eye.quadTo( QPointF( 8.0, 16.6 ), QPointF( 1.6, 8.0 ) );
+    painter.drawPath( eye );
+
+    painter.drawEllipse( QPointF( 8.0, 8.0 ), 2.3, 2.3 );
+}
+
 /// 색 견본 한 장. `scale` 은 화면 배율이다 (물리 픽셀 = 논리 크기 × scale).
 QPixmap renderSwatch( const QColor& color, const QSize& size, const QPalette& palette, const qreal scale )
 {
@@ -227,6 +243,11 @@ QIcon remove( const QPalette& palette )
 QIcon filter( const QPalette& palette )
 {
     return build( drawFilter, palette );
+}
+
+QIcon showAllFiles( const QPalette& palette )
+{
+    return build( drawShowAllFiles, palette );
 }
 
 QIcon colorSwatch( const QColor& color, const QSize& size, const QPalette& palette )

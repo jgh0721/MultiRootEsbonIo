@@ -25,6 +25,7 @@ class QDragMoveEvent;
 class QEvent;
 class QImage;
 class QMimeData;
+class QPropertyAnimation;
 class QPushButton;
 class QTextView;
 class QTimer;
@@ -291,11 +292,27 @@ private:
     void                                retranslateExplorerPanel();
     /// 필터칸의 내용을 프록시에 넣고 펼침 상태를 맞춘다.
     void                                refreshExplorerFilter();
-    /// 필터가 걸린 동안 트리를 예산 안에서 펼친다.
-    ///
-    /// QFileSystemModel 은 게을러서 펼치기 전에는 자식이 모델에 없다. 펼쳐야
-    /// 읽고, 읽어야 필터가 판정할 수 있다.
-    void                                expandExplorerForFilter();
+
+    // ── 필터가 걸린 동안 트리 훑기 ──
+    //
+    // QFileSystemModel 은 게을러서 읽기 전에는 자식이 모델에 없고, 필터는 모델에
+    // 있는 것만 볼 수 있다. 그래서 필터가 켜지면 트리를 훑어 읽혀야 한다.
+    //
+    // **한 번에 하지 않는다.** 예전에는 한 호출이 트리 전체를 재귀로 돌며
+    // 펼쳤고, 폴더 하나가 뒤늦게 읽힐 때마다 그 일을 처음부터 되풀이했다. 큰
+    // 워크스페이스에서 그것이 UI 를 멈춰 세웠다. 지금은 일감을 큐에 담아
+    // 한 차례에 kExplorerWalkChunk 개씩만 처리하고 이벤트 루프에 자리를 내준다.
+    void                                beginExplorerFilterWalk();
+    void                                stepExplorerFilterWalk();
+    void                                stopExplorerFilterWalk();
+    /// 디렉터리 하나를 일감에 넣는다 (원본 모델 인덱스). 예산이 다하면 무시한다.
+    void                                queueExplorerDirectory( const QModelIndex& sourceIndex );
+
+    /// 확장자 필터를 걷어내거나 되돌린다. 설정에 남는다.
+    void                                setExplorerShowAllFiles( bool showAll );
+    /// 필터칸이 포커스를 받으면 도구 단추 묶음을 접어 입력칸을 넓힌다.
+    void                                setExplorerActionsCollapsed( bool collapsed );
+
     void                                onExplorerContextMenu( const QPoint& pos );
     /// 프록시 인덱스 -> 파일 정보. 유효하지 않으면 빈 QFileInfo.
     [[nodiscard]] QFileInfo             explorerFileInfo( const QModelIndex& proxyIndex ) const;
@@ -340,6 +357,15 @@ private:
     QTimer*                             explorerFilterDebounce_ = nullptr;
     /// 필터를 걸기 **직전**에 펼쳐져 있던 폴더들. 필터를 지우면 이대로 되돌린다.
     QStringList                         explorerExpandedBeforeFilter_;
+    /// 아직 훑지 않은 디렉터리들 (원본 모델 인덱스). 앞에서 꺼내 너비 우선으로
+    /// 돈다 — 얕은 곳이 먼저 보여야 사용자가 결과를 일찍 본다.
+    QList< QPersistentModelIndex >      explorerWalkQueue_;
+    /// explorerWalkQueue_ 를 조금씩 비운다. 간격 0 — 밀린 이벤트 뒤에 깨어난다.
+    QTimer*                             explorerWalkTimer_ = nullptr;
+    /// 이번 필터에서 큐에 더 넣을 수 있는 디렉터리 수. 0 이면 거기서 멈춘다.
+    int                                 explorerWalkBudget_ = 0;
+    /// 도구 단추 묶음을 접고 펴는 애니메이션. 처음 쓸 때 만든다.
+    QPropertyAnimation*                 explorerActionsAnimation_ = nullptr;
 
     QWidget*                            m_centralContainer = nullptr;
     /// .ui 의 centralwidget. setupCentralContainer() 가 떼어내 들고 있다가

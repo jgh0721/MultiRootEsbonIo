@@ -90,6 +90,7 @@ private slots:
     void keepsAncestorsOfMatch();
     void keepsDescendantsOfMatchedDirectory();
     void rootIndexStopsAncestorWalk();
+    void rootRowSurvivesWhenNothingMatches();
     void wildcardMatchesWholeName();
     void wildcardIsNotSubstring();
     void filterIsCaseInsensitive();
@@ -170,6 +171,33 @@ void TestFileTreeFilter::rootIndexStopsAncestorWalk()
     // 뿌리 아래에서 본 결과: "docs" 라는 이름은 뿌리 자신의 것이므로
     // 그 안의 항목에까지 통과권을 주지 않는다.
     const QModelIndex proxyRoot = proxy.mapFromSource( model->indexFromItem( root ) );
+    QCOMPARE( proxy.rowCount( proxyRoot ), 0 );
+}
+
+void TestFileTreeFilter::rootRowSurvivesWhenNothingMatches()
+{
+    // 실측 회귀: 아무것도 걸리지 않는 문구를 치면 워크스페이스 행 자체가
+    // 프록시에서 사라졌다. 그러면 QTreeView 의 rootIndex 가 무효해지고, 뷰는
+    // 무효한 뿌리를 **모델의 최상위**로 읽는다 — 트리에 드라이브 전체가
+    // 나타나고 필터가 그것을 훑기 시작했다.
+    auto* model = new QStandardItemModel;
+    auto* drive = new QStandardItem( QStringLiteral( "D:" ) );
+    auto* root = new QStandardItem( QStringLiteral( "workspace" ) );
+    root->appendRow( new QStandardItem( QStringLiteral( "guide.rst" ) ) );
+    drive->appendRow( root );
+    model->appendRow( drive );
+
+    FileTreeFilterProxy proxy;
+    model->setParent( &proxy );
+    proxy.setSourceModel( model );
+    proxy.setRootSourceIndex( model->indexFromItem( root ) );
+    proxy.setFilterText( QStringLiteral( "zzzz" ) );
+
+    // 뿌리와 그 조상은 남아야 뷰가 뿌리를 잃지 않는다.
+    const QModelIndex proxyRoot = proxy.mapFromSource( model->indexFromItem( root ) );
+    QVERIFY( proxyRoot.isValid() );
+    QVERIFY( proxy.mapFromSource( model->indexFromItem( drive ) ).isValid() );
+    // 그렇다고 통과권을 아래로 물려주지는 않는다. 그 안은 비어야 한다.
     QCOMPARE( proxy.rowCount( proxyRoot ), 0 );
 }
 
