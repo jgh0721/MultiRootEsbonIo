@@ -336,6 +336,14 @@
         <translation type="unfinished">すべてのファイル</translation>
     </message>
     <message>
+        <source>모든 파일 표시</source>
+        <translation type="unfinished">すべてのファイルを表示</translation>
+    </message>
+    <message>
+        <source>모든 파일 표시(&amp;A)</source>
+        <translation type="unfinished">すべてのファイルを表示(&amp;A)</translation>
+    </message>
+    <message>
         <source>무시</source>
         <translation type="unfinished">無視</translation>
     </message>
@@ -704,6 +712,10 @@
 %1</source>
         <translation type="unfinished">対応していないファイル形式です:
 %1</translation>
+    </message>
+    <message>
+        <source>지원하지 않는 확장자까지 트리에 보여 줍니다.</source>
+        <translation type="unfinished">対応していない拡張子のファイルもツリーに表示します。</translation>
     </message>
     <message>
         <source>진단</source>

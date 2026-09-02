@@ -26,6 +26,12 @@ namespace mrst::panelicons {
 [[nodiscard]] QIcon remove( const QPalette& palette );
 /// 필터 입력칸 앞머리에 붙는 돋보기.
 [[nodiscard]] QIcon filter( const QPalette& palette );
+/// 탐색기의 "모든 파일 표시" 토글. 켜면 확장자 필터를 걷어낸다.
+///
+/// 눈이다. 같은 줄의 다른 아이콘(문서·폴더·연필·휴지통·돋보기)과 형태가 겹치지
+/// 않아야 16px 에서 갈리는데, 가로로 누운 아몬드는 그 넷 어느 것과도 닮지 않았다.
+/// 뜻도 곧바로 읽힌다 — 이 단추가 하는 일이 "감춰 둔 것을 보이기" 다.
+[[nodiscard]] QIcon showAllFiles( const QPalette& palette );
 
 /// 설정 → 테마의 색상 칸에 놓는 색 견본.
 ///

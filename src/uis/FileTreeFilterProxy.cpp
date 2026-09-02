@@ -62,6 +62,19 @@ bool FileTreeFilterProxy::matches( const QModelIndex& sourceIndex ) const
                                          : wildcard_.match( name ).hasMatch();
 }
 
+bool FileTreeFilterProxy::isRootOrAncestor( const QModelIndex& sourceIndex ) const
+{
+    if( !rootSourceIndex_.isValid() || !sourceIndex.isValid() )
+        return false;
+
+    for( QModelIndex node = rootSourceIndex_; node.isValid(); node = node.parent() )
+    {
+        if( node == sourceIndex )
+            return true;
+    }
+    return false;
+}
+
 bool FileTreeFilterProxy::isDirectory( const QModelIndex& sourceIndex ) const
 {
     // QFileSystemModel::hasChildren() 은 그대로 isDir() 이다 — 빈 디렉터리에도
@@ -83,6 +96,17 @@ bool FileTreeFilterProxy::filterAcceptsRow( const int sourceRow, const QModelInd
     const QModelIndex index = source->index( sourceRow, 0, sourceParent );
     if( !index.isValid() )
         return false;
+
+    // 뷰의 뿌리와 그 조상은 무슨 일이 있어도 남긴다.
+    //
+    // 아무것도 걸리지 않는 문구("zzzz")를 치면 워크스페이스 행 자체가 조건을
+    // 통과하지 못해 프록시에서 사라진다. 그러면 QTreeView 의 rootIndex 가
+    // 무효해지는데, 그때 뷰는 그것을 **모델의 최상위**로 읽는다 — 트리에 드라이브
+    // 전체가 나타나고, 필터를 위해 트리를 훑는 쪽이 그 순간 디스크를 훑기
+    // 시작한다. "필터를 쳤더니 멎었다" 의 정체가 이것이었다.
+    if( isRootOrAncestor( index ) )
+        return true;
+
     if( matches( index ) )
         return true;
 

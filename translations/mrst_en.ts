@@ -340,6 +340,14 @@
         <translation type="unfinished">All files</translation>
     </message>
     <message>
+        <source>모든 파일 표시</source>
+        <translation type="unfinished">Show all files</translation>
+    </message>
+    <message>
+        <source>모든 파일 표시(&amp;A)</source>
+        <translation type="unfinished">Show &amp;all files</translation>
+    </message>
+    <message>
         <source>무시</source>
         <translation type="unfinished">Ignore</translation>
     </message>
@@ -708,6 +716,10 @@ You will be asked about any unsaved documents first. Continue?</translation>
 %1</source>
         <translation type="unfinished">Unsupported file type:
 %1</translation>
+    </message>
+    <message>
+        <source>지원하지 않는 확장자까지 트리에 보여 줍니다.</source>
+        <translation type="unfinished">Shows files with unsupported extensions in the tree as well.</translation>
     </message>
     <message>
         <source>진단</source>
