@@ -8,12 +8,15 @@
 
 namespace mrst {
 
+/// Windows 드라이브 경로가 원격 매핑이고 현재 세션이 끊겨 있는가.
+/// 로컬 경로, 연결된 원격 드라이브, 상태를 확인할 수 없는 공급자는 false 이다.
+[[nodiscard]] bool isDisconnectedRemoteDrivePath( const QString& path );
+
 /// 탐색기 트리의 필터 · 정렬을 맡는 프록시.
 ///
-/// QFileSystemModel 위에 얹는 것을 전제로 만들었지만 그 클래스에 매이지는
-/// 않는다. 디렉터리 판정은 `hasChildren()` 으로 한다 — QFileSystemModel 에서
-/// 그 함수는 그대로 `isDir()` 이라 빈 디렉터리도 옳게 나오고, 덕분에 규칙 전체를
-/// 파일 시스템 없이 검증할 수 있다.
+/// QFileSystemModel 위에서는 그 모델의 `isDir()` 로 디렉터리를 판정한다.
+/// 다른 모델은 `hasChildren()` 으로 되돌아가므로 규칙 전체를 파일 시스템 없이도
+/// 검증할 수 있다. Windows 의 연결 끊긴 원격 드라이브 루트는 뷰에 내보내지 않는다.
 ///
 /// **QFileSystemModel 은 게으르다.** 아직 펼치지 않은 디렉터리는 자식이
 /// 모델에 들어와 있지 않아 필터가 볼 수 없다. 그래서 필터가 켜져 있는 동안에는
@@ -54,6 +57,9 @@ private:
     /// 이유는 filterAcceptsRow 안에 적어 두었다.
     [[nodiscard]] bool                  isRootOrAncestor( const QModelIndex& sourceIndex ) const;
     [[nodiscard]] bool                  isDirectory( const QModelIndex& sourceIndex ) const;
+    /// Windows 파일 모델의 최상위 드라이브 중, 매핑은 남아 있지만 세션이 끊겼는가.
+    [[nodiscard]] bool                  isDisconnectedRemoteDrive(
+        const QModelIndex& sourceIndex ) const;
 
     QString                             filterText_;
     /// 와일드카드일 때만 채워진다.

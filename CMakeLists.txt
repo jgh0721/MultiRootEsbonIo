@@ -270,8 +270,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC "${CMAKE_BINARY_DIR}")
 
 # wintrust/crypt32 = 내려받은 배포물의 Authenticode 서명 확인,
 # version = 그 실행 파일의 FileVersion 확인 (자동 업데이트 검증 단계).
+# netapi32 = 매핑된 원격 드라이브의 현재 연결 상태 확인.
 target_link_libraries(${PROJECT_NAME} PRIVATE dwmapi user32 windowsapp d3d11 dxgi runtimeobject
-        wintrust crypt32 version)
+        wintrust crypt32 version netapi32)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Core
@@ -441,9 +442,9 @@ if(MRST_BUILD_TESTS)
             Qt6::Core Qt6::Core5Compat Qt6::Gui Qt6::Widgets
             Qt6::WebEngineCore Qt6::WebEngineWidgets Qt6::Test
     )
-    # AuthenticodeVerifier 를 검증 대상에 넣었으므로 같은 Win32 라이브러리가 필요하다.
+    # AuthenticodeVerifier 와 원격 드라이브 상태 도우미를 함께 검증한다.
     if(WIN32)
-        target_link_libraries(mrst_tests PRIVATE wintrust crypt32 version)
+        target_link_libraries(mrst_tests PRIVATE wintrust crypt32 version netapi32)
     endif()
     if(MSVC)
         target_compile_options(mrst_tests PRIVATE /utf-8 /permissive- /Zc:__cplusplus)

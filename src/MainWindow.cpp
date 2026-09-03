@@ -3568,6 +3568,15 @@ void MainWindow::updateRecentFilesMenu()
 
 void MainWindow::openRecentFile( const QString& filePath )
 {
+    if( mrst::isDisconnectedRemoteDrivePath( filePath ) )
+    {
+        // 연결 끊김은 파일 삭제와 다르다. 최근 목록은 남겨 두어 재연결 뒤 다시
+        // 열 수 있게 하고, QFileInfo 로 들어가 Windows 재연결을 기다리지 않는다.
+        showTransientStatus( tr( "원격 드라이브가 연결되어 있지 않습니다: %1" )
+                                 .arg( QDir::toNativeSeparators( filePath ) ), 4000 );
+        return;
+    }
+
     if( !QFileInfo::exists( filePath ) )
     {
         // 지워졌거나 옮겨졌다. 실패를 알리고 목록에서 뺀다 — 그대로 두면 같은
@@ -3583,6 +3592,13 @@ void MainWindow::openRecentFile( const QString& filePath )
 
 void MainWindow::openRecentWorkspace( const QString& folderPath )
 {
+    if( mrst::isDisconnectedRemoteDrivePath( folderPath ) )
+    {
+        showTransientStatus( tr( "원격 드라이브가 연결되어 있지 않습니다: %1" )
+                                 .arg( QDir::toNativeSeparators( folderPath ) ), 4000 );
+        return;
+    }
+
     if( !QFileInfo( folderPath ).isDir() )
     {
         showTransientStatus( tr( "워크스페이스 폴더를 찾을 수 없습니다: %1" )
@@ -3631,7 +3647,8 @@ void MainWindow::shutdownUi()
         // 있어 모델의 수집 스레드가 계속 돈다.
         if( explorerProxy_ != nullptr )
             explorerProxy_->setSourceModel( nullptr );
-        treLeftFolderTreeModel_->setRootPath( QString{} );
+        // 빈 루트로 되돌리면 Windows 의 모든 드라이브 열거를 다시 시작한다.
+        // 모델은 창과 함께 곧 파괴되므로 여기서는 소스 연결만 끊으면 충분하다.
     }
 
     // 프리뷰 정리. 진행 중인 로드를 끊는 것이 핵심이다 — 이 저장소의 Breathe
@@ -3734,6 +3751,13 @@ void MainWindow::shutdownUi()
 
 void MainWindow::setWorkspace( const QString& Folder )
 {
+    if( mrst::isDisconnectedRemoteDrivePath( Folder ) )
+    {
+        showTransientStatus( tr( "원격 드라이브가 연결되어 있지 않습니다: %1" )
+                                 .arg( QDir::toNativeSeparators( Folder ) ), 4000 );
+        return;
+    }
+
     const QString workspaceRoot = QFileInfo( Folder ).absoluteFilePath();
 
     // 워크스페이스를 옮기기 전에 지금 것의 세션을 남긴다.
@@ -3894,6 +3918,24 @@ QStringList explorerNameFilters()
 /// "모든 파일 표시" 가 켜져 있는가. 창을 다시 열어도 그대로여야 한다.
 constexpr auto kExplorerShowAllKey = "explorer/showAllFiles";
 
+/// 컴퓨터 루트의 드라이브 목록은 프록시가 정렬한다. QFileSystemModel 자체의
+/// 정렬기는 각 드라이브의 파일 속성을 동기 조회하므로, 끊긴 원격 매핑 하나만
+/// 있어도 GUI 스레드가 Windows 재연결을 기다리게 된다.
+class ExplorerFileSystemModel final : public QFileSystemModel
+{
+public:
+    using QFileSystemModel::QFileSystemModel;
+
+    void sort( const int column, const Qt::SortOrder order ) override
+    {
+#ifdef Q_OS_WIN
+        if( rootPath().isEmpty() )
+            return;
+#endif
+        QFileSystemModel::sort( column, order );
+    }
+};
+
 /// 위젯 하나의 포커스 진입·이탈만 알려 주는 이벤트 필터.
 ///
 /// MainWindow 는 이미 앱 전역 eventFilter 를 걸고 있지만 그쪽은 모든 위젯의
@@ -3976,7 +4018,7 @@ void MainWindow::setupExplorerPanel()
     if( tree == nullptr )
         return;
 
-    treLeftFolderTreeModel_ = new QFileSystemModel( this );
+    treLeftFolderTreeModel_ = new ExplorerFileSystemModel( this );
     treLeftFolderTreeModel_->setRootPath( QString{} );
     treLeftFolderTreeModel_->setNameFilterDisables( false );
 
@@ -5322,7 +5364,8 @@ void MainWindow::restoreWindowGeometryForLastWorkspace()
         return;
 
     const QString lastRoot = AppSettings().value( QStringLiteral( "workspace/lastRoot" ) ).toString();
-    if( lastRoot.isEmpty() || !QFileInfo( lastRoot ).isDir() )
+    if( lastRoot.isEmpty() || mrst::isDisconnectedRemoteDrivePath( lastRoot )
+        || !QFileInfo( lastRoot ).isDir() )
         return;
 
     // 세션 파일을 여기서 한 번, restoreLastSession() 에서 또 한 번 읽는다. 창
@@ -5361,7 +5404,8 @@ void MainWindow::restoreLastSession()
 {
     const mrst::PhaseSpan restoreSpan( "session.restore" );
     const QString lastRoot = AppSettings().value( QStringLiteral( "workspace/lastRoot" ) ).toString();
-    if( lastRoot.isEmpty() || !QFileInfo( lastRoot ).isDir() )
+    if( lastRoot.isEmpty() || mrst::isDisconnectedRemoteDrivePath( lastRoot )
+        || !QFileInfo( lastRoot ).isDir() )
         return;
 
     setWorkspace( lastRoot );
@@ -5822,6 +5866,9 @@ void MainWindow::openStartupPaths( const QStringList& paths )
     if( paths.isEmpty() )
         return;
 
+    if( mrst::isDisconnectedRemoteDrivePath( paths.first() ) )
+        return;
+
     const QFileInfo first( paths.first() );
     if( !first.exists() )
         return;
@@ -5835,6 +5882,9 @@ void MainWindow::openStartupPaths( const QStringList& paths )
 
     for( const QString& path : paths )
     {
+        if( mrst::isDisconnectedRemoteDrivePath( path ) )
+            continue;
+
         const QFileInfo info( path );
         if( info.exists() && info.isFile() )
             openFile( info.absoluteFilePath() );

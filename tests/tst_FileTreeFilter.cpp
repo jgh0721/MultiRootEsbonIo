@@ -2,6 +2,7 @@
 
 #include "uis/FileTreeFilterProxy.hpp"
 
+#include <QDir>
 #include <QSet>
 #include <QStandardItemModel>
 #include <QStringList>
@@ -95,6 +96,7 @@ private slots:
     void wildcardIsNotSubstring();
     void filterIsCaseInsensitive();
     void sortsNumbersAsNumbers();
+    void localPathIsNotDisconnectedRemoteDrive();
 
     // ── 게으른 모델 (QFileSystemModel) ──
     void lazyModelDoesNotLeakFiles();
@@ -254,6 +256,15 @@ void TestFileTreeFilter::sortsNumbersAsNumbers()
     QCOMPARE( visibleNames( proxy ),
              ( QStringList{ QStringLiteral( "part1.rst" ), QStringLiteral( "part2.rst" ),
                            QStringLiteral( "part10.rst" ) } ) );
+}
+
+void TestFileTreeFilter::localPathIsNotDisconnectedRemoteDrive()
+{
+    // 일반 로컬 경로나 드라이브 문법이 아닌 문자열을 원격 연결 끊김으로
+    // 오인하면 정상 워크스페이스까지 열리지 않는다.
+    QVERIFY( !isDisconnectedRemoteDrivePath( QDir::currentPath() ) );
+    QVERIFY( !isDisconnectedRemoteDrivePath( QStringLiteral( "docs/index.rst" ) ) );
+    QVERIFY( !isDisconnectedRemoteDrivePath( QString{} ) );
 }
 
 // ── 게으른 모델 (QFileSystemModel) ─────────────────────────
