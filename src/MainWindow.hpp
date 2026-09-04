@@ -458,6 +458,9 @@ private:
     /// 행마다 QTableWidgetItem 다섯 개와 QFileInfo 하나를 새로 만들므로,
     /// 한 빌드가 낸 여러 changed() 를 그대로 받으면 그 값을 배로 치른다.
     bool                                diagnosticsTableRefreshPending_ = false;
+    /// Markdown 활성 중에는 진단 표를 숨긴다. reST 탭으로 돌아올 때 저장소의
+    /// 진단을 한 번만 복원하기 위한 상태다.
+    bool                                documentPanelsHiddenForMarkdown_ = false;
     void                                scheduleDiagnosticsTableRefresh();
 
     QTimer*                             stallWatchdog_ = nullptr;

@@ -1866,17 +1866,6 @@ void WorkspaceController::setActiveDocument( QTextView* view )
         resolveProject( *context );
     }
 
-    // `.md` 는 소속과 conf.py 에 따라 프리뷰를 만드는 쪽이 갈린다. 화면만 보고는
-    // 어느 쪽이 돌았는지 알 수 없으므로 판정을 남긴다.
-    if( filekinds::hasExtension( context->path, filekinds::markdownExtensions() ) )
-    {
-        emit logMessage( QStringLiteral( "[md] %1 -> %2" )
-                            .arg( QFileInfo( context->path ).fileName(),
-                                  routeFor( *context ) == PreviewRoute::Sphinx
-                                      ? QStringLiteral( "Sphinx" )
-                                      : QStringLiteral( "MarkdownJs" ) ) );
-    }
-
     // 프로젝트가 바뀌었는지와 문서가 바뀌었는지는 별개다.
     //
     // 예전에는 projectId 가 같으면 곧바로 반환했는데, 한 프로젝트 안에 문서가
@@ -1920,6 +1909,18 @@ void WorkspaceController::setActiveDocument( QTextView* view )
 
     if( !projectChanged && !documentChanged && !previewStale )
         return;   // 같은 문서에 대한 중복 호출
+
+    // `.md` 는 소속과 conf.py 에 따라 프리뷰를 만드는 쪽이 갈린다. 화면만 보고는
+    // 어느 쪽이 돌았는지 알 수 없으므로 판정을 남긴다. 중복 호출 가드 뒤에 두어
+    // 새 탭 추가 과정의 두 번째 setActiveDocument 가 로그를 다시 채우지 않게 한다.
+    if( filekinds::hasExtension( context->path, filekinds::markdownExtensions() ) )
+    {
+        emit logMessage( QStringLiteral( "[md] %1 -> %2" )
+                            .arg( QFileInfo( context->path ).fileName(),
+                                  routeFor( *context ) == PreviewRoute::Sphinx
+                                      ? QStringLiteral( "Sphinx" )
+                                      : QStringLiteral( "MarkdownJs" ) ) );
+    }
 
     requestPreviewBuild( true );
     ensureLspForActiveDocument();

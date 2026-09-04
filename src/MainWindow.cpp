@@ -79,6 +79,14 @@
 
 namespace
 {
+    bool isMarkdownView( const QBaseView* view )
+    {
+        const auto* textView = qobject_cast< const QTextView* >( view );
+        return textView != nullptr
+               && mrst::filekinds::hasExtension( textView->currentFilePath(),
+                                                 mrst::filekinds::markdownExtensions() );
+    }
+
     /// 이 파일이 텍스트 편집기로 열리는가.
     ///
     /// 쓰는 곳은 shouldConfirmBinaryTextOpen() 하나다 — 이진 내용을 텍스트로 열려고
@@ -2470,6 +2478,22 @@ void MainWindow::onTabChanged( int /*index*/ )
 
     if( controller_ )
         controller_->setActiveDocument( textViewOf( currentView() ) );
+
+    // Markdown 에는 reST/Sphinx 진단과 이전 문서의 실행 로그가 해당되지 않는다.
+    // 저장소는 보존해 reST 탭으로 돌아갔을 때 다시 표시하고, 현재 패널만 비운다.
+    if( isMarkdownView( currentView() ) )
+    {
+        documentPanelsHiddenForMarkdown_ = true;
+        if( Ui.tblDiagnostics != nullptr )
+            Ui.tblDiagnostics->setRowCount( 0 );
+        if( Ui.logView != nullptr )
+            Ui.logView->clear();
+    }
+    else if( documentPanelsHiddenForMarkdown_ )
+    {
+        documentPanelsHiddenForMarkdown_ = false;
+        scheduleDiagnosticsTableRefresh();
+    }
 
     updateTitle();
     updateViewerToolBar();
@@ -5493,6 +5517,15 @@ void MainWindow::refreshDiagnosticsTable()
     QTableWidget* table = Ui.tblDiagnostics;
     if( table == nullptr || controller_ == nullptr || controller_->diagnostics() == nullptr )
         return;
+
+    // Markdown 탭을 연 뒤 늦게 도착한 이전 Sphinx 진단이 표를 다시 채우지 않게
+    // 한다. 진단 저장소 자체는 지우지 않아 원래 reST 탭으로 돌아가면 복원된다.
+    if( isMarkdownView( currentView() ) )
+    {
+        const QSignalBlocker blocker( table );
+        table->setRowCount( 0 );
+        return;
+    }
 
     const QVector< mrst::DiagnosticEntry > entries = controller_->diagnostics()->all();
 
