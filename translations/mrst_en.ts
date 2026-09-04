@@ -590,6 +590,10 @@ You will be asked about any unsaved documents first. Continue?</translation>
         <translation type="unfinished">Workspace</translation>
     </message>
     <message>
+        <source>워크스페이스 닫기(&amp;W)</source>
+        <translation type="unfinished">Close &amp;workspace</translation>
+    </message>
+    <message>
         <source>워크스페이스 바꾸기: 파일 %1개 변경</source>
         <translation type="unfinished">Workspace replace: %1 files changed</translation>
     </message>
@@ -604,6 +608,18 @@ You will be asked about any unsaved documents first. Continue?</translation>
     <message>
         <source>워크스페이스 폴더를 찾을 수 없습니다: %1</source>
         <translation type="unfinished">Workspace folder not found: %1</translation>
+    </message>
+    <message>
+        <source>워크스페이스를 닫았습니다.</source>
+        <translation type="unfinished">Workspace closed.</translation>
+    </message>
+    <message>
+        <source>워크스페이스를 닫으면 열린 탭도 닫힙니다.
+변경사항을 저장하시겠습니까?
+%1</source>
+        <translation type="unfinished">Closing the workspace will also close all open tabs.
+Do you want to save your changes?
+%1</translation>
     </message>
     <message>
         <source>워크스페이스와 찾을 내용을 지정하세요.</source>
@@ -696,6 +712,10 @@ Check the Python path specified in the environment settings.</translation>
     <message>
         <source>저장된 패널 배치를 읽을 수 없어 기본 배치로 엽니다.</source>
         <translation type="unfinished">The saved panel layout could not be read; opening with the default layout.</translation>
+    </message>
+    <message>
+        <source>저장이 진행 중입니다. 완료된 뒤 워크스페이스를 다시 닫거나 전환해 주세요.</source>
+        <translation type="unfinished">A save is in progress. When it finishes, close or switch the workspace again.</translation>
     </message>
     <message>
         <source>저장이 진행 중입니다. 저장 완료 후 다시 탭을 닫아 주세요.</source>
@@ -866,6 +886,10 @@ Open it as text anyway?
     <message>
         <source>파일 이름으로 쓸 수 없는 글자가 있습니다.</source>
         <translation type="unfinished">The file name contains characters that cannot be used.</translation>
+    </message>
+    <message>
+        <source>파일 작업이 진행 중입니다. 완료된 뒤 워크스페이스를 다시 닫거나 전환해 주세요.</source>
+        <translation type="unfinished">A file operation is in progress. When it finishes, close or switch the workspace again.</translation>
     </message>
     <message>
         <source>파일(&amp;F)</source>

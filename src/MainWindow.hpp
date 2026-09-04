@@ -77,6 +77,7 @@ public slots:
     void                                onFileNew();
     void                                onFileOpen();
     void                                onWorkspaceOpen();
+    void                                onWorkspaceClose();
     void                                onFileSave();
     void                                onFileSaveAs();
     void                                onCopy();
@@ -235,6 +236,11 @@ private:
     /// 최근 목록에서 고른 항목을 연다. 그 사이 사라졌으면 알리고 목록에서 뺀다.
     void                                openRecentFile( const QString& filePath );
     void                                openRecentWorkspace( const QString& folderPath );
+    /// 워크스페이스 전환/닫기 전에 열린 탭을 정리한다. 수정 문서의 저장을
+    /// 취소했거나 파일 작업이 진행 중이면 false 이며 현재 워크스페이스를 유지한다.
+    bool                                closeWorkspaceTabs();
+    /// 워크스페이스에 종속된 패널 내용을 시작 상태로 되돌린다.
+    void                                resetWorkspaceUi();
     void                                shutdownUi();
 
     /// 로그 한 건에 시각을 찍는다. `[ MM-dd HH:mm:ss.zzz ] ` 를 앞에 두고,
@@ -404,6 +410,7 @@ private:
 
     QLabel*                             m_statusLabel = nullptr;   // 상태 표시줄 정보(오른쪽)
     QMenu*                              m_recentMenu = nullptr;   // 최근 파일 / 워크스페이스 메뉴
+    QAction*                            m_closeWorkspaceAction = nullptr;
     QAction*                            m_saveAction = nullptr;
     QAction*                            m_saveAsAction = nullptr;
     QAction*                            m_captureAction = nullptr;
@@ -490,6 +497,8 @@ private:
     void                                advanceStartupPhase();
     /// QWebEnginePage 를 만들고 컨트롤러에 붙인다. 여기서 Chromium 이 뜬다.
     void                                initialisePreview();
+    /// 문서를 열기 전 프리뷰 시작 화면으로 되돌린다.
+    void                                showPreviewStartPage();
     /// 프리뷰가 0 폭으로 시작하는 것을 막는다. 세션이 정한 배치는 덮지 않는다.
     void                                ensureVisiblePreviewSplit();
     /// hot-exit 스냅샷 복원. 생성자에서 하면 첫 프레임 앞을 막는다.
@@ -559,7 +568,9 @@ private:
     /// 전부 WorkspaceController 가 소유한다. 여기서는 탭 수명주기 이벤트를
     /// 컨트롤러로 전달하기만 한다.
 
-    void                                setWorkspace( const QString& Folder );
+    /// 다른 워크스페이스로 옮길 때 현재 탭/세션을 먼저 정리한다.
+    /// 사용자가 저장 확인을 취소하면 false 이며 전환하지 않는다.
+    bool                                setWorkspace( const QString& Folder );
     void                                refreshProjectList();
     [[nodiscard]] QTextView*            textViewOf( QBaseView* view ) const;
 

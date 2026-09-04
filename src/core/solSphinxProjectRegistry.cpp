@@ -71,6 +71,9 @@ void ProjectRegistry::setWorkspaceRoot( const QString& root )
     workspaceRoot_ = normalized;
     projects_.clear();
     ++generation_;   // 이전 워크스페이스의 스캔 결과가 뒤늦게 도착해도 무시된다.
+    // 이전 루트의 스캔은 계속 끝나지만 세대 검사에서 버려진다. 여기서 표시를
+    // 내려야 새 루트의 rescanAsync() 가 즉시 시작될 수 있다.
+    scanning_.store( false );
 }
 
 QString ProjectRegistry::workspaceRoot() const
@@ -225,12 +228,11 @@ void ProjectRegistry::rescanAsync()
 
 void ProjectRegistry::applyScanResult( std::vector< SphinxProject > scanned, quint64 generation )
 {
-    scanning_.store( false );
-
     // 워크스페이스가 바뀌었거나 더 최신 스캔이 시작된 결과는 버린다.
     if( generation != generation_ )
         return;
 
+    scanning_.store( false );
     projects_ = std::move( scanned );
     saveCache();
     emit scanFinished( static_cast< int >( projects_.size() ) );

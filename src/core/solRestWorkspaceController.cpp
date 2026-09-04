@@ -1523,10 +1523,87 @@ DiagnosticsStore* WorkspaceController::diagnostics() const
 
 void WorkspaceController::setWorkspaceRoot( const QString& root )
 {
+    const QString previousRoot = registry_->workspaceRoot();
     registry_->setWorkspaceRoot( root );
+    const QString currentRoot = registry_->workspaceRoot();
     if( envResolver_ != nullptr )
-        envResolver_->setWorkspaceRoot( registry_->workspaceRoot() );
-    if( registry_->workspaceRoot().isEmpty() )
+        envResolver_->setWorkspaceRoot( currentRoot );
+
+    if( previousRoot == currentRoot )
+        return;
+
+    // 프로젝트 경계가 바뀌면 실행 중인 서비스와 캐시도 함께 끊는다. 탭만 닫고
+    // 이것들을 남기면 이전 워크스페이스의 LSP 진단과 프리뷰 완료 신호가 새
+    // 워크스페이스 화면을 다시 채울 수 있다.
+    if( previewController_ != nullptr )
+        previewController_->cancelImmediately();
+    if( markdownPreview_ != nullptr )
+    {
+        markdownPreview_->cancel();
+        markdownPreview_->notifyShellReloaded();
+    }
+    if( projectBuildTask_ != nullptr )
+        projectBuildTask_->cancel();
+    if( lspPool_ != nullptr )
+    {
+        lspPool_->setPinnedProject( {} );
+        lspPool_->stopAll();
+    }
+    if( virtualProjects_ != nullptr )
+        virtualProjects_->cleanup();
+    if( diagnosticsStore_ != nullptr )
+        diagnosticsStore_->clear();
+
+    mystDeniedProjects_.clear();
+    pendingDiagnosticMarkPaths_.clear();
+    setPreviewSources( {} );
+    previewProcessedSources_.clear();
+    previewRequestedPath_.clear();
+    previewPrimaryPath_.clear();
+    previewDocumentKey_.clear();
+    previewHeadSignature_.clear();
+    previewShownSize_ = -1;
+    previewShownMTimeMs_ = -1;
+    previewUrl_.clear();
+    previewLoadedOk_ = false;
+    previewLoadInFlight_ = false;
+    pendingFullLoadPath_.clear();
+    pendingFullLoadUrl_.clear();
+    ++previewGateGeneration_;
+    ++hotSwapToken_;
+    if( previewSyncRetry_ != nullptr )
+        previewSyncRetry_->stop();
+    setPreviewStatus( {} );
+
+    activeProjectId_.clear();
+    lspState_.clear();
+    projectOutlineProjectId_.clear();
+    ++outlineGeneration_;
+    if( outlineDebounce_ != nullptr )
+        outlineDebounce_->stop();
+    if( completions_ != nullptr )
+        completions_->setActiveProject( {}, {}, currentRoot );
+    if( glossary_ != nullptr )
+        glossary_->setActiveProjectId( {} );
+    if( substitutions_ != nullptr )
+        substitutions_->setActiveProjectId( {} );
+
+    for( DocumentContext& context : documents_ )
+    {
+        context.projectId.clear();
+        context.isVirtual = false;
+        context.syncedToServer = false;
+        context.nudgedInitialBuild = false;
+        if( !context.view.isNull() )
+            context.view->setDiagnosticMarks( {} );
+    }
+
+    emit activeProjectChanged( {}, false );
+    emit projectsChanged( 0 );
+    emit projectOutlineReady( {}, {}, 0 );
+    emit outlineCleared( tr( "열린 문서가 없습니다." ) );
+
+    if( currentRoot.isEmpty() )
         return;
 
     // 캐시가 있으면 즉시 사용 가능한 목록을 얻고, 그와 별개로 항상 재스캔한다.

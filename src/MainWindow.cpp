@@ -686,14 +686,23 @@ void MainWindow::initialisePreview()
 
     const mrst::PhaseSpan span( "preview.init" );
 
-    //: 문서를 열기 전 프리뷰 영역에 보이는 시작 화면. <h1>/<p> 태그는 그대로 둘 것.
-    Ui.webEngineView->setHtml( tr( "<h1>MultiRoot reST</h1><p>셸이 시작되었습니다.</p>" ) );
+    showPreviewStartPage();
 
     // 생성자의 applyCurrentTheme() 는 page() 가 없어 바탕색을 못 칠했다. 지금 칠한다.
     Ui.webEngineView->page()->setBackgroundColor( ThemeManager::instance().backgroundColor() );
 
     if( controller_ )
         controller_->setPreviewView( Ui.webEngineView );
+}
+
+void MainWindow::showPreviewStartPage()
+{
+    if( !previewInitialised_ || Ui.webEngineView == nullptr )
+        return;
+
+    Ui.webEngineView->stop();
+    //: 문서를 열기 전 프리뷰 영역에 보이는 시작 화면. <h1>/<p> 태그는 그대로 둘 것.
+    Ui.webEngineView->setHtml( tr( "<h1>MultiRoot reST</h1><p>셸이 시작되었습니다.</p>" ) );
 }
 
 void MainWindow::restoreHotExitSnapshots()
@@ -768,6 +777,10 @@ void MainWindow::createMenus()
     openWorkspace->setProperty( "mv.shortcutId", QStringLiteral( "file.openWorkspace" ) );
     openWorkspace->setShortcut( QKeySequence::Open );
     openWorkspace->setShortcutContext( Qt::ApplicationShortcut );
+
+    m_closeWorkspaceAction = fileMenu->addAction( QString(), this, &MainWindow::onWorkspaceClose );
+    m_closeWorkspaceAction->setObjectName( QStringLiteral( "file.closeWorkspace" ) );
+    m_closeWorkspaceAction->setEnabled( false );
 
     m_saveAction = fileMenu->addAction( QString(), this, &MainWindow::onFileSave );
     m_saveAction->setObjectName( QStringLiteral( "file.save" ) );
@@ -1086,6 +1099,7 @@ void MainWindow::retranslateMenus()
     actionText( "file.new",           tr( "새 파일(&N)" ) );
     actionText( "file.open",          tr( "열기..." ) );
     actionText( "file.openWorkspace", tr( "워크스페이스 열기(&O)..." ) );
+    actionText( "file.closeWorkspace", tr( "워크스페이스 닫기(&W)" ) );
     actionText( "file.save",          tr( "저장(&S)" ) );
     actionText( "file.saveAs",        tr( "다른 이름으로 저장(&A)..." ) );
     menuTitle ( "menu.recent",        tr( "최근 파일/워크스페이스(&R)" ) );
@@ -2214,12 +2228,115 @@ void MainWindow::onFileOpen()
 
 void MainWindow::onWorkspaceOpen()
 {
-    //if( !confirmSaveAll() )
-    //    return;
     const QString startDir = controller_ ? controller_->workspaceRoot() : QString{};
     const QString folder = QFileDialog::getExistingDirectory( this, tr( "워크스페이스 폴더 열기" ), startDir );
     if( !folder.isEmpty() )
         setWorkspace( folder );
+}
+
+void MainWindow::onWorkspaceClose()
+{
+    if( workspaceRoot_.isEmpty() )
+        return;
+
+    if( setWorkspace( {} ) )
+        showTransientStatus( tr( "워크스페이스를 닫았습니다." ), 2500 );
+}
+
+bool MainWindow::closeWorkspaceTabs()
+{
+    if( m_tabWidget == nullptr )
+        return true;
+
+    QVector< QBaseView* > views;
+    QVector< QWidget* >   otherWidgets;
+    QVector< QTextView* > discardedTextViews;
+    views.reserve( m_tabWidget->count() );
+    otherWidgets.reserve( m_tabWidget->count() );
+
+    for( int index = 0; index < m_tabWidget->count(); ++index )
+    {
+        QWidget* widget = m_tabWidget->widget( index );
+        auto*    view = qobject_cast< QBaseView* >( widget );
+        if( view == nullptr )
+        {
+            otherWidgets.push_back( widget );
+            continue;
+        }
+
+        // 읽기뿐 아니라 저장도 같은 loading 상태를 쓴다. 저장 중인 뷰를 파일
+        // 열기 취소처럼 teardown 하면 백그라운드 쓰기의 완료 통지를 잃으므로,
+        // 작업이 끝난 뒤 사용자가 다시 전환하도록 둔다.
+        if( view->isLoading() )
+        {
+            showTransientStatus(
+                tr( "파일 작업이 진행 중입니다. 완료된 뒤 워크스페이스를 다시 닫거나 전환해 주세요." ),
+                3500 );
+            return false;
+        }
+
+        if( view->isModified() )
+        {
+            const QString label = view->currentFilePath().isEmpty()
+                                      ? view->title()
+                                      : QDir::toNativeSeparators( view->currentFilePath() );
+            const auto answer = QMessageBox::question(
+                this, tr( "저장 확인" ),
+                tr( "워크스페이스를 닫으면 열린 탭도 닫힙니다.\n"
+                    "변경사항을 저장하시겠습니까?\n%1" ).arg( label ),
+                QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel );
+            if( answer == QMessageBox::Cancel )
+                return false;
+
+            if( answer == QMessageBox::Yes )
+            {
+                if( !saveView( view, false ) )
+                    return false;
+                if( view->isLoading() )
+                {
+                    showTransientStatus(
+                        tr( "저장이 진행 중입니다. 완료된 뒤 워크스페이스를 다시 닫거나 전환해 주세요." ),
+                        3500 );
+                    return false;
+                }
+            }
+            else if( auto* textView = textViewOf( view ) )
+            {
+                // 모든 확인이 끝나기 전에는 백업을 지우지 않는다. 뒤쪽 문서에서
+                // 취소한 경우 현재 워크스페이스가 그대로 남기 때문이다.
+                discardedTextViews.push_back( textView );
+            }
+        }
+
+        views.push_back( view );
+    }
+
+    for( QTextView* view : std::as_const( discardedTextViews ) )
+        view->abandonHotExitBackup();
+
+    for( QBaseView* view : std::as_const( views ) )
+        teardownView( view );
+
+    for( QWidget* widget : std::as_const( otherWidgets ) )
+    {
+        if( widget == nullptr )
+            continue;
+        const int index = m_tabWidget->indexOf( widget );
+        if( index >= 0 )
+        {
+            const QSignalBlocker blocker( m_tabWidget );
+            m_tabWidget->removeTab( index );
+        }
+        widget->deleteLater();
+    }
+
+    if( controller_ != nullptr )
+        controller_->setActiveDocument( nullptr );
+    tabMruOrder_.clear();
+    if( !tabSwitcher_.isNull() )
+        tabSwitcher_->hide();
+    refreshCurrentViewUi();
+    return true;
 }
 
 void MainWindow::onFileSave()
@@ -3774,73 +3891,132 @@ void MainWindow::shutdownUi()
 ///////////////////////////////////////////////////////////////////////////
 /// Esbonio / Sphinx
 
-void MainWindow::setWorkspace( const QString& Folder )
+void MainWindow::resetWorkspaceUi()
 {
-    if( mrst::isDisconnectedRemoteDrivePath( Folder ) )
+    stopExplorerFilterWalk();
+    explorerExpandedBeforeFilter_.clear();
+    externalPromptQueue_.clear();
+
+    if( Ui.edtExplorerFilter != nullptr )
+        Ui.edtExplorerFilter->clear();
+    if( explorerFilterDebounce_ != nullptr )
+        explorerFilterDebounce_->stop();
+    if( explorerProxy_ != nullptr )
+        explorerProxy_->setFilterText( {} );
+    if( Ui.treLeftSideFolterTree != nullptr )
+    {
+        Ui.treLeftSideFolterTree->collapseAll();
+        Ui.treLeftSideFolterTree->clearSelection();
+    }
+
+    documentPanelsHiddenForMarkdown_ = false;
+    if( Ui.tblDiagnostics != nullptr )
+        Ui.tblDiagnostics->setRowCount( 0 );
+    if( Ui.logView != nullptr )
+        Ui.logView->clear();
+
+    outlineDocumentSymbols_.clear();
+    outlineProjectDocuments_.clear();
+    outlineProjectTruncated_ = 0;
+    outlineTabAutoSwitched_ = false;
+    if( Ui.edtOutlineDocumentFilter != nullptr )
+        Ui.edtOutlineDocumentFilter->clear();
+    if( Ui.edtOutlineProjectFilter != nullptr )
+        Ui.edtOutlineProjectFilter->clear();
+
+    if( searchQueryEdit_ != nullptr )
+        searchQueryEdit_->clear();
+    if( searchReplaceEdit_ != nullptr )
+        searchReplaceEdit_->clear();
+    if( searchResultTree_ != nullptr )
+        searchResultTree_->clear();
+    pendingReplacePaths_.clear();
+    if( searchApplyButton_ != nullptr )
+        searchApplyButton_->setEnabled( false );
+    if( searchStatusLabel_ != nullptr )
+        searchStatusLabel_->setText( tr( "워크스페이스와 찾을 내용을 지정하세요." ) );
+
+    missingDepPending_.clear();
+    missingDepDismissed_.clear();
+    if( missingDepBar_ != nullptr )
+        missingDepBar_->setVisible( false );
+
+}
+
+bool MainWindow::setWorkspace( const QString& Folder )
+{
+    if( !Folder.isEmpty() && mrst::isDisconnectedRemoteDrivePath( Folder ) )
     {
         showTransientStatus( tr( "원격 드라이브가 연결되어 있지 않습니다: %1" )
                                  .arg( QDir::toNativeSeparators( Folder ) ), 4000 );
-        return;
+        return false;
     }
 
-    const QString workspaceRoot = QFileInfo( Folder ).absoluteFilePath();
+    const QString workspaceRoot = Folder.isEmpty()
+                                      ? QString{}
+                                      : QFileInfo( Folder ).absoluteFilePath();
+    if( workspaceRoot.compare( workspaceRoot_, Qt::CaseInsensitive ) == 0 )
+        return true;
 
-    // 워크스페이스를 옮기기 전에 지금 것의 세션을 남긴다.
-    if( !workspaceRoot_.isEmpty() && workspaceRoot_ != workspaceRoot )
+    // 열린 탭과 배치는 워크스페이스 세션에 속한다. 먼저 세션을 남긴 뒤 탭을
+    // 정리해야 B 워크스페이스에서 A 문서가 계속 프리뷰/LSP 대상이 되지 않는다.
+    if( !workspaceRoot_.isEmpty() )
+    {
         saveWorkspaceSessionNow();
+        if( !closeWorkspaceTabs() )
+            return false;
+    }
+
+    resetWorkspaceUi();
     workspaceRoot_ = workspaceRoot;
-    AppSettings().setValue( QStringLiteral( "workspace/lastRoot" ), workspaceRoot );
+    mrst::SettingsWriter::instance().setValue( QStringLiteral( "workspace/lastRoot" ), workspaceRoot );
+    if( m_closeWorkspaceAction != nullptr )
+        m_closeWorkspaceAction->setEnabled( !workspaceRoot.isEmpty() );
+
     // 세션 복원으로 들어온 경로도 그대로 넣는다. 맨 앞으로 올라올 뿐이고,
     // 그것이 "지난번에 보고 있던 워크스페이스" 라는 사실과도 맞다.
-    addRecentWorkspace( workspaceRoot );
-    //if( workspaceSearch_ != nullptr )
-    //{
-    //    workspaceSearch_->setWorkspaceRoot( workspaceRoot_ );
-    //}
-    //if( treLeftFolderTreeModel_ == nullptr )
-    //{
-    //    treLeftFolderTreeModel_ = new QFileSystemModel( treeView_ );
-    //    treLeftFolderTreeModel_->setReadOnly( false );
-    //    treeView_->setModel( treLeftFolderTreeModel_ );
-    //    connect( treeView_, &QTreeView::doubleClicked, this, [this]( const QModelIndex& index ) {
-    //        if( treLeftFolderTreeModel_ == nullptr )
-    //        {
-    //            return;
-    //        }
-    //        const QString path = treLeftFolderTreeModel_->filePath( index );
-    //        if( QFileInfo( path ).isFile() )
-    //        {
-    //            loadFile( path );
-    //        }
-    //    } );
-    //}
+    if( !workspaceRoot.isEmpty() )
+        addRecentWorkspace( workspaceRoot );
+
     // 지난 워크스페이스를 좇던 일감을 버린다. 그 인덱스들은 이제 트리 밖이다.
     stopExplorerFilterWalk();
-    treLeftFolderTreeModel_->setRootPath( workspaceRoot );
+    QModelIndex sourceRoot;
+    if( treLeftFolderTreeModel_ != nullptr )
+    {
+        treLeftFolderTreeModel_->setRootPath( workspaceRoot );
+        if( !workspaceRoot.isEmpty() )
+            sourceRoot = treLeftFolderTreeModel_->index( workspaceRoot );
+    }
 
-    const QModelIndex sourceRoot = treLeftFolderTreeModel_->index( workspaceRoot );
     if( explorerProxy_ != nullptr )
     {
         // 프록시가 조상 검사를 멈출 자리다. 이것이 없으면 워크스페이스 폴더
         // 이름이 우연히 필터와 맞는 순간 필터가 통째로 무력해진다.
         explorerProxy_->setRootSourceIndex( sourceRoot );
-        Ui.treLeftSideFolterTree->setRootIndex( explorerProxy_->mapFromSource( sourceRoot ) );
+        if( Ui.treLeftSideFolterTree != nullptr )
+            Ui.treLeftSideFolterTree->setRootIndex( explorerProxy_->mapFromSource( sourceRoot ) );
     }
-    else
+    else if( Ui.treLeftSideFolterTree != nullptr )
     {
         Ui.treLeftSideFolterTree->setRootIndex( sourceRoot );
     }
 
-    for( int column = 1; column < treLeftFolderTreeModel_->columnCount(); ++column )
-        Ui.treLeftSideFolterTree->hideColumn( column );
+    if( treLeftFolderTreeModel_ != nullptr && Ui.treLeftSideFolterTree != nullptr )
+    {
+        for( int column = 1; column < treLeftFolderTreeModel_->columnCount(); ++column )
+            Ui.treLeftSideFolterTree->hideColumn( column );
+    }
 
     // 필터를 걸어 둔 채로 워크스페이스를 옮겼으면 새 뿌리에서 다시 훑는다.
-    if( explorerProxy_ != nullptr && explorerProxy_->isFiltering() )
+    if( !workspaceRoot.isEmpty() && explorerProxy_ != nullptr && explorerProxy_->isFiltering() )
         beginExplorerFilterWalk();
 
     // 스캔은 컨트롤러가 백그라운드로 수행하고 결과를 로그/시그널로 알려준다.
     if( controller_ )
         controller_->setWorkspaceRoot( workspaceRoot );
+    showPreviewStartPage();
+
+    return true;
 }
 
 void MainWindow::refreshProjectList()
@@ -4956,7 +5132,11 @@ void MainWindow::setupOutlineTrees()
     connect( controller_, &mrst::WorkspaceController::outlineCleared, this,
             [this]( const QString& reason ) {
                 outlineDocumentSymbols_.clear();
+                outlineProjectDocuments_.clear();
+                outlineProjectTruncated_ = 0;
                 setOutlinePlaceholder( Ui.treOutlineDocument, reason );
+                setOutlinePlaceholder( Ui.treOutlineProject,
+                                       tr( "활성 Sphinx 프로젝트가 없습니다." ), "noProject" );
             } );
 
     // 어느 탭을 앞에 둘지는 활성 문서의 소속에 달렸다. 이 신호는 소속이 정해진
@@ -6051,7 +6231,8 @@ void MainWindow::openStartupPaths( const QStringList& paths )
         return;
 
     // 파일이 첫 인자면 상위 폴더를 워크스페이스로 삼아야 프로젝트 스캔이 동작한다.
-    setWorkspace( first.isDir() ? first.absoluteFilePath() : first.absolutePath() );
+    if( !setWorkspace( first.isDir() ? first.absoluteFilePath() : first.absolutePath() ) )
+        return;
 
     // 세션 복원과 같은 이유로 활성 문서 반영을 마지막 한 번으로 접는다.
     if( controller_ )

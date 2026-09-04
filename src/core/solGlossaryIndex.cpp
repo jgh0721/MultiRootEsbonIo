@@ -178,7 +178,14 @@ GlossaryIndex::GlossaryIndex( QObject* parent )
 
 void GlossaryIndex::setActiveProjectId( const QString& projectId )
 {
+    if( activeProjectId_ == projectId )
+        return;
+
     activeProjectId_ = projectId;
+    indexedProjectId_.clear();
+    entries_.clear();
+    byLowerTerm_.clear();
+    ++generation_;   // 이전 워크스페이스/프로젝트의 늦은 스캔 결과를 버린다.
 }
 
 void GlossaryIndex::refresh( const QString& projectId, const QString& sourceRoot,

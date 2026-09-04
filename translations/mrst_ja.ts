@@ -586,6 +586,10 @@
         <translation type="unfinished">ワークスペース</translation>
     </message>
     <message>
+        <source>워크스페이스 닫기(&amp;W)</source>
+        <translation type="unfinished">ワークスペースを閉じる(&amp;W)</translation>
+    </message>
+    <message>
         <source>워크스페이스 바꾸기: 파일 %1개 변경</source>
         <translation type="unfinished">ワークスペースの置換: ファイル %1 件を変更</translation>
     </message>
@@ -600,6 +604,18 @@
     <message>
         <source>워크스페이스 폴더를 찾을 수 없습니다: %1</source>
         <translation type="unfinished">ワークスペースフォルダーが見つかりません: %1</translation>
+    </message>
+    <message>
+        <source>워크스페이스를 닫았습니다.</source>
+        <translation type="unfinished">ワークスペースを閉じました。</translation>
+    </message>
+    <message>
+        <source>워크스페이스를 닫으면 열린 탭도 닫힙니다.
+변경사항을 저장하시겠습니까?
+%1</source>
+        <translation type="unfinished">ワークスペースを閉じると、開いているタブも閉じます。
+変更内容を保存しますか？
+%1</translation>
     </message>
     <message>
         <source>워크스페이스와 찾을 내용을 지정하세요.</source>
@@ -692,6 +708,10 @@
     <message>
         <source>저장된 패널 배치를 읽을 수 없어 기본 배치로 엽니다.</source>
         <translation type="unfinished">保存されたパネル配置を読み込めないため、既定の配置で開きます。</translation>
+    </message>
+    <message>
+        <source>저장이 진행 중입니다. 완료된 뒤 워크스페이스를 다시 닫거나 전환해 주세요.</source>
+        <translation type="unfinished">保存中です。完了後、ワークスペースをもう一度閉じるか切り替えてください。</translation>
     </message>
     <message>
         <source>저장이 진행 중입니다. 저장 완료 후 다시 탭을 닫아 주세요.</source>
@@ -860,6 +880,10 @@
     <message>
         <source>파일 이름으로 쓸 수 없는 글자가 있습니다.</source>
         <translation type="unfinished">ファイル名に使えない文字が含まれています。</translation>
+    </message>
+    <message>
+        <source>파일 작업이 진행 중입니다. 완료된 뒤 워크스페이스를 다시 닫거나 전환해 주세요.</source>
+        <translation type="unfinished">ファイル操作を実行中です。完了後、ワークスペースをもう一度閉じるか切り替えてください。</translation>
     </message>
     <message>
         <source>파일(&amp;F)</source>
