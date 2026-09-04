@@ -4,6 +4,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -62,8 +63,21 @@ public:
     /// 사용자가 특정 프로젝트에 인터프리터를 직접 지정한다. 빈 문자열이면 해제.
     void                                setOverride( const SphinxProject& project, const QString& pythonExe );
 
+    /// 파일 검사로 잡지 못한 손상을 실제 Python 실행 결과로 확인했을 때 호출한다.
+    void                                reportRuntimeFailure( const SphinxProject& project,
+                                                              const QString& pythonExe,
+                                                              const QString& reason );
+    /// 복구가 끝난 환경을 다시 탐색할 수 있게 손상 표시와 캐시를 지운다.
+    void                                clearDamage( const QString& projectKey );
+
 signals:
     void                                logMessage( const QString& text );
+    void                                environmentDamaged( const QString& projectKey,
+                                                            const QString& projectId,
+                                                            const QString& environmentPath,
+                                                            const QString& pythonExe,
+                                                            const QString& reason );
+    void                                environmentDamageCleared( const QString& projectKey );
 
 private:
     [[nodiscard]] QString               findProjectVenv( const std::filesystem::path& rootPath,
@@ -72,6 +86,7 @@ private:
     PythonEnvManager*                   manager_ = nullptr;
     QString                             workspaceRoot_;
     QHash< QString, ResolvedPythonEnv > cache_;
+    QSet< QString >                     damagedKeys_;
 };
 
 }  // namespace mrst

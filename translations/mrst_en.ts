@@ -210,6 +210,18 @@
         <translation type="unfinished">None</translation>
     </message>
     <message>
+        <source>Python 환경 복구</source>
+        <translation type="unfinished">Repair Python Environment</translation>
+    </message>
+    <message>
+        <source>Python 환경 복구 실패</source>
+        <translation type="unfinished">Python Environment Repair Failed</translation>
+    </message>
+    <message>
+        <source>Python 환경 상태</source>
+        <translation type="unfinished">Python environment status</translation>
+    </message>
+    <message>
         <source>Ready</source>
         <translation type="unfinished">Ready</translation>
     </message>
@@ -245,6 +257,10 @@
     <message>
         <source>공백 %1</source>
         <translation type="unfinished">Spaces %1</translation>
+    </message>
+    <message>
+        <source>교체 환경 준비 중</source>
+        <translation type="unfinished">Preparing replacement environment</translation>
     </message>
     <message>
         <source>그대로 두기</source>
@@ -400,6 +416,10 @@
     <message>
         <source>보기(&amp;V)</source>
         <translation type="unfinished">&amp;View</translation>
+    </message>
+    <message>
+        <source>복구 중</source>
+        <translation type="unfinished">Repairing</translation>
     </message>
     <message>
         <source>복사(&amp;C)</source>
@@ -590,6 +610,10 @@ You will be asked about any unsaved documents first. Continue?</translation>
         <translation type="unfinished">Choose a workspace and what to search for.</translation>
     </message>
     <message>
+        <source>원격 드라이브가 연결되어 있지 않습니다: %1</source>
+        <translation type="unfinished">Remote drive is disconnected: %1</translation>
+    </message>
+    <message>
         <source>이 버전 건너뛰기</source>
         <translation type="unfinished">Skip this version</translation>
     </message>
@@ -638,6 +662,20 @@ You will be asked about any unsaved documents first. Continue?</translation>
     <message>
         <source>읽기 전용</source>
         <translation type="unfinished">Read-only</translation>
+    </message>
+    <message>
+        <source>자동 복구할 프로젝트 가상환경을 찾지 못했습니다.
+
+프로젝트: %1
+원인: %2
+
+환경 설정에서 지정한 Python 경로를 확인해 주세요.</source>
+        <translation type="unfinished">No project virtual environment was found for automatic repair.
+
+Project: %1
+Cause: %2
+
+Check the Python path specified in the environment settings.</translation>
     </message>
     <message>
         <source>자동 완성(&amp;M)</source>
@@ -904,6 +942,42 @@ Open it as text anyway?
         <translation type="unfinished">Project</translation>
     </message>
     <message>
+        <source>프로젝트 Python 환경 복구 완료</source>
+        <translation type="unfinished">Project Python environment repair complete</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경을 복구하고 있습니다.</source>
+        <translation type="unfinished">Repairing the project Python environment.</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경이 손상되었습니다.
+
+프로젝트: %1
+환경: %2
+원인: %3
+
+pyproject.toml과 uv.lock을 사용해 같은 위치 옆에 새 환경을 구성하고, 검증을 통과한 경우에만 교체합니다. 기존 손상 환경은 백업으로 남깁니다.
+
+지금 복구할까요?</source>
+        <translation type="unfinished">The project Python environment is damaged.
+
+Project: %1
+Environment: %2
+Cause: %3
+
+A new environment will be created next to the existing one using pyproject.toml and uv.lock, and will replace it only after validation succeeds. The damaged environment will be retained as a backup.
+
+Repair it now?</translation>
+    </message>
+    <message>
+        <source>프로젝트: %1
+환경: %2
+원인: %3</source>
+        <translation type="unfinished">Project: %1
+Environment: %2
+Cause: %3</translation>
+    </message>
+    <message>
         <source>프리뷰 다시 빌드(&amp;R)</source>
         <translation type="unfinished">&amp;Rebuild Preview</translation>
     </message>
@@ -943,6 +1017,14 @@ Open it as text anyway?
         <translation type="unfinished">Environment: %1 (%2%)</translation>
     </message>
     <message>
+        <source>환경: %1개 손상됨 · 클릭하여 복구</source>
+        <translation type="unfinished">Environment: %1 damaged · Click to repair</translation>
+    </message>
+    <message>
+        <source>환경: 손상됨 · 클릭하여 복구</source>
+        <translation type="unfinished">Environment: Damaged · Click to repair</translation>
+    </message>
+    <message>
         <source>활성 Sphinx 프로젝트가 없습니다.</source>
         <translation type="unfinished">No active Sphinx project.</translation>
     </message>
@@ -957,6 +1039,21 @@ Open it as text anyway?
     <message>
         <source>활성 프로젝트에 문서가 없습니다.</source>
         <translation type="unfinished">No documents in the active project.</translation>
+    </message>
+</context>
+<context>
+    <name>PythonEnvironment</name>
+    <message>
+        <source>가상환경 Python 실행 파일을 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">The virtual environment Python executable was not found: %1</translation>
+    </message>
+    <message>
+        <source>가상환경 설정 파일을 읽을 수 없습니다: %1</source>
+        <translation type="unfinished">Could not read the virtual environment configuration file: %1</translation>
+    </message>
+    <message>
+        <source>가상환경의 기반 Python을 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">Could not find the virtual environment&apos;s base Python: %1</translation>
     </message>
 </context>
 <context>
@@ -3181,6 +3278,14 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">Path: %1</translation>
     </message>
     <message>
+        <source>교체 환경 검증 중</source>
+        <translation type="unfinished">Verifying replacement environment</translation>
+    </message>
+    <message>
+        <source>교체 환경 준비 중</source>
+        <translation type="unfinished">Preparing replacement environment</translation>
+    </message>
+    <message>
         <source>구성 실패</source>
         <translation type="unfinished">Setup failed</translation>
     </message>
@@ -3193,12 +3298,28 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">Not configured</translation>
     </message>
     <message>
+        <source>기존 손상 환경을 백업할 수 없어 교체하지 않았습니다: %1</source>
+        <translation type="unfinished">Could not back up the damaged environment, so it was not replaced: %1</translation>
+    </message>
+    <message>
         <source>내장 UV</source>
         <translation type="unfinished">Bundled UV</translation>
     </message>
     <message>
+        <source>다른 Python 환경 작업이 진행 중입니다.</source>
+        <translation type="unfinished">Another Python environment operation is in progress.</translation>
+    </message>
+    <message>
         <source>리소스를 열 수 없습니다: %1</source>
         <translation type="unfinished">The resource could not be opened: %1</translation>
+    </message>
+    <message>
+        <source>복구 중 원래 환경이 변경되어 교체하지 않았습니다.</source>
+        <translation type="unfinished">The original environment changed during repair, so it was not replaced.</translation>
+    </message>
+    <message>
+        <source>복구할 프로젝트 Python 환경 정보가 올바르지 않습니다.</source>
+        <translation type="unfinished">The project Python environment information is invalid.</translation>
     </message>
     <message>
         <source>상태: 구성 시 리소스에서 추출됩니다.</source>
@@ -3207,6 +3328,18 @@ For example: 42 or 42:5</translation>
     <message>
         <source>상태: 지정한 UV 파일을 찾을 수 없습니다.</source>
         <translation type="unfinished">Status: the specified UV file was not found.</translation>
+    </message>
+    <message>
+        <source>새 프로젝트 Python 환경 검증에 실패했습니다.</source>
+        <translation type="unfinished">Failed to validate the new project Python environment.</translation>
+    </message>
+    <message>
+        <source>새 환경 적용과 기존 환경 복원에 실패했습니다. 백업: %1</source>
+        <translation type="unfinished">Failed to apply the new environment and restore the original. Backup: %1</translation>
+    </message>
+    <message>
+        <source>새 환경을 적용하지 못해 기존 환경으로 되돌렸습니다.</source>
+        <translation type="unfinished">Failed to apply the new environment; restored the original environment.</translation>
     </message>
     <message>
         <source>설치 완료</source>
@@ -3219,6 +3352,10 @@ For example: 42 or 42:5</translation>
     <message>
         <source>설치된 Python 환경에서 sphinx/esbonio 를 가져올 수 없습니다.</source>
         <translation type="unfinished">sphinx/esbonio could not be imported from the installed Python environment.</translation>
+    </message>
+    <message>
+        <source>안전하게 복구할 수 있는 프로젝트 가상환경이 아닙니다: %1</source>
+        <translation type="unfinished">This project virtual environment cannot be repaired safely: %1</translation>
     </message>
     <message>
         <source>완료</source>
@@ -3265,6 +3402,38 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">Checking packages</translation>
     </message>
     <message>
+        <source>프로젝트 Python 내려받는 중</source>
+        <translation type="unfinished">Downloading project Python</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경 복구를 시작합니다: %1</source>
+        <translation type="unfinished">Starting project Python environment repair: %1</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경 복구를 취소했습니다.</source>
+        <translation type="unfinished">Project Python environment repair was cancelled.</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경을 복구했습니다. 기존 환경 백업: %1</source>
+        <translation type="unfinished">The project Python environment was repaired. Original environment backup: %1</translation>
+    </message>
+    <message>
+        <source>프로젝트 의존성을 복원할 pyproject.toml을 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">Could not find pyproject.toml to restore project dependencies: %1</translation>
+    </message>
+    <message>
+        <source>프로젝트 패키지 구성 중</source>
+        <translation type="unfinished">Configuring project packages</translation>
+    </message>
+    <message>
+        <source>프로젝트 환경 uv sync 실패 (종료 코드 %1). 원래 환경은 변경하지 않았습니다.</source>
+        <translation type="unfinished">Project environment uv sync failed (exit code %1). The original environment was not changed.</translation>
+    </message>
+    <message>
+        <source>프로젝트 환경 복구 완료</source>
+        <translation type="unfinished">Project environment repair complete</translation>
+    </message>
+    <message>
         <source>확인 실패</source>
         <translation type="unfinished">Check failed</translation>
     </message>
@@ -3285,6 +3454,10 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">Environment setup was cancelled.</translation>
     </message>
     <message>
+        <source>환경 복구에 사용할 uv를 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">Could not find uv for environment repair: %1</translation>
+    </message>
+    <message>
         <source>환경 없음</source>
         <translation type="unfinished">No environment</translation>
     </message>
@@ -3296,12 +3469,32 @@ For example: 42 or 42:5</translation>
         <translation type="unfinished">Python environment [%1]: %2</translation>
     </message>
     <message>
+        <source>Python 환경 손상 [%1]: %2</source>
+        <translation type="unfinished">Python environment damaged [%1]: %2</translation>
+    </message>
+    <message>
         <source>사용자가 지정한 인터프리터</source>
         <translation type="unfinished">Interpreter specified by the user</translation>
     </message>
     <message>
+        <source>지정한 Python 인터프리터를 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">Could not find the specified Python interpreter: %1</translation>
+    </message>
+    <message>
+        <source>지정한 Python 환경이 손상되어 내장 환경을 사용합니다.</source>
+        <translation type="unfinished">The specified Python environment is damaged; using the bundled environment.</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 실행에 실패하여 내장 환경을 사용합니다.</source>
+        <translation type="unfinished">The project Python failed to run; using the bundled environment.</translation>
+    </message>
+    <message>
         <source>프로젝트 가상환경을 찾았습니다: %1</source>
         <translation type="unfinished">Found a project virtual environment: %1</translation>
+    </message>
+    <message>
+        <source>프로젝트 가상환경이 손상되어 내장 환경을 사용합니다.</source>
+        <translation type="unfinished">The project virtual environment is damaged; using the bundled environment.</translation>
     </message>
     <message>
         <source>프로젝트 가상환경이 없어 내장 환경을 사용합니다.</source>
@@ -3313,6 +3506,14 @@ For example: 42 or 42:5</translation>
     <message>
         <source>Python 런타임이 아직 준비되지 않아 프리뷰를 건너뜁니다.</source>
         <translation type="unfinished">The Python runtime is not ready yet, so the preview is skipped.</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경이 손상되어 내장 환경으로 다시 시도합니다.</source>
+        <translation type="unfinished">The project Python environment is damaged; retrying with the bundled environment.</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python을 실행할 수 없습니다 (종료 코드 %1).</source>
+        <translation type="unfinished">Could not run the project Python (exit code %1).</translation>
     </message>
     <message>
         <source>프로젝트 환경에 Sphinx 가 없어 내장 환경으로 다시 시도합니다.</source>
@@ -3721,6 +3922,14 @@ Please download it from the release page.</translation>
     <message>
         <source>파이썬 런타임이 아직 준비되지 않았습니다. 잠시 뒤에 다시 요청하십시오.</source>
         <translation type="unfinished">The Python runtime is not ready yet. Try again in a moment.</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경이 손상되어 내장 환경으로 다시 시도합니다.</source>
+        <translation type="unfinished">The project Python environment is damaged; retrying with the bundled environment.</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python을 실행할 수 없습니다 (종료 코드 %1).</source>
+        <translation type="unfinished">Could not run the project Python (exit code %1).</translation>
     </message>
     <message>
         <source>프로젝트 개요: 문서가 많아 %1개만 표시합니다 (%2개 생략).</source>

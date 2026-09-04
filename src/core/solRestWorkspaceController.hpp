@@ -123,6 +123,9 @@ public:
     [[nodiscard]] QString               activeProjectId() const;
     [[nodiscard]] DiagnosticsStore*     diagnostics() const;
 
+    /// 상태 표시줄에서 사용자가 확인한 손상 프로젝트 환경을 안전하게 복구한다.
+    [[nodiscard]] bool                  repairPythonEnvironment( const QString& projectKey );
+
     /// 활성 문서의 프리뷰를 다시 빌드한다.
     /// immediate=false 면 디바운스(편집 중), true 면 즉시(저장/탭 전환).
     ///
@@ -171,6 +174,18 @@ signals:
     void                                missingDependenciesDetected( const QString& projectId,
                                                                      const QStringList& distributions,
                                                                      const QStringList& themes );
+    void                                pythonEnvironmentDamaged( const QString& projectKey,
+                                                                  const QString& projectId,
+                                                                  const QString& environmentPath,
+                                                                  const QString& reason );
+    void                                pythonEnvironmentDamageCleared( const QString& projectKey );
+    void                                pythonEnvironmentRepairStarted( const QString& projectKey );
+    void                                pythonEnvironmentRepairProgress( const QString& projectKey,
+                                                                         int percent,
+                                                                         const QString& phase );
+    void                                pythonEnvironmentRepairFinished( const QString& projectKey,
+                                                                         bool success,
+                                                                         const QString& message );
     void                                lspStatusChanged( const QString& projectId, const QString& state );
 
     // ── 사용자가 요청한 1회성 빌드 ──
@@ -306,7 +321,16 @@ private:
         QString                         confDir;
         /// 프로젝트 환경에 Sphinx 가 없을 때 물러설 인터프리터.
         QString                         fallbackPython;
+        QString                         pythonExe;
         bool                            usedFallback = false;
+    };
+
+    struct DamagedPythonEnvironment
+    {
+        QString                         projectId;
+        QString                         projectRoot;
+        QString                         environmentPath;
+        QString                         reason;
     };
 
     /// 실제로 프로세스를 띄운다. buildProject() 와 폴백 재시도가 함께 쓴다.
@@ -327,6 +351,7 @@ private:
     ProjectRegistry*                    registry_ = nullptr;
     PythonEnvManager*                   pythonEnv_ = nullptr;
     PythonEnvResolver*                  envResolver_ = nullptr;
+    QHash< QString, DamagedPythonEnvironment > damagedPythonEnvironments_;
     QWebEngineView*                     previewView_ = nullptr;
     SphinxPreviewController*            previewController_ = nullptr;
     /// 내장 Markdown 렌더러. Sphinx 쪽과 나란한 형제다.

@@ -6,6 +6,7 @@
 
 #include <QCryptographicHash>
 #include <QSettings>
+#include <QTimer>
 
 namespace mrst {
 namespace {
@@ -275,6 +276,11 @@ QString PythonEnvManager::lastError() const
     return lastError_;
 }
 
+bool PythonEnvManager::isProjectRepairing() const
+{
+    return !projectRepairKey_.isEmpty();
+}
+
 QDateTime PythonEnvManager::configuredDate() const
 {
     const QFileInfo markerInfo( readyMarker() );
@@ -429,18 +435,28 @@ void PythonEnvManager::refreshState()
 
 void PythonEnvManager::ensureEnvironmentAsync()
 {
-    if( isReady() || isBusy() )
+    if( isBusy() || isProjectRepairing() )
         return;
+
+    if( isReady() )
+    {
+        // ready.marker 와 파일 존재만으로는 기반 Python 손상을 알 수 없다.
+        // 첫 사용 때 실제 import 를 비동기로 확인하고 실패하면 한 번 재구성한다.
+        repairBundledAfterVerifyFailure_ = true;
+        startVerifyTask();
+        return;
+    }
 
     configureEnvironmentAsync( false );
 }
 
 void PythonEnvManager::configureEnvironmentAsync( const bool forceRebuild )
 {
-    if( isBusy() )
+    if( isBusy() || isProjectRepairing() )
         return;
 
     setLastError( {} );
+    repairBundledAfterVerifyFailure_ = false;
     setState( EnvState::Preparing );
     emit progressChanged( -1, tr( "준비 중" ) );
     emit bootstrapLog( tr( "Python/Sphinx/Esbonio 환경 구성을 시작합니다." ) );
@@ -578,11 +594,15 @@ void PythonEnvManager::startVerifyTask()
 
     if( !installedFilesPresent() )
     {
+        const bool repair = repairBundledAfterVerifyFailure_;
+        repairBundledAfterVerifyFailure_ = false;
         const QString message = tr( "설치는 끝났지만 python/sphinx-build/esbonio 를 찾을 수 없습니다." );
         setLastError( message );
         emit bootstrapLog( message );
         emit failed( message );
         setState( EnvState::Failed );
+        if( repair )
+            QTimer::singleShot( 0, this, [this] { configureEnvironmentAsync( true ); } );
         return;
     }
 
@@ -601,10 +621,14 @@ void PythonEnvManager::startVerifyTask()
         emit bootstrapLog( tr( "Sphinx %1" ).arg( line ) );
     } );
     connect( task, &UvTask::failedToStart, this, [this, task]( const QString& message ) {
+        const bool repair = repairBundledAfterVerifyFailure_;
+        repairBundledAfterVerifyFailure_ = false;
         setLastError( message );
         emit failed( message );
         setState( EnvState::Failed );
         task->deleteLater();
+        if( repair )
+            QTimer::singleShot( 0, this, [this] { configureEnvironmentAsync( true ); } );
     } );
     connect( task, &UvTask::finished, this, [this, task]( const int exitCode, const bool crashed ) {
         const bool cancelled = task->wasCancelled();
@@ -612,20 +636,26 @@ void PythonEnvManager::startVerifyTask()
 
         if( cancelled )
         {
+            repairBundledAfterVerifyFailure_ = false;
             setState( EnvState::Cancelled );
             return;
         }
 
         if( crashed || exitCode != 0 )
         {
+            const bool repair = repairBundledAfterVerifyFailure_;
+            repairBundledAfterVerifyFailure_ = false;
             const QString message = tr( "설치된 Python 환경에서 sphinx/esbonio 를 가져올 수 없습니다." );
             setLastError( message );
             emit bootstrapLog( message );
             emit failed( message );
             setState( EnvState::Failed );
+            if( repair )
+                QTimer::singleShot( 0, this, [this] { configureEnvironmentAsync( true ); } );
             return;
         }
 
+        repairBundledAfterVerifyFailure_ = false;
         // 검증까지 통과한 뒤에야 준비 표식을 남긴다.
         ensureHelperScripts();
         writeReadyMarker();
@@ -641,12 +671,16 @@ void PythonEnvManager::cancel()
 {
     if( activeTask_ )
         activeTask_->cancel();
+    if( projectRepairTask_ )
+        projectRepairTask_->cancel();
 }
 
 void PythonEnvManager::cancelImmediately()
 {
     if( activeTask_ )
         activeTask_->killNow();
+    if( projectRepairTask_ )
+        projectRepairTask_->killNow();
 }
 
 void PythonEnvManager::updateProgressFromUvLine( const QString& line )
@@ -665,7 +699,7 @@ void PythonEnvManager::updateProgressFromUvLine( const QString& line )
 void PythonEnvManager::installPackagesAsync( const QStringList& distributions,
                                             const QString& targetPythonExe )
 {
-    if( distributions.isEmpty() )
+    if( distributions.isEmpty() || isProjectRepairing() )
         return;
 
     const QString target = targetPythonExe.isEmpty() ? pythonExe() : targetPythonExe;
@@ -715,6 +749,209 @@ void PythonEnvManager::installPackagesAsync( const QStringList& distributions,
 
     emit bootstrapLog( tr( "패키지 설치: %1" ).arg( distributions.join( QStringLiteral( ", " ) ) ) );
     task->start();
+}
+
+bool PythonEnvManager::repairProjectEnvironmentAsync( const QString& projectKey,
+                                                       const QString& projectRoot,
+                                                       const QString& venvDir )
+{
+    const auto reject = [this, &projectKey]( const QString& message ) {
+        emit bootstrapLog( message );
+        emit projectRepairFinished( projectKey, false, message );
+        return false;
+    };
+
+    if( projectKey.isEmpty() || projectRoot.trimmed().isEmpty() || venvDir.trimmed().isEmpty() )
+        return reject( tr( "복구할 프로젝트 Python 환경 정보가 올바르지 않습니다." ) );
+    if( isBusy() || isProjectRepairing() )
+        return reject( tr( "다른 Python 환경 작업이 진행 중입니다." ) );
+    if( !QFileInfo::exists( uvExecutable() ) )
+        return reject( tr( "환경 복구에 사용할 uv를 찾을 수 없습니다: %1" )
+                           .arg( nativePath( uvExecutable() ) ) );
+
+    const QString root = QDir::cleanPath( QFileInfo( projectRoot ).absoluteFilePath() );
+    const QString original = QDir::cleanPath( QFileInfo( venvDir ).absoluteFilePath() );
+    const QFileInfo originalInfo( original );
+    const QString environmentName = originalInfo.fileName();
+    const bool acceptedName = environmentName == QStringLiteral( ".venv" )
+                           || environmentName == QStringLiteral( "venv" )
+                           || environmentName == QStringLiteral( "env" );
+    if( !acceptedName || !originalInfo.isDir()
+        || QDir::cleanPath( originalInfo.absolutePath() ).compare( root, Qt::CaseInsensitive ) != 0
+        || !QFileInfo::exists( QDir( original ).filePath( QStringLiteral( "pyvenv.cfg" ) ) ) )
+    {
+        return reject( tr( "안전하게 복구할 수 있는 프로젝트 가상환경이 아닙니다: %1" )
+                           .arg( nativePath( original ) ) );
+    }
+    if( !QFileInfo::exists( QDir( root ).filePath( QStringLiteral( "pyproject.toml" ) ) ) )
+    {
+        return reject( tr( "프로젝트 의존성을 복원할 pyproject.toml을 찾을 수 없습니다: %1" )
+                           .arg( nativePath( root ) ) );
+    }
+
+    const QString stamp = QDateTime::currentDateTimeUtc().toString( QStringLiteral( "yyyyMMdd-HHmmsszzz" ) );
+    projectRepairKey_ = projectKey;
+    projectRepairRoot_ = root;
+    projectRepairOriginalDir_ = original;
+    projectRepairCandidateDir_ = QDir( root ).filePath(
+        QStringLiteral( "%1.mrst-repair-%2" ).arg( environmentName, stamp ) );
+    projectRepairBackupDir_ = QDir( root ).filePath(
+        QStringLiteral( "%1.mrst-broken-%2" ).arg( environmentName, stamp ) );
+
+    const QFileInfo cfgInfo( QDir( original ).filePath( QStringLiteral( "pyvenv.cfg" ) ) );
+    projectRepairOriginalCfgSize_ = cfgInfo.size();
+    projectRepairOriginalCfgMTimeMs_ = cfgInfo.lastModified().toMSecsSinceEpoch();
+
+    emit bootstrapLog( tr( "프로젝트 Python 환경 복구를 시작합니다: %1" )
+                           .arg( nativePath( original ) ) );
+    emit projectRepairStarted( projectRepairKey_ );
+    emit projectRepairProgress( projectRepairKey_, 0, tr( "교체 환경 준비 중" ) );
+    startProjectRepairSync();
+    return true;
+}
+
+void PythonEnvManager::startProjectRepairSync()
+{
+    UvTask::Request request;
+    request.program = uvExecutable();
+    request.arguments = { QStringLiteral( "sync" ) };
+    if( QFileInfo::exists( QDir( projectRepairRoot_ ).filePath( QStringLiteral( "uv.lock" ) ) ) )
+        request.arguments << QStringLiteral( "--frozen" );
+    request.workingDirectory = projectRepairRoot_;
+    request.environment = uvEnvironment();
+    request.environment.insert( QStringLiteral( "UV_PROJECT_ENVIRONMENT" ), projectRepairCandidateDir_ );
+    request.tag = QStringLiteral( "uv sync (project repair)" );
+
+    auto* task = new UvTask( std::move( request ), this );
+    projectRepairTask_ = task;
+    connect( task, &UvTask::outputLine, this, [this]( const QString& line ) {
+        emit bootstrapLog( line );
+        int percent = -1;
+        QString phase = tr( "프로젝트 패키지 구성 중" );
+        if( line.startsWith( QStringLiteral( "Downloading cpython" ) ) )
+        {
+            percent = 10;
+            phase = tr( "프로젝트 Python 내려받는 중" );
+        }
+        else if( line.startsWith( QStringLiteral( "Resolved" ) ) )
+            percent = 30;
+        else if( line.startsWith( QStringLiteral( "Prepared" ) ) )
+            percent = 70;
+        else if( line.startsWith( QStringLiteral( "Installed" ) ) )
+            percent = 90;
+        emit projectRepairProgress( projectRepairKey_, percent, phase );
+    } );
+    connect( task, &UvTask::failedToStart, this, [this, task]( const QString& message ) {
+        projectRepairTask_ = nullptr;
+        task->deleteLater();
+        finishProjectRepair( false, message );
+    } );
+    connect( task, &UvTask::finished, this, [this, task]( const int exitCode, const bool crashed ) {
+        const bool cancelled = task->wasCancelled();
+        projectRepairTask_ = nullptr;
+        task->deleteLater();
+        if( cancelled )
+        {
+            finishProjectRepair( false, tr( "프로젝트 Python 환경 복구를 취소했습니다." ) );
+            return;
+        }
+        if( crashed || exitCode != 0 )
+        {
+            finishProjectRepair( false,
+                                 tr( "프로젝트 환경 uv sync 실패 (종료 코드 %1). 원래 환경은 변경하지 않았습니다."
+                                     ).arg( exitCode ) );
+            return;
+        }
+        startProjectRepairVerify();
+    } );
+    task->start();
+}
+
+void PythonEnvManager::startProjectRepairVerify()
+{
+    emit projectRepairProgress( projectRepairKey_, 95, tr( "교체 환경 검증 중" ) );
+
+    UvTask::Request request;
+    request.program = scriptExe( projectRepairCandidateDir_, QStringLiteral( "python" ) );
+    request.arguments = { QStringLiteral( "-I" ), QStringLiteral( "-c" ),
+                          QStringLiteral( "import sys; print(sys.executable)" ) };
+    request.workingDirectory = projectRepairRoot_;
+    request.environment = utf8ProcessEnvironment();
+    request.tag = QStringLiteral( "verify project repair" );
+
+    auto* task = new UvTask( std::move( request ), this );
+    projectRepairTask_ = task;
+    connect( task, &UvTask::outputLine, this, &PythonEnvManager::bootstrapLog );
+    connect( task, &UvTask::failedToStart, this, [this, task]( const QString& message ) {
+        projectRepairTask_ = nullptr;
+        task->deleteLater();
+        finishProjectRepair( false, message );
+    } );
+    connect( task, &UvTask::finished, this, [this, task]( const int exitCode, const bool crashed ) {
+        const bool cancelled = task->wasCancelled();
+        projectRepairTask_ = nullptr;
+        task->deleteLater();
+        if( cancelled || crashed || exitCode != 0 )
+        {
+            finishProjectRepair( false,
+                                 cancelled ? tr( "프로젝트 Python 환경 복구를 취소했습니다." )
+                                           : tr( "새 프로젝트 Python 환경 검증에 실패했습니다." ) );
+            return;
+        }
+
+        const QFileInfo currentCfg( QDir( projectRepairOriginalDir_ ).filePath(
+            QStringLiteral( "pyvenv.cfg" ) ) );
+        if( !currentCfg.exists() || currentCfg.size() != projectRepairOriginalCfgSize_
+            || currentCfg.lastModified().toMSecsSinceEpoch() != projectRepairOriginalCfgMTimeMs_ )
+        {
+            finishProjectRepair( false,
+                                 tr( "복구 중 원래 환경이 변경되어 교체하지 않았습니다." ) );
+            return;
+        }
+
+        QDir parent( projectRepairRoot_ );
+        const QString originalName = QFileInfo( projectRepairOriginalDir_ ).fileName();
+        const QString candidateName = QFileInfo( projectRepairCandidateDir_ ).fileName();
+        const QString backupName = QFileInfo( projectRepairBackupDir_ ).fileName();
+        if( !parent.rename( originalName, backupName ) )
+        {
+            finishProjectRepair( false, tr( "기존 손상 환경을 백업할 수 없어 교체하지 않았습니다: %1" )
+                                               .arg( nativePath( projectRepairOriginalDir_ ) ) );
+            return;
+        }
+        if( !parent.rename( candidateName, originalName ) )
+        {
+            const bool restored = parent.rename( backupName, originalName );
+            finishProjectRepair( false,
+                                 restored
+                                     ? tr( "새 환경을 적용하지 못해 기존 환경으로 되돌렸습니다." )
+                                     : tr( "새 환경 적용과 기존 환경 복원에 실패했습니다. 백업: %1" )
+                                           .arg( nativePath( projectRepairBackupDir_ ) ) );
+            return;
+        }
+
+        emit projectRepairProgress( projectRepairKey_, 100, tr( "프로젝트 환경 복구 완료" ) );
+        finishProjectRepair( true, tr( "프로젝트 Python 환경을 복구했습니다. 기존 환경 백업: %1" )
+                                        .arg( nativePath( projectRepairBackupDir_ ) ) );
+    } );
+    task->start();
+}
+
+void PythonEnvManager::finishProjectRepair( const bool success, const QString& message )
+{
+    const QString key = projectRepairKey_;
+    emit bootstrapLog( message );
+
+    projectRepairTask_ = nullptr;
+    projectRepairKey_.clear();
+    projectRepairRoot_.clear();
+    projectRepairOriginalDir_.clear();
+    projectRepairCandidateDir_.clear();
+    projectRepairBackupDir_.clear();
+    projectRepairOriginalCfgSize_ = -1;
+    projectRepairOriginalCfgMTimeMs_ = -1;
+
+    emit projectRepairFinished( key, success, message );
 }
 
 void PythonEnvManager::requestUvVersionAsync()

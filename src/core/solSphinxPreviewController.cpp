@@ -2,6 +2,7 @@
 #include "solSphinxPreviewController.hpp"
 
 #include "solPreviewProgress.hpp"
+#include "solPythonEnvHealth.hpp"
 #include "solUvTaskRunner.hpp"
 #include "utils/solBackgroundWork.hpp"
 #include "utils/solPhaseTrace.hpp"
@@ -457,29 +458,49 @@ void SphinxPreviewController::startBuild()
     connect( task, &UvTask::failedToStart, this, [this, task]( const QString& message ) {
         emit logMessage( message );
         task->deleteLater();
-        finishBuild( -1, true, false );
+        finishBuild( -1, true, false, message );
     } );
     connect( task, &UvTask::finished, this, [this, task]( const int exitCode, const bool crashed ) {
         const bool cancelled = task->wasCancelled();
+        const QString output = task->collectedOutput();
         task->deleteLater();
-        finishBuild( exitCode, crashed, cancelled );
+        finishBuild( exitCode, crashed, cancelled, output );
     } );
 
     task->start();
 }
 
-void SphinxPreviewController::finishBuild( const int exitCode, const bool crashed, const bool cancelled )
+void SphinxPreviewController::finishBuild( const int exitCode, const bool crashed, const bool cancelled,
+                                           const QString& output )
 {
+    const bool brokenPython = !cancelled && !usedFallbackPython_
+        && !active_.fallbackPythonExe.isEmpty()
+        && active_.fallbackPythonExe != active_.pythonExe
+        && pythonFailureIndicatesBrokenEnvironment( exitCode, crashed, output );
+
     // 종료 코드 4 = 빌더가 sphinx/docutils 를 임포트하지 못했다.
     // 프로젝트 venv 가 문서용이 아니라 애플리케이션용인 경우가 흔하다
     // (저장소 루트의 .venv 에는 Sphinx 가 없는 식). 이때 그냥 실패시키면
     // 프리뷰가 영영 안 뜨므로 번들 런타임으로 한 번 물러선다.
-    if( !cancelled && exitCode == 4 && !usedFallbackPython_
+    if( !cancelled && ( exitCode == 4 || brokenPython ) && !usedFallbackPython_
         && !active_.fallbackPythonExe.isEmpty()
         && active_.fallbackPythonExe != active_.pythonExe )
     {
         usedFallbackPython_ = true;
-        emit logMessage( tr( "프로젝트 환경에 Sphinx 가 없어 내장 환경으로 다시 시도합니다." ) );
+        if( brokenPython )
+        {
+            const QString reason = output.trimmed().isEmpty()
+                                       ? tr( "프로젝트 Python을 실행할 수 없습니다 (종료 코드 %1)." )
+                                             .arg( exitCode )
+                                       : output.trimmed();
+            emit pythonEnvironmentDamaged( QString::fromStdWString( active_.project.projectId ),
+                                           active_.pythonExe, reason );
+            emit logMessage( tr( "프로젝트 Python 환경이 손상되어 내장 환경으로 다시 시도합니다." ) );
+        }
+        else
+        {
+            emit logMessage( tr( "프로젝트 환경에 Sphinx 가 없어 내장 환경으로 다시 시도합니다." ) );
+        }
 
         pending_ = active_;
         pending_.pythonExe = active_.fallbackPythonExe;

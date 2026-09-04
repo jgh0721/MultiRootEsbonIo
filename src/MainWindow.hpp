@@ -562,6 +562,7 @@ private:
 
     void                                setupPythonEnvironment();
     void                                updateEnvStatusChip();
+    void                                confirmRepairPythonEnvironment();
     void                                setupDiagnosticsTable();
     void                                refreshDiagnosticsTable();
     /// 문서/프로젝트 개요 트리. 컨트롤러가 주는 항목을 그리고 클릭 시 이동한다.
@@ -619,7 +620,18 @@ private:
 
     mrst::WorkspaceController*          controller_ = nullptr;
     mrst::PythonEnvManager*             pythonEnv_ = nullptr;
-    QLabel*                             envStatusLabel_ = nullptr;   // 상태 표시줄 환경 칩
+    QPushButton*                        envStatusLabel_ = nullptr;   // 상태 표시줄 환경 칩
+    struct DamagedPythonStatus
+    {
+        QString                         projectId;
+        QString                         environmentPath;
+        QString                         reason;
+    };
+    QMap< QString, DamagedPythonStatus > damagedPythonEnvironments_;
+    QString                             preferredDamagedPythonProjectKey_;
+    QString                             repairingPythonProjectKey_;
+    int                                 pythonRepairPercent_ = -1;
+    QString                             pythonRepairPhase_;
     /// 상태 표시줄 프리뷰 칩. 빌드부터 HTML 로드 완료까지가 한 구간이라,
     /// 그동안 아무 표시가 없으면 사용자에게는 고장으로 보인다.
     QWidget*                            missingDepBar_ = nullptr;

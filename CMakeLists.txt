@@ -127,6 +127,8 @@ add_executable(${PROJECT_NAME}
         src/core/solEsbonioLspPool.hpp
         src/core/solPythonEnvMgr.cpp
         src/core/solPythonEnvMgr.hpp
+        src/core/solPythonEnvHealth.cpp
+        src/core/solPythonEnvHealth.hpp
         src/core/solPythonEnvResolver.cpp
         src/core/solPythonEnvResolver.hpp
         src/core/solUvTaskRunner.cpp
@@ -381,6 +383,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_FileKinds.cpp
             tests/tst_FileTreeFilter.cpp
             tests/tst_PreviewProgress.cpp
+            tests/tst_PythonEnvironment.cpp
             tests/tst_DiagnosticsStore.cpp
             tests/tst_SphinxBuilders.cpp
             tests/tst_WorkspaceSessionActive.cpp
@@ -400,6 +403,8 @@ if(MRST_BUILD_TESTS)
             src/core/solRstSubstitutionIndex.cpp
             src/core/solSphinxBuilders.cpp
             src/core/solPreviewProgress.cpp
+            src/core/solPythonEnvHealth.cpp
+            src/core/solPythonEnvHealth.hpp
             src/uis/FileTreeFilterProxy.cpp
             src/core/solUpdateManifest.cpp
             src/core/solFileKinds.cpp

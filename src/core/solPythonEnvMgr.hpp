@@ -69,6 +69,7 @@ public:
     [[nodiscard]] bool                  isBusy() const;
     [[nodiscard]] QString               stateText() const;        ///< 한국어 표시 문자열
     [[nodiscard]] QString               lastError() const;
+    [[nodiscard]] bool                  isProjectRepairing() const;
     [[nodiscard]] QDateTime             configuredDate() const;
     [[nodiscard]] QString               configuredDateText() const;
     [[nodiscard]] QString               uvDescription() const;    ///< 부작용 없음 (파일 안 씀)
@@ -104,6 +105,11 @@ public:
     /// (uv sync 는 lock 에 없는 것을 prune 하므로 그러지 않으면 사라진다).
     void                                installPackagesAsync( const QStringList& distributions,
                                                               const QString& targetPythonExe = {} );
+    /// 손상된 프로젝트 venv 옆에 교체 환경을 만든 뒤 검증을 통과한 경우에만 바꾼다.
+    /// projectRoot 는 venv 의 부모이며 pyproject.toml 이 있어야 한다.
+    [[nodiscard]] bool                  repairProjectEnvironmentAsync( const QString& projectKey,
+                                                                       const QString& projectRoot,
+                                                                       const QString& venvDir );
 
 signals:
     void                                stateChanged( mrst::EnvState state );
@@ -114,6 +120,11 @@ signals:
     void                                failed( const QString& message );
     void                                uvVersionReady( const QString& description );
     void                                packageInstallFinished( bool success, const QStringList& distributions );
+    void                                projectRepairStarted( const QString& projectKey );
+    void                                projectRepairProgress( const QString& projectKey, int percent,
+                                                               const QString& phase );
+    void                                projectRepairFinished( const QString& projectKey, bool success,
+                                                               const QString& message );
 
 private:
     void                                setState( EnvState next );
@@ -124,6 +135,9 @@ private:
     void                                onResourcesExtracted( bool ok, const QString& errorMessage );
     void                                startSyncTask();
     void                                startVerifyTask();
+    void                                startProjectRepairSync();
+    void                                startProjectRepairVerify();
+    void                                finishProjectRepair( bool success, const QString& message );
     void                                writeReadyMarker() const;
     void                                updateProgressFromUvLine( const QString& line );
     [[nodiscard]] QStringList           syncArguments() const;
@@ -141,6 +155,16 @@ private:
     bool                                installOptionalExtensions_ = true;
     QStringList                         extraPackages_;
     QPointer< UvTask >                  activeTask_;
+    /// 이미 Ready 인 환경의 첫 실행 검증이 실패하면 한 번만 자동 재구성한다.
+    bool                                repairBundledAfterVerifyFailure_ = false;
+    QPointer< UvTask >                  projectRepairTask_;
+    QString                             projectRepairKey_;
+    QString                             projectRepairRoot_;
+    QString                             projectRepairOriginalDir_;
+    QString                             projectRepairCandidateDir_;
+    QString                             projectRepairBackupDir_;
+    qint64                              projectRepairOriginalCfgSize_ = -1;
+    qint64                              projectRepairOriginalCfgMTimeMs_ = -1;
     bool                                lastReadyState_ = false;
 };
 

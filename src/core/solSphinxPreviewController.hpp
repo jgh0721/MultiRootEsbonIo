@@ -171,10 +171,15 @@ signals:
     void                                missingDependenciesDetected( const QString& projectId,
                                                                      const QStringList& distributions,
                                                                      const QStringList& themes );
+    /// 선택한 프로젝트 Python 자체가 실행 불가능해 내장 환경으로 물러났음.
+    void                                pythonEnvironmentDamaged( const QString& projectId,
+                                                                  const QString& pythonExe,
+                                                                  const QString& reason );
 
 private:
     void                                startBuild();
-    void                                finishBuild( int exitCode, bool crashed, bool cancelled );
+    void                                finishBuild( int exitCode, bool crashed, bool cancelled,
+                                                     const QString& output );
     [[nodiscard]] PreviewBuildResult    readReport( const QString& reportPath ) const;
     /// active_ 의 출력 디렉터리. 없으면 만든다.
     [[nodiscard]] QString               outputDir() const;

@@ -39,6 +39,7 @@
 #include <QMenuBar>
 #include <QScopeGuard>
 #include <QStatusBar>
+#include <QStyle>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -5613,8 +5614,15 @@ void MainWindow::setupPythonEnvironment()
 
     // 프리뷰 상태는 오른쪽 칩이 아니라 왼쪽의 진행 자리로 간다
     // (refreshStatusProgress). 오른쪽에는 가만히 있는 값만 남는다.
-    envStatusLabel_ = new QLabel( this );
+    envStatusLabel_ = new QPushButton( this );
+    envStatusLabel_->setObjectName( QStringLiteral( "pythonEnvironmentStatus" ) );
+    envStatusLabel_->setFlat( true );
+    envStatusLabel_->setAutoDefault( false );
+    envStatusLabel_->setDefault( false );
     envStatusLabel_->setContentsMargins( 8, 0, 8, 0 );
+    envStatusLabel_->setAccessibleName( tr( "Python 환경 상태" ) );
+    connect( envStatusLabel_, &QPushButton::clicked, this,
+             &MainWindow::confirmRepairPythonEnvironment );
     statusBar()->addPermanentWidget( envStatusLabel_ );
 
     if( controller_ != nullptr )
@@ -5654,18 +5662,71 @@ void MainWindow::setupPythonEnvironment()
             controller_->setActiveDocument( textViewOf( currentView() ) );
     } );
     connect( pythonEnv_, &mrst::PythonEnvManager::progressChanged, this,
-            [this]( const int percent, const QString& phase ) {
-                if( envStatusLabel_ == nullptr )
-                    return;
-                envStatusLabel_->setText( percent < 0
-                                             ? tr( "환경: %1" ).arg( phase )
-                                             : tr( "환경: %1 (%2%)" ).arg( phase ).arg( percent ) );
-            } );
+             [this]( const int percent, const QString& phase ) {
+                 if( envStatusLabel_ == nullptr )
+                     return;
+                 if( damagedPythonEnvironments_.isEmpty() && repairingPythonProjectKey_.isEmpty() )
+                 {
+                     envStatusLabel_->setText( percent < 0
+                                                   ? tr( "환경: %1" ).arg( phase )
+                                                   : tr( "환경: %1 (%2%)" ).arg( phase ).arg( percent ) );
+                 }
+             } );
+
+    if( controller_ != nullptr )
+    {
+        connect( controller_, &mrst::WorkspaceController::pythonEnvironmentDamaged, this,
+                [this]( const QString& projectKey, const QString& projectId,
+                        const QString& environmentPath, const QString& reason ) {
+                    damagedPythonEnvironments_.insert(
+                        projectKey, DamagedPythonStatus{ projectId, environmentPath, reason } );
+                    preferredDamagedPythonProjectKey_ = projectKey;
+                    updateEnvStatusChip();
+                } );
+        connect( controller_, &mrst::WorkspaceController::pythonEnvironmentDamageCleared, this,
+                [this]( const QString& projectKey ) {
+                    damagedPythonEnvironments_.remove( projectKey );
+                    if( preferredDamagedPythonProjectKey_ == projectKey )
+                    {
+                        preferredDamagedPythonProjectKey_ = damagedPythonEnvironments_.isEmpty()
+                                                                ? QString{}
+                                                                : damagedPythonEnvironments_.firstKey();
+                    }
+                    updateEnvStatusChip();
+                } );
+        connect( controller_, &mrst::WorkspaceController::pythonEnvironmentRepairStarted, this,
+                [this]( const QString& projectKey ) {
+                    repairingPythonProjectKey_ = projectKey;
+                    pythonRepairPercent_ = 0;
+                    pythonRepairPhase_ = tr( "교체 환경 준비 중" );
+                    updateEnvStatusChip();
+                } );
+        connect( controller_, &mrst::WorkspaceController::pythonEnvironmentRepairProgress, this,
+                [this]( const QString& projectKey, const int percent, const QString& phase ) {
+                    if( repairingPythonProjectKey_ != projectKey )
+                        return;
+                    pythonRepairPercent_ = percent;
+                    pythonRepairPhase_ = phase;
+                    updateEnvStatusChip();
+                } );
+        connect( controller_, &mrst::WorkspaceController::pythonEnvironmentRepairFinished, this,
+                [this]( const QString& projectKey, const bool success, const QString& message ) {
+                    if( repairingPythonProjectKey_ == projectKey )
+                        repairingPythonProjectKey_.clear();
+                    pythonRepairPercent_ = -1;
+                    pythonRepairPhase_.clear();
+                    updateEnvStatusChip();
+                    if( success )
+                        showTransientStatus( tr( "프로젝트 Python 환경 복구 완료" ), 5000 );
+                    else
+                        QMessageBox::warning( this, tr( "Python 환경 복구 실패" ), message );
+                } );
+    }
 
     updateEnvStatusChip();
 
     // startup 을 막지 않는다. 창이 뜬 뒤에 백그라운드로 시작한다.
-    if( pythonEnv_->autoBootstrap() && !pythonEnv_->isReady() )
+    if( pythonEnv_->autoBootstrap() )
         QTimer::singleShot( 0, this, [this] { pythonEnv_->ensureEnvironmentAsync(); } );
 }
 
@@ -5855,10 +5916,93 @@ void MainWindow::updateEnvStatusChip()
     if( envStatusLabel_ == nullptr || pythonEnv_ == nullptr )
         return;
 
+    envStatusLabel_->setAccessibleName( tr( "Python 환경 상태" ) );
+
+    if( !repairingPythonProjectKey_.isEmpty() )
+    {
+        const QString phase = pythonRepairPhase_.isEmpty() ? tr( "복구 중" ) : pythonRepairPhase_;
+        envStatusLabel_->setText( pythonRepairPercent_ < 0
+                                      ? tr( "환경: %1" ).arg( phase )
+                                      : tr( "환경: %1 (%2%)" ).arg( phase ).arg( pythonRepairPercent_ ) );
+        envStatusLabel_->setIcon( style()->standardIcon( QStyle::SP_BrowserReload ) );
+        envStatusLabel_->setToolTip( tr( "프로젝트 Python 환경을 복구하고 있습니다." ) );
+        envStatusLabel_->setAccessibleDescription( envStatusLabel_->toolTip() );
+        envStatusLabel_->setFocusPolicy( Qt::NoFocus );
+        envStatusLabel_->setAttribute( Qt::WA_TransparentForMouseEvents, true );
+        envStatusLabel_->unsetCursor();
+        return;
+    }
+
+    if( !damagedPythonEnvironments_.isEmpty() )
+    {
+        const int count = damagedPythonEnvironments_.size();
+        const auto it = damagedPythonEnvironments_.constFind( preferredDamagedPythonProjectKey_ );
+        const DamagedPythonStatus damaged = it != damagedPythonEnvironments_.constEnd()
+                                                   ? it.value()
+                                                   : damagedPythonEnvironments_.constBegin().value();
+        envStatusLabel_->setText( count == 1
+                                      ? tr( "환경: 손상됨 · 클릭하여 복구" )
+                                      : tr( "환경: %1개 손상됨 · 클릭하여 복구" ).arg( count ) );
+        envStatusLabel_->setIcon( style()->standardIcon( QStyle::SP_MessageBoxWarning ) );
+        envStatusLabel_->setToolTip(
+            tr( "프로젝트: %1\n환경: %2\n원인: %3" )
+                .arg( damaged.projectId,
+                      QDir::toNativeSeparators( damaged.environmentPath ), damaged.reason ) );
+        envStatusLabel_->setAccessibleDescription( envStatusLabel_->toolTip() );
+        envStatusLabel_->setFocusPolicy( Qt::StrongFocus );
+        envStatusLabel_->setAttribute( Qt::WA_TransparentForMouseEvents, false );
+        envStatusLabel_->setCursor( Qt::PointingHandCursor );
+        return;
+    }
+
+    envStatusLabel_->setIcon( {} );
     envStatusLabel_->setText( tr( "환경: %1" ).arg( pythonEnv_->stateText() ) );
     envStatusLabel_->setToolTip( pythonEnv_->isReady()
                                     ? QDir::toNativeSeparators( pythonEnv_->pythonExe() )
                                     : pythonEnv_->lastError() );
+    envStatusLabel_->setAccessibleDescription( envStatusLabel_->toolTip() );
+    envStatusLabel_->setFocusPolicy( Qt::NoFocus );
+    envStatusLabel_->setAttribute( Qt::WA_TransparentForMouseEvents, true );
+    envStatusLabel_->unsetCursor();
+}
+
+void MainWindow::confirmRepairPythonEnvironment()
+{
+    if( controller_ == nullptr || !repairingPythonProjectKey_.isEmpty()
+        || damagedPythonEnvironments_.isEmpty() )
+        return;
+
+    auto it = damagedPythonEnvironments_.constFind( preferredDamagedPythonProjectKey_ );
+    if( it == damagedPythonEnvironments_.constEnd() )
+        it = damagedPythonEnvironments_.constBegin();
+
+    const QString projectKey = it.key();
+    const DamagedPythonStatus damaged = it.value();
+    if( damaged.environmentPath.isEmpty() )
+    {
+        QMessageBox::warning(
+            this, tr( "Python 환경 복구" ),
+            tr( "자동 복구할 프로젝트 가상환경을 찾지 못했습니다.\n\n"
+                "프로젝트: %1\n원인: %2\n\n"
+                "환경 설정에서 지정한 Python 경로를 확인해 주세요." )
+                .arg( damaged.projectId, damaged.reason ) );
+        return;
+    }
+
+    const QMessageBox::StandardButton answer = QMessageBox::question(
+        this, tr( "Python 환경 복구" ),
+        tr( "프로젝트 Python 환경이 손상되었습니다.\n\n"
+            "프로젝트: %1\n환경: %2\n원인: %3\n\n"
+            "pyproject.toml과 uv.lock을 사용해 같은 위치 옆에 새 환경을 구성하고, "
+            "검증을 통과한 경우에만 교체합니다. 기존 손상 환경은 백업으로 남깁니다.\n\n"
+            "지금 복구할까요?" )
+            .arg( damaged.projectId,
+                  QDir::toNativeSeparators( damaged.environmentPath ), damaged.reason ),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No );
+    if( answer != QMessageBox::Yes )
+        return;
+
+    static_cast< void >( controller_->repairPythonEnvironment( projectKey ) );
 }
 
 void MainWindow::openStartupPaths( const QStringList& paths )

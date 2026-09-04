@@ -16,6 +16,7 @@
 #include "solRestOutlineService.hpp"
 #include "solPythonEnvMgr.hpp"
 #include "solPythonEnvResolver.hpp"
+#include "solPythonEnvHealth.hpp"
 #include "solSphinxBuilders.hpp"
 #include "solSphinxPreviewController.hpp"
 #include "solSphinxProjectRegistry.hpp"
@@ -287,6 +288,12 @@ WorkspaceController::WorkspaceController( QObject* parent )
     } );
 
     connect( previewController_, &SphinxPreviewController::logMessage, this, &WorkspaceController::logMessage );
+    connect( previewController_, &SphinxPreviewController::pythonEnvironmentDamaged, this,
+            [this]( const QString& projectId, const QString& pythonExe, const QString& reason ) {
+                const SphinxProject* project = lookupProject( projectId );
+                if( project != nullptr && envResolver_ != nullptr )
+                    envResolver_->reportRuntimeFailure( *project, pythonExe, reason );
+            } );
     connect( previewController_, &SphinxPreviewController::processedSourcesKnown, this,
             [this]( const QStringList& sources ) { previewProcessedSources_ = sources; } );
     connect( previewController_, &SphinxPreviewController::diagnosticsReady, this,
@@ -671,8 +678,77 @@ void WorkspaceController::setPythonEnvironment( PythonEnvManager* manager )
     {
         envResolver_ = new PythonEnvResolver( manager, this );
         connect( envResolver_, &PythonEnvResolver::logMessage, this, &WorkspaceController::logMessage );
+        connect( envResolver_, &PythonEnvResolver::environmentDamaged, this,
+                [this]( const QString& projectKey, const QString& projectId,
+                        const QString& environmentPath, const QString&, const QString& reason ) {
+                    DamagedPythonEnvironment damaged;
+                    damaged.projectId = projectId;
+                    damaged.environmentPath = environmentPath;
+                    damaged.projectRoot = environmentPath.isEmpty()
+                                                ? QString{}
+                                                : QFileInfo( environmentPath ).absolutePath();
+                    damaged.reason = reason;
+                    damagedPythonEnvironments_.insert( projectKey, damaged );
+
+                    if( lspPool_ != nullptr )
+                        lspPool_->stopProject( projectId );
+                    emit pythonEnvironmentDamaged( projectKey, projectId, environmentPath, reason );
+
+                    QTimer::singleShot( 0, this, [this, projectId] {
+                        if( !shuttingDown_ && activeProjectId_ == projectId )
+                            ensureLspForActiveDocument();
+                    } );
+                } );
+        connect( envResolver_, &PythonEnvResolver::environmentDamageCleared, this,
+                [this]( const QString& projectKey ) {
+                    damagedPythonEnvironments_.remove( projectKey );
+                    emit pythonEnvironmentDamageCleared( projectKey );
+                } );
         envResolver_->setWorkspaceRoot( registry_->workspaceRoot() );
     }
+
+    if( pythonEnv_ != nullptr )
+    {
+        connect( pythonEnv_, &PythonEnvManager::projectRepairStarted, this,
+                &WorkspaceController::pythonEnvironmentRepairStarted, Qt::UniqueConnection );
+        connect( pythonEnv_, &PythonEnvManager::projectRepairProgress, this,
+                &WorkspaceController::pythonEnvironmentRepairProgress, Qt::UniqueConnection );
+        connect( pythonEnv_, &PythonEnvManager::projectRepairFinished, this,
+                [this]( const QString& projectKey, const bool success, const QString& message ) {
+                    QString projectId;
+                    if( const auto it = damagedPythonEnvironments_.constFind( projectKey );
+                        it != damagedPythonEnvironments_.constEnd() )
+                    {
+                        projectId = it->projectId;
+                    }
+
+                    if( success && envResolver_ != nullptr )
+                    {
+                        envResolver_->clearDamage( projectKey );
+                        if( lspPool_ != nullptr && !projectId.isEmpty() )
+                            lspPool_->stopProject( projectId );
+                        QTimer::singleShot( 0, this, [this, projectId] {
+                            if( shuttingDown_ || activeProjectId_ != projectId )
+                                return;
+                            requestPreviewBuild( true, true );
+                            ensureLspForActiveDocument();
+                        } );
+                    }
+                    emit pythonEnvironmentRepairFinished( projectKey, success, message );
+                } );
+    }
+}
+
+bool WorkspaceController::repairPythonEnvironment( const QString& projectKey )
+{
+    if( pythonEnv_ == nullptr )
+        return false;
+    const auto it = damagedPythonEnvironments_.constFind( projectKey );
+    if( it == damagedPythonEnvironments_.constEnd() )
+        return false;
+
+    return pythonEnv_->repairProjectEnvironmentAsync( projectKey, it->projectRoot,
+                                                       it->environmentPath );
 }
 
 QString WorkspaceController::writeShadowCopy( QTextView* view, const QString& path ) const
@@ -1936,6 +2012,7 @@ bool WorkspaceController::buildProject( const QString& projectId, const QString&
 
 void WorkspaceController::startProjectBuild( const QString& pythonExe )
 {
+    projectBuild_.pythonExe = pythonExe;
     const bool makeMode = isSphinxMakeModeTarget( projectBuild_.builder );
 
     UvTask::Request request;
@@ -1977,13 +2054,34 @@ void WorkspaceController::startProjectBuild( const QString& pythonExe )
 void WorkspaceController::finishProjectBuild( const int exitCode, const bool crashed,
                                               const bool cancelled, const QString& output )
 {
+    const bool brokenPython = !cancelled && !projectBuild_.usedFallback
+        && !projectBuild_.fallbackPython.isEmpty()
+        && projectBuild_.pythonExe != projectBuild_.fallbackPython
+        && pythonFailureIndicatesBrokenEnvironment( exitCode, crashed, output );
+
     // 프로젝트 venv 가 문서용이 아니라 애플리케이션용이면 Sphinx 가 없다.
     // 종료 코드로는 구분되지 않아(그냥 1이다) 출력을 본다.
     if( !cancelled && !projectBuild_.usedFallback && !projectBuild_.fallbackPython.isEmpty()
-        && output.contains( QLatin1String( "No module named sphinx" ) ) )
+        && ( brokenPython || output.contains( QLatin1String( "No module named sphinx" ) ) ) )
     {
         projectBuild_.usedFallback = true;
-        emit logMessage( tr( "프로젝트 환경에 Sphinx 가 없어 내장 환경으로 다시 시도합니다." ) );
+        if( brokenPython )
+        {
+            if( const SphinxProject* project = lookupProject( projectBuild_.projectId );
+                project != nullptr && envResolver_ != nullptr )
+            {
+                const QString reason = output.trimmed().isEmpty()
+                                           ? tr( "프로젝트 Python을 실행할 수 없습니다 (종료 코드 %1)." )
+                                                 .arg( exitCode )
+                                           : output.trimmed();
+                envResolver_->reportRuntimeFailure( *project, projectBuild_.pythonExe, reason );
+            }
+            emit logMessage( tr( "프로젝트 Python 환경이 손상되어 내장 환경으로 다시 시도합니다." ) );
+        }
+        else
+        {
+            emit logMessage( tr( "프로젝트 환경에 Sphinx 가 없어 내장 환경으로 다시 시도합니다." ) );
+        }
         startProjectBuild( projectBuild_.fallbackPython );
         return;
     }

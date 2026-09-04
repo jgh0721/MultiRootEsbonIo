@@ -208,6 +208,18 @@
         <translation type="unfinished">なし</translation>
     </message>
     <message>
+        <source>Python 환경 복구</source>
+        <translation type="unfinished">Python 環境を修復</translation>
+    </message>
+    <message>
+        <source>Python 환경 복구 실패</source>
+        <translation type="unfinished">Python 環境の修復に失敗</translation>
+    </message>
+    <message>
+        <source>Python 환경 상태</source>
+        <translation type="unfinished">Python 環境の状態</translation>
+    </message>
+    <message>
         <source>Ready</source>
         <translation type="unfinished">準備完了</translation>
     </message>
@@ -242,6 +254,10 @@
     <message>
         <source>공백 %1</source>
         <translation type="unfinished">空白 %1</translation>
+    </message>
+    <message>
+        <source>교체 환경 준비 중</source>
+        <translation type="unfinished">置換環境を準備中</translation>
     </message>
     <message>
         <source>그대로 두기</source>
@@ -396,6 +412,10 @@
     <message>
         <source>보기(&amp;V)</source>
         <translation type="unfinished">表示(&amp;V)</translation>
+    </message>
+    <message>
+        <source>복구 중</source>
+        <translation type="unfinished">修復中</translation>
     </message>
     <message>
         <source>복사(&amp;C)</source>
@@ -586,6 +606,10 @@
         <translation type="unfinished">ワークスペースと検索する文字列を指定してください。</translation>
     </message>
     <message>
+        <source>원격 드라이브가 연결되어 있지 않습니다: %1</source>
+        <translation type="unfinished">リモートドライブが接続されていません: %1</translation>
+    </message>
+    <message>
         <source>이 버전 건너뛰기</source>
         <translation type="unfinished">このバージョンをスキップ</translation>
     </message>
@@ -634,6 +658,20 @@
     <message>
         <source>읽기 전용</source>
         <translation type="unfinished">読み取り専用</translation>
+    </message>
+    <message>
+        <source>자동 복구할 프로젝트 가상환경을 찾지 못했습니다.
+
+프로젝트: %1
+원인: %2
+
+환경 설정에서 지정한 Python 경로를 확인해 주세요.</source>
+        <translation type="unfinished">自動修復できるプロジェクト仮想環境が見つかりませんでした。
+
+プロジェクト: %1
+原因: %2
+
+環境設定で指定した Python パスを確認してください。</translation>
     </message>
     <message>
         <source>자동 완성(&amp;M)</source>
@@ -898,6 +936,42 @@
         <translation type="unfinished">プロジェクト</translation>
     </message>
     <message>
+        <source>프로젝트 Python 환경 복구 완료</source>
+        <translation type="unfinished">プロジェクト Python 環境の修復が完了</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경을 복구하고 있습니다.</source>
+        <translation type="unfinished">プロジェクト Python 環境を修復しています。</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경이 손상되었습니다.
+
+프로젝트: %1
+환경: %2
+원인: %3
+
+pyproject.toml과 uv.lock을 사용해 같은 위치 옆에 새 환경을 구성하고, 검증을 통과한 경우에만 교체합니다. 기존 손상 환경은 백업으로 남깁니다.
+
+지금 복구할까요?</source>
+        <translation type="unfinished">プロジェクトの Python 環境が破損しています。
+
+プロジェクト: %1
+環境: %2
+原因: %3
+
+pyproject.toml と uv.lock を使用して現在の環境と同じ場所の隣に新しい環境を構成し、検証に成功した場合のみ置き換えます。破損した既存環境はバックアップとして残します。
+
+今すぐ修復しますか？</translation>
+    </message>
+    <message>
+        <source>프로젝트: %1
+환경: %2
+원인: %3</source>
+        <translation type="unfinished">プロジェクト: %1
+環境: %2
+原因: %3</translation>
+    </message>
+    <message>
         <source>프리뷰 다시 빌드(&amp;R)</source>
         <translation type="unfinished">プレビューを再ビルド(&amp;R)</translation>
     </message>
@@ -936,6 +1010,14 @@
         <translation type="unfinished">環境: %1 (%2%)</translation>
     </message>
     <message>
+        <source>환경: %1개 손상됨 · 클릭하여 복구</source>
+        <translation type="unfinished">環境: %1 件破損 · クリックして修復</translation>
+    </message>
+    <message>
+        <source>환경: 손상됨 · 클릭하여 복구</source>
+        <translation type="unfinished">環境: 破損 · クリックして修復</translation>
+    </message>
+    <message>
         <source>활성 Sphinx 프로젝트가 없습니다.</source>
         <translation type="unfinished">アクティブな Sphinx プロジェクトがありません。</translation>
     </message>
@@ -950,6 +1032,21 @@
     <message>
         <source>활성 프로젝트에 문서가 없습니다.</source>
         <translation type="unfinished">アクティブなプロジェクトにドキュメントがありません。</translation>
+    </message>
+</context>
+<context>
+    <name>PythonEnvironment</name>
+    <message>
+        <source>가상환경 Python 실행 파일을 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">仮想環境の Python 実行ファイルが見つかりません: %1</translation>
+    </message>
+    <message>
+        <source>가상환경 설정 파일을 읽을 수 없습니다: %1</source>
+        <translation type="unfinished">仮想環境の設定ファイルを読み込めません: %1</translation>
+    </message>
+    <message>
+        <source>가상환경의 기반 Python을 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">仮想環境のベース Python が見つかりません: %1</translation>
     </message>
 </context>
 <context>
@@ -3174,6 +3271,14 @@ latexpdf · info はビルダーではなく make ターゲットなので、成
         <translation type="unfinished">パス: %1</translation>
     </message>
     <message>
+        <source>교체 환경 검증 중</source>
+        <translation type="unfinished">置換環境を検証中</translation>
+    </message>
+    <message>
+        <source>교체 환경 준비 중</source>
+        <translation type="unfinished">置換環境を準備中</translation>
+    </message>
+    <message>
         <source>구성 실패</source>
         <translation type="unfinished">構成に失敗</translation>
     </message>
@@ -3186,12 +3291,28 @@ latexpdf · info はビルダーではなく make ターゲットなので、成
         <translation type="unfinished">未構成</translation>
     </message>
     <message>
+        <source>기존 손상 환경을 백업할 수 없어 교체하지 않았습니다: %1</source>
+        <translation type="unfinished">既存の破損環境をバックアップできなかったため、置き換えませんでした: %1</translation>
+    </message>
+    <message>
         <source>내장 UV</source>
         <translation type="unfinished">内蔵 UV</translation>
     </message>
     <message>
+        <source>다른 Python 환경 작업이 진행 중입니다.</source>
+        <translation type="unfinished">別の Python 環境操作が進行中です。</translation>
+    </message>
+    <message>
         <source>리소스를 열 수 없습니다: %1</source>
         <translation type="unfinished">リソースを開けません: %1</translation>
+    </message>
+    <message>
+        <source>복구 중 원래 환경이 변경되어 교체하지 않았습니다.</source>
+        <translation type="unfinished">修復中に元の環境が変更されたため、置き換えませんでした。</translation>
+    </message>
+    <message>
+        <source>복구할 프로젝트 Python 환경 정보가 올바르지 않습니다.</source>
+        <translation type="unfinished">修復するプロジェクト Python 環境の情報が正しくありません。</translation>
     </message>
     <message>
         <source>상태: 구성 시 리소스에서 추출됩니다.</source>
@@ -3200,6 +3321,18 @@ latexpdf · info はビルダーではなく make ターゲットなので、成
     <message>
         <source>상태: 지정한 UV 파일을 찾을 수 없습니다.</source>
         <translation type="unfinished">状態: 指定した UV ファイルが見つかりません。</translation>
+    </message>
+    <message>
+        <source>새 프로젝트 Python 환경 검증에 실패했습니다.</source>
+        <translation type="unfinished">新しいプロジェクト Python 環境の検証に失敗しました。</translation>
+    </message>
+    <message>
+        <source>새 환경 적용과 기존 환경 복원에 실패했습니다. 백업: %1</source>
+        <translation type="unfinished">新しい環境の適用と元の環境の復元に失敗しました。バックアップ: %1</translation>
+    </message>
+    <message>
+        <source>새 환경을 적용하지 못해 기존 환경으로 되돌렸습니다.</source>
+        <translation type="unfinished">新しい環境を適用できなかったため、元の環境に戻しました。</translation>
     </message>
     <message>
         <source>설치 완료</source>
@@ -3212,6 +3345,10 @@ latexpdf · info はビルダーではなく make ターゲットなので、成
     <message>
         <source>설치된 Python 환경에서 sphinx/esbonio 를 가져올 수 없습니다.</source>
         <translation type="unfinished">インストールした Python 環境から sphinx/esbonio を読み込めません。</translation>
+    </message>
+    <message>
+        <source>안전하게 복구할 수 있는 프로젝트 가상환경이 아닙니다: %1</source>
+        <translation type="unfinished">安全に修復できるプロジェクト仮想環境ではありません: %1</translation>
     </message>
     <message>
         <source>완료</source>
@@ -3258,6 +3395,38 @@ latexpdf · info はビルダーではなく make ターゲットなので、成
         <translation type="unfinished">パッケージを確認中</translation>
     </message>
     <message>
+        <source>프로젝트 Python 내려받는 중</source>
+        <translation type="unfinished">プロジェクト用 Python をダウンロード中</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경 복구를 시작합니다: %1</source>
+        <translation type="unfinished">プロジェクト Python 環境の修復を開始します: %1</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경 복구를 취소했습니다.</source>
+        <translation type="unfinished">プロジェクト Python 環境の修復をキャンセルしました。</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경을 복구했습니다. 기존 환경 백업: %1</source>
+        <translation type="unfinished">プロジェクト Python 環境を修復しました。元の環境のバックアップ: %1</translation>
+    </message>
+    <message>
+        <source>프로젝트 의존성을 복원할 pyproject.toml을 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">プロジェクト依存関係の復元に必要な pyproject.toml が見つかりません: %1</translation>
+    </message>
+    <message>
+        <source>프로젝트 패키지 구성 중</source>
+        <translation type="unfinished">プロジェクトパッケージを構成中</translation>
+    </message>
+    <message>
+        <source>프로젝트 환경 uv sync 실패 (종료 코드 %1). 원래 환경은 변경하지 않았습니다.</source>
+        <translation type="unfinished">プロジェクト環境の uv sync に失敗しました (終了コード %1)。元の環境は変更していません。</translation>
+    </message>
+    <message>
+        <source>프로젝트 환경 복구 완료</source>
+        <translation type="unfinished">プロジェクト環境の修復が完了</translation>
+    </message>
+    <message>
         <source>확인 실패</source>
         <translation type="unfinished">確認に失敗</translation>
     </message>
@@ -3278,6 +3447,10 @@ latexpdf · info はビルダーではなく make ターゲットなので、成
         <translation type="unfinished">環境構成をキャンセルしました。</translation>
     </message>
     <message>
+        <source>환경 복구에 사용할 uv를 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">環境の修復に使用する uv が見つかりません: %1</translation>
+    </message>
+    <message>
         <source>환경 없음</source>
         <translation type="unfinished">環境なし</translation>
     </message>
@@ -3289,12 +3462,32 @@ latexpdf · info はビルダーではなく make ターゲットなので、成
         <translation type="unfinished">Python 環境 [%1]: %2</translation>
     </message>
     <message>
+        <source>Python 환경 손상 [%1]: %2</source>
+        <translation type="unfinished">Python 環境が破損しています [%1]: %2</translation>
+    </message>
+    <message>
         <source>사용자가 지정한 인터프리터</source>
         <translation type="unfinished">ユーザーが指定したインタープリター</translation>
     </message>
     <message>
+        <source>지정한 Python 인터프리터를 찾을 수 없습니다: %1</source>
+        <translation type="unfinished">指定した Python インタープリターが見つかりません: %1</translation>
+    </message>
+    <message>
+        <source>지정한 Python 환경이 손상되어 내장 환경을 사용합니다.</source>
+        <translation type="unfinished">指定した Python 環境が破損しているため、内蔵環境を使用します。</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 실행에 실패하여 내장 환경을 사용합니다.</source>
+        <translation type="unfinished">プロジェクト Python の実行に失敗したため、内蔵環境を使用します。</translation>
+    </message>
+    <message>
         <source>프로젝트 가상환경을 찾았습니다: %1</source>
         <translation type="unfinished">プロジェクトの仮想環境が見つかりました: %1</translation>
+    </message>
+    <message>
+        <source>프로젝트 가상환경이 손상되어 내장 환경을 사용합니다.</source>
+        <translation type="unfinished">プロジェクトの仮想環境が破損しているため、内蔵環境を使用します。</translation>
     </message>
     <message>
         <source>프로젝트 가상환경이 없어 내장 환경을 사용합니다.</source>
@@ -3306,6 +3499,14 @@ latexpdf · info はビルダーではなく make ターゲットなので、成
     <message>
         <source>Python 런타임이 아직 준비되지 않아 프리뷰를 건너뜁니다.</source>
         <translation type="unfinished">Python ランタイムがまだ準備できていないためプレビューをスキップします。</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경이 손상되어 내장 환경으로 다시 시도합니다.</source>
+        <translation type="unfinished">プロジェクト Python 環境が破損しているため、内蔵環境で再試行します。</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python을 실행할 수 없습니다 (종료 코드 %1).</source>
+        <translation type="unfinished">プロジェクト Python を実行できません (終了コード %1)。</translation>
     </message>
     <message>
         <source>프로젝트 환경에 Sphinx 가 없어 내장 환경으로 다시 시도합니다.</source>
@@ -3714,6 +3915,14 @@ latexpdf · info はビルダーではなく make ターゲットなので、成
     <message>
         <source>파이썬 런타임이 아직 준비되지 않았습니다. 잠시 뒤에 다시 요청하십시오.</source>
         <translation type="unfinished">Python ランタイムがまだ準備できていません。少し待ってから再度お試しください。</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python 환경이 손상되어 내장 환경으로 다시 시도합니다.</source>
+        <translation type="unfinished">プロジェクト Python 環境が破損しているため、内蔵環境で再試行します。</translation>
+    </message>
+    <message>
+        <source>프로젝트 Python을 실행할 수 없습니다 (종료 코드 %1).</source>
+        <translation type="unfinished">プロジェクト Python を実行できません (終了コード %1)。</translation>
     </message>
     <message>
         <source>프로젝트 개요: 문서가 많아 %1개만 표시합니다 (%2개 생략).</source>
