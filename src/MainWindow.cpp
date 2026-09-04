@@ -79,12 +79,26 @@
 
 namespace
 {
+    constexpr auto kPreviewZoomProperty = "mrst_previewZoomPercent";
+
     bool isMarkdownView( const QBaseView* view )
     {
         const auto* textView = qobject_cast< const QTextView* >( view );
         return textView != nullptr
                && mrst::filekinds::hasExtension( textView->currentFilePath(),
                                                  mrst::filekinds::markdownExtensions() );
+    }
+
+    bool isPreviewDocumentView( const QBaseView* view )
+    {
+        const auto* textView = qobject_cast< const QTextView* >( view );
+        if( textView == nullptr )
+            return false;
+
+        const QString path = textView->currentFilePath();
+        return mrst::filekinds::hasExtension( path, mrst::filekinds::markdownExtensions() )
+               || mrst::filekinds::hasExtension(
+                   path, mrst::filekinds::restructuredTextExtensions() );
     }
 
     /// 이 파일이 텍스트 편집기로 열리는가.
@@ -1456,6 +1470,10 @@ void MainWindow::hideAllDockPanels()
 // ═══════════════════════════════════════════════════════════
 void MainWindow::updateViewerToolBar()
 {
+    // 프리뷰는 모든 탭이 공용 WebEngine 하나를 쓴다. 도구모음을 만들 수 없는
+    // 로딩 중 탭에서도 이전 탭의 확대 비율이 남지 않도록 먼저 반영한다.
+    applyPreviewZoomForCurrentView();
+
     // 레이아웃 무효화를 이 함수 한 번에 **한 번**으로 모은다.
     //
     // refreshViewerToolBarSlot() 은 호스트와 **부모까지** layout()->invalidate()
@@ -1497,6 +1515,7 @@ void MainWindow::updateViewerToolBar()
     {
         m_viewerToolBar->setParent( m_viewerToolBarHost );
         m_viewerToolBar->setObjectName( "viewerToolBar" );
+        addPreviewZoomControl( m_viewerToolBar, view );
 
         connect( m_viewerToolBar, &QObject::destroyed, this, [this] {
             m_viewerToolBar = nullptr;
@@ -1528,6 +1547,99 @@ void MainWindow::updateViewerToolBar()
 
         purgeStaleViewerToolBars( m_viewerToolBarHost, m_viewerToolBar, m_viewerAuxToolBar );
     }
+}
+
+int MainWindow::previewZoomPercentForView( const QBaseView* view ) const
+{
+    if( !isPreviewDocumentView( view ) )
+        return mrst::kDefaultPreviewZoomPercent;
+
+    const QVariant viewValue = view->property( kPreviewZoomProperty );
+    if( viewValue.isValid() )
+    {
+        const int percent = viewValue.toInt();
+        if( percent >= mrst::kMinimumPreviewZoomPercent
+            && percent <= mrst::kMaximumPreviewZoomPercent )
+            return percent;
+    }
+
+    const QString path = normalizeFilePath( view->currentFilePath() );
+    return previewZoomPercentByPath_.value( path, mrst::kDefaultPreviewZoomPercent );
+}
+
+void MainWindow::applyPreviewZoomForCurrentView()
+{
+    QBaseView* view = currentView();
+    const int percent = previewZoomPercentForView( view );
+    if( isPreviewDocumentView( view ) )
+        view->setProperty( kPreviewZoomProperty, percent );
+
+    if( previewInitialised_ && Ui.webEngineView != nullptr )
+        Ui.webEngineView->setZoomFactor( static_cast< qreal >( percent ) / 100.0 );
+}
+
+void MainWindow::setPreviewZoomPercentForView( QBaseView* view, const int percent )
+{
+    if( !isPreviewDocumentView( view )
+        || percent < mrst::kMinimumPreviewZoomPercent
+        || percent > mrst::kMaximumPreviewZoomPercent )
+        return;
+
+    view->setProperty( kPreviewZoomProperty, percent );
+    const QString path = normalizeFilePath( view->currentFilePath() );
+    if( !path.isEmpty() )
+    {
+        if( percent == mrst::kDefaultPreviewZoomPercent )
+            previewZoomPercentByPath_.remove( path );
+        else
+            previewZoomPercentByPath_.insert( path, percent );
+    }
+
+    if( currentView() == view && previewInitialised_ && Ui.webEngineView != nullptr )
+        Ui.webEngineView->setZoomFactor( static_cast< qreal >( percent ) / 100.0 );
+
+    // 콤보 선택은 한 번에 끝나는 조작이라 디바운스가 필요 없다. 여기서 바로
+    // workspace.json 을 갱신해야 탭을 닫은 뒤 다시 열어도 파일별 값이 남는다.
+    saveWorkspaceSessionNow();
+}
+
+void MainWindow::addPreviewZoomControl( QToolBar* toolBar, QBaseView* view )
+{
+    if( toolBar == nullptr || !isPreviewDocumentView( view ) )
+        return;
+
+    toolBar->addSeparator();
+
+    auto* label = new QLabel( tr( "프리뷰 확대:" ), toolBar );
+    QPalette labelPalette = label->palette();
+    labelPalette.setColor( QPalette::WindowText, ThemeManager::instance().foregroundColor() );
+    label->setPalette( labelPalette );
+    toolBar->addWidget( label );
+
+    auto* combo = new QComboBox( toolBar );
+    combo->setObjectName( QStringLiteral( "previewZoomCombo" ) );
+    combo->setAccessibleName( tr( "프리뷰 확대 비율" ) );
+    combo->setToolTip( tr( "프리뷰 확대 비율" ) );
+    combo->setMaximumWidth( 90 );
+    for( const int option : { 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200 } )
+        combo->addItem( QStringLiteral( "%1%" ).arg( option ), option );
+
+    const int percent = previewZoomPercentForView( view );
+    int index = combo->findData( percent );
+    if( index < 0 )
+    {
+        // 수동으로 편집했거나 미래 버전이 남긴 유효한 값을 잃지 않는다.
+        index = 0;
+        while( index < combo->count() && combo->itemData( index ).toInt() < percent )
+            ++index;
+        combo->insertItem( index, QStringLiteral( "%1%" ).arg( percent ), percent );
+    }
+    combo->setCurrentIndex( index );
+    connect( combo, QOverload<int>::of( &QComboBox::currentIndexChanged ), combo,
+             [this, view, combo]( const int selectedIndex ) {
+                 setPreviewZoomPercentForView( view, combo->itemData( selectedIndex ).toInt() );
+             } );
+    toolBar->addWidget( combo );
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3969,6 +4081,18 @@ bool MainWindow::setWorkspace( const QString& Folder )
 
     resetWorkspaceUi();
     workspaceRoot_ = workspaceRoot;
+    previewZoomPercentByPath_.clear();
+    if( !workspaceRoot.isEmpty() )
+    {
+        const mrst::WorkspaceSession session = mrst::loadWorkspaceSession( workspaceRoot );
+        for( auto it = session.previewZoomPercentByPath.cbegin();
+             it != session.previewZoomPercentByPath.cend(); ++it )
+        {
+            const QString normalizedPath = normalizeFilePath( it.key() );
+            if( !normalizedPath.isEmpty() )
+                previewZoomPercentByPath_.insert( normalizedPath, it.value() );
+        }
+    }
     mrst::SettingsWriter::instance().setValue( QStringLiteral( "workspace/lastRoot" ), workspaceRoot );
     if( m_closeWorkspaceAction != nullptr )
         m_closeWorkspaceAction->setEnabled( !workspaceRoot.isEmpty() );
@@ -4015,6 +4139,7 @@ bool MainWindow::setWorkspace( const QString& Folder )
     if( controller_ )
         controller_->setWorkspaceRoot( workspaceRoot );
     showPreviewStartPage();
+    applyPreviewZoomForCurrentView();
 
     return true;
 }
@@ -5495,10 +5620,21 @@ void MainWindow::saveWorkspaceSessionNow()
         // 화면 행을 넣으면 자동 줄넘김이 켜졌을 때 크게 어긋난다.
         document.firstVisibleLine = view->topDocumentLine();
 
+        if( isPreviewDocumentView( view ) )
+        {
+            const int percent = previewZoomPercentForView( view );
+            const QString path = normalizeFilePath( document.path );
+            if( percent == mrst::kDefaultPreviewZoomPercent )
+                previewZoomPercentByPath_.remove( path );
+            else
+                previewZoomPercentByPath_.insert( path, percent );
+        }
+
         if( m_tabWidget->currentIndex() == index )
             session.activeIndex = static_cast< int >( session.documents.size() );
         session.documents.push_back( document );
     }
+    session.previewZoomPercentByPath = previewZoomPercentByPath_;
 
     // 전체 화면 도중에는 화면의 배치를 저장하지 않는다. 지금 배치는 "편집기와
     // 좌측·하단이 없음" 이라서, 그대로 저장하면 다음 실행이 **아무것도 없는

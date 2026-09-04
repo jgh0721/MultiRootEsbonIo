@@ -56,6 +56,7 @@ private slots:
     void sessionWithoutDockLayoutStillLoads();
     void sessionRejectsUnknownSchema();
     void sessionDropsOutOfRangeActiveIndex();
+    void sessionFiltersInvalidPreviewZoomValues();
 };
 
 void TestWorkspaceSearch::identicalTextProducesNoDiff()
@@ -247,6 +248,10 @@ void TestWorkspaceSearch::sessionRoundTrips()
                          { QStringLiteral( "C:/b.rst" ), 1, 1, 1 } };
     session.activeIndex = 1;
     session.previewSplitterSizes = { 700, 200 };
+    session.previewZoomPercentByPath = {
+        { QStringLiteral( "C:/a.rst" ), 125 },
+        { QStringLiteral( "C:/b.md" ), 80 },
+    };
     session.dockLayout = QStringLiteral( "eJxLyU/OTs0rzs8rzi/OL0nNzQMAWkoJhA==" );
 
     QVERIFY( saveWorkspaceSession( session ) );
@@ -258,6 +263,7 @@ void TestWorkspaceSearch::sessionRoundTrips()
     QCOMPARE( restored.documents.first().firstVisibleLine, 8 );
     QCOMPARE( restored.activeIndex, 1 );
     QCOMPARE( restored.previewSplitterSizes, QList< int >( { 700, 200 } ) );
+    QCOMPARE( restored.previewZoomPercentByPath, session.previewZoomPercentByPath );
     QCOMPARE( restored.dockLayout, session.dockLayout );
 }
 
@@ -280,6 +286,7 @@ void TestWorkspaceSearch::sessionWithoutDockLayoutStillLoads()
     QCOMPARE( restored.documents.first().caretLine, 7 );
     QCOMPARE( restored.activeIndex, 0 );
     QVERIFY( restored.dockLayout.isEmpty() );
+    QVERIFY( restored.previewZoomPercentByPath.isEmpty() );
 }
 
 void TestWorkspaceSearch::sessionRejectsUnknownSchema()
@@ -299,6 +306,31 @@ void TestWorkspaceSearch::sessionDropsOutOfRangeActiveIndex()
     session.activeIndex = 5;
 
     QCOMPARE( sessionFromJson( sessionToJson( session ) ).activeIndex, -1 );
+}
+
+void TestWorkspaceSearch::sessionFiltersInvalidPreviewZoomValues()
+{
+    WorkspaceSession session;
+    session.workspaceRoot = QStringLiteral( "C:/w" );
+    session.previewZoomPercentByPath = {
+        { QStringLiteral( "C:/default.rst" ), kDefaultPreviewZoomPercent },
+        { QStringLiteral( "C:/small.rst" ), kMinimumPreviewZoomPercent - 1 },
+        { QStringLiteral( "C:/large.md" ), kMaximumPreviewZoomPercent + 1 },
+        { QStringLiteral( "C:/valid.md" ), 150 },
+    };
+
+    QJsonObject json = sessionToJson( session );
+    QJsonObject zooms = json.value( QStringLiteral( "previewZoomPercentByPath" ) ).toObject();
+    QCOMPARE( zooms.size(), 1 );
+    QCOMPARE( zooms.value( QStringLiteral( "C:/valid.md" ) ).toInt(), 150 );
+
+    zooms.insert( QStringLiteral( "C:/fraction.rst" ), 125.5 );
+    zooms.insert( QStringLiteral( "C:/text.rst" ), QStringLiteral( "125" ) );
+    json.insert( QStringLiteral( "previewZoomPercentByPath" ), zooms );
+
+    const WorkspaceSession restored = sessionFromJson( json );
+    QCOMPARE( restored.previewZoomPercentByPath.size(), 1 );
+    QCOMPARE( restored.previewZoomPercentByPath.value( QStringLiteral( "C:/valid.md" ) ), 150 );
 }
 
 MRST_REGISTER_TEST( TestWorkspaceSearch );

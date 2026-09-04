@@ -55,12 +55,24 @@ QJsonObject sessionToJson( const WorkspaceSession& session )
         } );
     }
 
+    QJsonObject previewZoomPercentByPath;
+    for( auto it = session.previewZoomPercentByPath.cbegin();
+         it != session.previewZoomPercentByPath.cend(); ++it )
+    {
+        if( it.key().isEmpty() || it.value() == kDefaultPreviewZoomPercent
+            || it.value() < kMinimumPreviewZoomPercent
+            || it.value() > kMaximumPreviewZoomPercent )
+            continue;
+        previewZoomPercentByPath.insert( it.key(), it.value() );
+    }
+
     return QJsonObject{
         { QStringLiteral( "schema" ), kSchema },
         { QStringLiteral( "workspaceRoot" ), session.workspaceRoot },
         { QStringLiteral( "documents" ), documents },
         { QStringLiteral( "activeIndex" ), session.activeIndex },
         { QStringLiteral( "previewSplitterSizes" ), toJsonArray( session.previewSplitterSizes ) },
+        { QStringLiteral( "previewZoomPercentByPath" ), previewZoomPercentByPath },
         { QStringLiteral( "dockLayout" ), session.dockLayout },
         { QStringLiteral( "windowGeometry" ), session.windowGeometry },
     };
@@ -102,6 +114,21 @@ WorkspaceSession sessionFromJson( const QJsonObject& object )
     session.activeIndex = activeIndex < session.documents.size() ? activeIndex : -1;
 
     session.previewSplitterSizes = toIntList( object.value( QStringLiteral( "previewSplitterSizes" ) ) );
+    const QJsonObject previewZoomPercentByPath =
+        object.value( QStringLiteral( "previewZoomPercentByPath" ) ).toObject();
+    for( auto it = previewZoomPercentByPath.begin(); it != previewZoomPercentByPath.end(); ++it )
+    {
+        if( it.key().isEmpty() || !it.value().isDouble() )
+            continue;
+        const double rawPercent = it.value().toDouble();
+        const int percent = it.value().toInt();
+        if( rawPercent != static_cast< double >( percent )
+            || percent == kDefaultPreviewZoomPercent
+            || percent < kMinimumPreviewZoomPercent
+            || percent > kMaximumPreviewZoomPercent )
+            continue;
+        session.previewZoomPercentByPath.insert( it.key(), percent );
+    }
     // 이 키는 이 버전에서 생겼다. 없으면 빈 문자열이 되고, 그때는 기본 배치를 쓴다.
     session.dockLayout = object.value( QStringLiteral( "dockLayout" ) ).toString();
     session.windowGeometry = object.value( QStringLiteral( "windowGeometry" ) ).toString();

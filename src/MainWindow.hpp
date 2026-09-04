@@ -204,6 +204,12 @@ private:
     void                                updateTitle();
     void                                updateTabDecoration( QBaseView* view );
     void                                updateViewerToolBar();
+    /// `.rst`/`.md` 문서 도구모음 끝에 프리뷰 확대 비율 선택기를 붙인다.
+    void                                addPreviewZoomControl( QToolBar* toolBar, QBaseView* view );
+    /// 현재 문서에 저장된 비율을 공용 WebEngine 프리뷰에 반영한다.
+    void                                applyPreviewZoomForCurrentView();
+    [[nodiscard]] int                   previewZoomPercentForView( const QBaseView* view ) const;
+    void                                setPreviewZoomPercentForView( QBaseView* view, int percent );
     void                                updateStatusBar();
     void                                connectViewStatusSignals( QBaseView* view );
     void                                updateSaveActionState();
@@ -398,6 +404,8 @@ private:
     QToolBar*                           m_mainToolBar = nullptr;
     QPointer<QToolBar>                  m_viewerToolBar = nullptr;   // 뷰어별 도구모음
     QPointer<QToolBar>                  m_viewerAuxToolBar = nullptr; // 뷰어별 2줄 보조 도구모음
+    /// 현재 워크스페이스의 파일별 프리뷰 배율. 기본값 100은 넣지 않는다.
+    QMap<QString, int>                  previewZoomPercentByPath_;
     // ── 상태표시줄 왼쪽 (진행 상황) ──
     QLabel*                             statusMessageLabel_ = nullptr;
     QProgressBar*                       statusProgressBar_ = nullptr;

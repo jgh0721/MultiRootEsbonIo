@@ -2,10 +2,15 @@
 
 #include <QJsonObject>
 #include <QList>
+#include <QMap>
 #include <QString>
 #include <QVector>
 
 namespace mrst {
+
+constexpr int kDefaultPreviewZoomPercent = 100;
+constexpr int kMinimumPreviewZoomPercent = 25;
+constexpr int kMaximumPreviewZoomPercent = 500;
 
 /// 열려 있던 문서 하나의 복원 정보.
 struct OpenDocumentState
@@ -28,6 +33,9 @@ struct WorkspaceSession
     QVector< OpenDocumentState >        documents;
     int                                 activeIndex = -1;
     QList< int >                        previewSplitterSizes;   ///< 편집기 | 프리뷰
+    /// 파일별 프리뷰 확대 비율. 기본값(100)은 저장하지 않는다. 탭을 닫았다가
+    /// 다시 열어도 값을 되살릴 수 있도록 열린 문서 목록과 분리한다.
+    QMap< QString, int >                previewZoomPercentByPath;
     /// 좌측·하단 도크의 배치. ads::CDockManager::saveState() 를 base64 로 담는다
     /// (기본 설정이 XML 압축이라 사람이 읽을 수 있는 형태가 아니다).
     ///

@@ -1004,6 +1004,14 @@ pyproject.toml と uv.lock を使用して現在の環境と同じ場所の隣�
         <translation type="unfinished">プレビューを全画面表示(&amp;L)</translation>
     </message>
     <message>
+        <source>프리뷰 확대 비율</source>
+        <translation type="unfinished">プレビューの拡大率</translation>
+    </message>
+    <message>
+        <source>프리뷰 확대:</source>
+        <translation type="unfinished">プレビューの拡大:</translation>
+    </message>
+    <message>
         <source>필터 (부분 일치)</source>
         <translation type="unfinished">フィルター (部分一致)</translation>
     </message>

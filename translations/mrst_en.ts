@@ -1010,6 +1010,14 @@ Cause: %3</translation>
         <translation type="unfinished">Ful&amp;l Screen Preview</translation>
     </message>
     <message>
+        <source>프리뷰 확대 비율</source>
+        <translation type="unfinished">Preview zoom level</translation>
+    </message>
+    <message>
+        <source>프리뷰 확대:</source>
+        <translation type="unfinished">Preview zoom:</translation>
+    </message>
+    <message>
         <source>필터 (부분 일치)</source>
         <translation type="unfinished">Filter (substring)</translation>
     </message>
