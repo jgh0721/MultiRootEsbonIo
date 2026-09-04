@@ -108,7 +108,11 @@ void TestPreviewMorph::initTestCase()
 
     QSignalSpy loaded( page_, &QWebEnginePage::loadFinished );
     page_->setHtml( QStringLiteral( "<html><body><div id=\"stage\"></div></body></html>" ) );
-    QVERIFY2( loaded.wait( 15000 ), "페이지가 로드되지 않았다" );
+    // setHtml() 이 아주 빨리 끝나면 wait() 호출 전에 loadFinished 가 올 수 있다.
+    // 이미 받은 신호를 놓치고 다음 신호를 기다리는 경합을 피하면서, 단순히
+    // 신호가 왔는지만 보던 기존 검사보다 실제 로드 성공 값까지 확인한다.
+    QVERIFY2( !loaded.isEmpty() || loaded.wait( 15000 ), "페이지가 로드되지 않았다" );
+    QVERIFY2( loaded.constLast().constFirst().toBool(), "페이지 로드가 실패했다" );
 
     // 앱이 하는 것과 같다 — 파일을 읽어 스크립트로 주입한다
     // (PreviewBridge::attachTo). QWebChannel 이 없으므로 boot() 는 조용히 물러나고
