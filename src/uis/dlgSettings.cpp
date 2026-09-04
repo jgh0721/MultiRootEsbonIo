@@ -308,6 +308,11 @@ QList< ShortcutItem > QSettingsDialog::DefaultShortcuts()
             QKeySequence( Qt::CTRL | Qt::Key_O )
         },
         {
+            tr( "공통" ), QStringLiteral( "file.quickOpen" ), tr( "파일 빠르게 열기" ),
+            QKeySequence( Qt::ALT | Qt::SHIFT | Qt::Key_O ),
+            QKeySequence( Qt::ALT | Qt::SHIFT | Qt::Key_O )
+        },
+        {
             tr( "공통" ), QStringLiteral( "file.save" ), tr( "저장" ), QKeySequence( Qt::CTRL | Qt::Key_S ),
             QKeySequence( Qt::CTRL | Qt::Key_S )
         },

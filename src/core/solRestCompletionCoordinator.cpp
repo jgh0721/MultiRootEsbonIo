@@ -23,6 +23,12 @@ namespace {
 /// 너무 길면 팝업이 뒤늦게 뜬다.
 constexpr int kDebounceMs = 150;
 
+/// 빠른 파일 열기의 인덱스는 워크스페이스 전체를 보존하지만 기존 reST 경로
+/// 자동완성은 GUI 스레드에서 동기적으로 후보를 만든다. 여기까지 무제한으로
+/// 순회하면 큰 워크스페이스에서 키 입력이 멈추므로 종전의 응답시간 경계를
+/// 자동완성 소비자에만 유지한다.
+constexpr qsizetype kPathCompletionScanLimit = 20'000;
+
 /// reST 완성기는 모든 텍스트 편집기에 연결되지만 Markdown 문법까지 해석해서는
 /// 안 된다. 확장자 없는 새 문서와 사용자 정의 Sphinx 소스 확장자는 기존처럼
 /// 허용하고, 앱이 Markdown 으로 확정한 확장자만 명시적으로 제외한다.
@@ -468,7 +474,8 @@ CompletionCoordinator::pathCandidatesFor( const rstcomplete::Context& context )
             found = rstpath::mergeCandidates(
                 std::move( found ),
                 rstpath::fuzzyCandidates( query, pathIndex_->indexedRoot(),
-                                         pathIndex_->paths() ) );
+                                         pathIndex_->paths(), 50,
+                                         kPathCompletionScanLimit ) );
         }
     }
 

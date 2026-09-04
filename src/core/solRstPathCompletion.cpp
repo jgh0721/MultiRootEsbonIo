@@ -11,7 +11,9 @@
 #include <QSet>
 
 #include <algorithm>
+#include <queue>
 #include <utility>
+#include <vector>
 
 namespace mrst::rstpath {
 
@@ -449,11 +451,12 @@ QVector< Candidate > oneLevelCandidates( const Query& query, const DirectoryList
 }
 
 QVector< Candidate > fuzzyCandidates( const Query& query, const QString& indexRoot,
-                                      const QStringList& indexedPaths, const int limit )
+                                      const QStringList& indexedPaths, const int limit,
+                                      const qsizetype scanLimit )
 {
     QVector< Candidate > candidates;
     const Slot* slot = slotFor( query.context );
-    if( slot == nullptr || indexRoot.isEmpty() || indexedPaths.isEmpty() )
+    if( slot == nullptr || indexRoot.isEmpty() || indexedPaths.isEmpty() || limit <= 0 )
         return candidates;
 
     const TypedPath typed = splitTypedPath( query.context.prefix );
@@ -468,11 +471,28 @@ QVector< Candidate > fuzzyCandidates( const Query& query, const QString& indexRo
         int                             depth = 0;
     };
 
-    QVector< Scored > scored;
+    const auto better = []( const Scored& left, const Scored& right ) {
+        if( left.score != right.score )
+            return left.score > right.score;
+        if( left.depth != right.depth )
+            return left.depth < right.depth;   // 얕은 쪽이 먼저
+        return left.candidate.insertText < right.candidate.insertText;
+    };
+
+    // 전체 인덱스는 무제한이지만 자동완성에는 상위 limit개만 필요하다. 모든
+    // 일치 항목을 모아 정렬하면 큰 워크스페이스에서 GUI 스레드를 오래 점유하고
+    // 메모리도 일치 개수만큼 늘어난다. 최악 후보가 위에 있는 제한 힙으로
+    // 메모리를 O(limit), 후보 유지 비용을 O(log limit)으로 제한한다.
+    using HeapStorage = std::vector< Scored >;
+    std::priority_queue< Scored, HeapStorage, decltype( better ) > best( better );
     const QDir root( indexRoot );
 
-    for( const QString& relative : indexedPaths )
+    const qsizetype inspectCount = scanLimit > 0
+                                       ? (std::min)( scanLimit, indexedPaths.size() )
+                                       : indexedPaths.size();
+    for( qsizetype pathIndex = 0; pathIndex < inspectCount; ++pathIndex )
     {
+        const QString& relative = indexedPaths.at( pathIndex );
         const qsizetype separator = relative.lastIndexOf( QLatin1Char( '/' ) );
         const QString fileName = separator < 0 ? relative : relative.mid( separator + 1 );
 
@@ -497,25 +517,27 @@ QVector< Candidate > fuzzyCandidates( const Query& query, const QString& indexRo
         entry.candidate.absolutePath = absolute;
         entry.score = score;
         entry.depth = static_cast< int >( relative.count( QLatin1Char( '/' ) ) );
-        scored.push_back( entry );
+        if( static_cast< int >( best.size() ) < limit )
+            best.push( std::move( entry ) );
+        else if( better( entry, best.top() ) )
+        {
+            best.pop();
+            best.push( std::move( entry ) );
+        }
     }
 
-    std::stable_sort( scored.begin(), scored.end(),
-                     []( const Scored& left, const Scored& right ) {
-                         if( left.score != right.score )
-                             return left.score > right.score;
-                         if( left.depth != right.depth )
-                             return left.depth < right.depth;   // 얕은 쪽이 먼저
-                         return left.candidate.insertText < right.candidate.insertText;
-                     } );
-
-    candidates.reserve( qMin( static_cast< int >( scored.size() ), limit ) );
-    for( const Scored& entry : std::as_const( scored ) )
+    QVector< Scored > scored;
+    scored.reserve( static_cast< qsizetype >( best.size() ) );
+    while( !best.empty() )
     {
-        candidates.push_back( entry.candidate );
-        if( candidates.size() >= limit )
-            break;
+        scored.push_back( best.top() );
+        best.pop();
     }
+    std::sort( scored.begin(), scored.end(), better );
+
+    candidates.reserve( scored.size() );
+    for( const Scored& entry : std::as_const( scored ) )
+        candidates.push_back( entry.candidate );
     return candidates;
 }
 

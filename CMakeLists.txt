@@ -170,6 +170,8 @@ add_executable(${PROJECT_NAME}
         src/core/solRestOutlineService.hpp
         src/core/solRestWorkspaceController.cpp
         src/core/solRestWorkspaceController.hpp
+        src/core/solQuickOpenSearch.cpp
+        src/core/solQuickOpenSearch.hpp
         src/core/solRstOfflineCompletions.cpp
         src/core/solRstOfflineCompletions.hpp
         src/core/solRstLineUtils.hpp
@@ -206,6 +208,8 @@ add_executable(${PROJECT_NAME}
         src/uis/FileTreeFilterProxy.hpp
         src/uis/PanelActionIcons.cpp
         src/uis/PanelActionIcons.hpp
+        src/uis/QuickOpenDialog.cpp
+        src/uis/QuickOpenDialog.hpp
         src/uis/TabSwitcherPopup.cpp
         src/uis/TabSwitcherPopup.hpp
         src/editor/ScintillaEditorSettings.cpp
@@ -374,6 +378,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_MdOutline.cpp
             tests/tst_LspMessageRouting.cpp
             tests/tst_ProjectResolution.cpp
+            tests/tst_QuickOpenSearch.cpp
             tests/tst_RstCompletionContext.cpp
             tests/tst_RstPathCompletion.cpp
             tests/tst_RstOutline.cpp
@@ -397,6 +402,7 @@ if(MRST_BUILD_TESTS)
             src/editor/RstContainerLexer.cpp
             src/editor/RstStructure.cpp
             src/editor/MarkdownStructure.cpp
+            src/core/solQuickOpenSearch.cpp
             src/core/solRstOfflineCompletions.cpp
             src/core/solRstPathCompletion.cpp
             src/core/solRstPathIndex.cpp
@@ -477,14 +483,18 @@ if(MRST_BUILD_TESTS)
             tests/ui/tst_EditorMetrics.cpp
             tests/ui/tst_PanelActionIcons.cpp
             tests/ui/tst_PreviewMorph.cpp
+            tests/ui/tst_QuickOpenDialog.cpp
 
             src/uis/PanelActionIcons.cpp
             src/uis/PanelActionIcons.hpp
+            src/uis/QuickOpenDialog.cpp
+            src/uis/QuickOpenDialog.hpp
             src/editor/CompletionPopupWidget.cpp
             src/editor/CompletionPopupWidget.hpp
             src/editor/CompletionDetailPopup.cpp
             src/editor/CompletionDetailPopup.hpp
             src/core/solRstOfflineCompletions.cpp
+            src/core/solQuickOpenSearch.cpp
             src/core/solRstPathCompletion.cpp
             # 자동완성 문맥 판정이 directive 파서를 쓴다. 규칙은 한 곳에만 있다.
             src/editor/RstStructure.cpp
@@ -529,17 +539,23 @@ if(MRST_BUILD_TESTS)
     add_test(NAME mrst_ui_tests COMMAND mrst_ui_tests)
 
     # ── 테스트 실행 환경 ───────────────────────────────────
-    # 두 테스트 exe 는 Qt6::Test 를 링크한다. 그런데 개발 빌드의 Qt DLL 은 **앱**
-    # exe 를 대상으로 한 windeployqt 가 놓아 준 것이고 앱은 Qt6::Test 를 쓰지
-    # 않으므로, 출력 디렉터리에 Qt6Test[d].dll 만 없다. 그러면 두 exe 가 코드를
-    # 한 줄도 실행하기 전에 로더 단계에서 0xC0000135(STATUS_DLL_NOT_FOUND) 로
-    # 죽는다. ctest 는 그것을 테스트 실패가 아니라 "Exception" 으로 찍으므로
-    # 무엇이 없는지가 드러나지 않는다.
+    # 두 테스트 exe 는 Qt6::Test 를 링크하지만 앱용 windeployqt 는 앱이 쓰지 않는
+    # Qt6Test[d].dll 을 배포하지 않는다. CTest 밖에서 exe 를 직접 실행해도 로더
+    # 단계에서 죽지 않도록 구성별 Qt6::Test 대상 파일을 각 출력 디렉터리에 둔다.
+    # $<TARGET_FILE:Qt6::Test>가 Debug의 d 접미사와 Release 구성을 자동으로 고른다.
+    if(WIN32)
+        foreach(MRST_TEST_TARGET IN ITEMS mrst_tests mrst_ui_tests)
+            add_custom_command(TARGET ${MRST_TEST_TARGET} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                            "$<TARGET_FILE:Qt6::Test>"
+                            "$<TARGET_FILE_DIR:${MRST_TEST_TARGET}>"
+                    COMMENT "Copying Qt Test runtime next to ${MRST_TEST_TARGET}"
+                    VERBATIM)
+        endforeach()
+    endif()
     #
-    # 그 DLL 을 출력 디렉터리에 복사해 넣지 않는다 — 아래 플러그인 경로를 Qt
-    # 설치본으로 돌린 것과 같은 판단이다. 대신 PATH 앞에 Qt 의 bin 을 붙인다.
-    # Qt6Test 뿐 아니라 앞으로 테스트가 링크할 어떤 Qt 모듈도 함께 해결되므로
-    # 모듈을 더할 때 이 자리를 고칠 일이 없다.
+    # CTest에서는 Qt6Test 이외에 앞으로 추가될 Qt 모듈도 설치본에서 찾도록 PATH
+    # 앞에 Qt bin을 붙인다. 직접 실행용 복사와 별개로 테스트 환경을 안정화한다.
     #
     # ENVIRONMENT_MODIFICATION 은 CMake 3.22 이상이 필요하다 (CMakePresets.json
     # 이 3.28 을 요구하므로 항상 충족된다). ENVIRONMENT 와는 다른 속성이라

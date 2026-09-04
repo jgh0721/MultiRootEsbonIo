@@ -87,6 +87,8 @@ public:
     void                                setWorkspaceRoot( const QString& root );
     [[nodiscard]] QString               workspaceRoot() const;
     [[nodiscard]] ProjectRegistry*      projectRegistry() const;
+    /// 워크스페이스 전역 파일 인덱스. 빠른 파일 열기와 경로 자동완성이 공유한다.
+    [[nodiscard]] PathIndex*            pathIndex();
 
     void                                rescanProjects();
     void                                reloadSettings();

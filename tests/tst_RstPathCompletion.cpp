@@ -3,11 +3,21 @@
 #include "core/solRstOfflineCompletions.hpp"
 #include "core/solRstPathCompletion.hpp"
 #include "core/solRstPathIndex.hpp"
+#include "utils/solBackgroundWork.hpp"
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QThread>
+#include <QThreadPool>
+#include <QTimer>
+
+#include <filesystem>
+#include <numeric>
+#include <system_error>
 
 using namespace mrst::rstpath;
 
@@ -68,13 +78,24 @@ private slots:
     void globalCandidatesRespectSlotExtensions();
     void globalCandidatesCarryRelativeDirectoryInDetail();
     void globalCandidatesRankShallowerPathsFirst();
+    void globalCandidatesKeepOnlyBestLimitedResults();
+    void globalCandidatesCanLimitInspectedIndexEntries();
     void docNameSlotRejectsPathsOutsideSourceRoot();
     void mergeKeepsOneLevelFirstAndDropsDuplicates();
 
     // ── 인덱스 순회 ──
     void scanSkipsExcludedDirectoriesAtAnyDepth();
     void scanReturnsRootRelativeForwardSlashPaths();
-    void scanRespectsLimit();
+    void scanRespectsPositiveLimitAndTreatsZeroAsUnlimited();
+    void scanDoesNotDescendIntoDirectoryLinks();
+    void scanDoesNotIncludeFileLinks();
+    void pathIndexPublishesProgressiveBatchesOnItsThread();
+    void pathIndexCoalescesQueuedProgressCallbacks();
+    void pathIndexDiscardsLateGenerations();
+    void pathIndexCoalescesInvalidationDuringScan();
+    void pathIndexQueuesInvalidationDuringThrottle();
+    void pathIndexRestartsAfterShutdownDropsResult();
+    void pathIndexClearCancelsAndEmptiesState();
 
     // ── Esbonio 항목 재기준화 ──
     void rebasesLspLastSegmentOntoTypedDirectory();
@@ -562,6 +583,49 @@ void TestRstPathCompletion::globalCandidatesRankShallowerPathsFirst()
     QCOMPARE( candidates.first().detail, QString{} );   // 루트 바로 아래가 먼저
 }
 
+void TestRstPathCompletion::globalCandidatesKeepOnlyBestLimitedResults()
+{
+    QStringList index;
+    index.reserve( 1'001 );
+    for( int i = 0; i < 1'000; ++i )
+    {
+        index.push_back( QStringLiteral( "deep/section-%1/needle-copy-%2.txt" )
+                             .arg( i, 4, 10, QLatin1Char( '0' ) )
+                             .arg( i, 4, 10, QLatin1Char( '0' ) ) );
+    }
+    // 가장 좋은 후보를 마지막에 둬도 제한 힙에서 탈락하지 않아야 한다.
+    index.push_back( QStringLiteral( "needle.txt" ) );
+
+    const Query query = makeQuery( QStringLiteral( ".. include:: needle" ), 20 );
+    const QVector< Candidate > candidates =
+        fuzzyCandidates( query, QString::fromLatin1( kIndexRoot ), index, 5 );
+
+    QCOMPARE( candidates.size(), 5 );
+    QCOMPARE( candidates.first().label, QStringLiteral( "needle.txt" ) );
+    QCOMPARE( candidates.first().detail, QString{} );
+}
+
+void TestRstPathCompletion::globalCandidatesCanLimitInspectedIndexEntries()
+{
+    const QStringList index{
+        QStringLiteral( "a/needle-1.txt" ),
+        QStringLiteral( "b/needle-2.txt" ),
+        QStringLiteral( "c/needle-3.txt" ),
+        QStringLiteral( "d/needle-4.txt" ),
+        QStringLiteral( "e/needle-5.txt" ),
+        QStringLiteral( "needle.txt" ),
+    };
+    const Query query = makeQuery( QStringLiteral( ".. include:: needle" ), 20 );
+
+    const QVector< Candidate > candidates = fuzzyCandidates(
+        query, QString::fromLatin1( kIndexRoot ), index, 50, 5 );
+
+    QCOMPARE( candidates.size(), 5 );
+    QVERIFY( std::none_of( candidates.cbegin(), candidates.cend(), []( const Candidate& item ) {
+        return item.label == QLatin1String( "needle.txt" );
+    } ) );
+}
+
 void TestRstPathCompletion::docNameSlotRejectsPathsOutsideSourceRoot()
 {
     Query query;
@@ -605,10 +669,14 @@ void TestRstPathCompletion::scanSkipsExcludedDirectoriesAtAnyDepth()
     QVERIFY( root.mkpath( QStringLiteral( "docs/source/_build/preview/_images" ) ) );
     QVERIFY( root.mkpath( QStringLiteral( "docs/source/_static" ) ) );
     QVERIFY( root.mkpath( QStringLiteral( ".git/objects" ) ) );
+    QVERIFY( root.mkpath( QStringLiteral( ".content" ) ) );
 
     const QStringList files{ QStringLiteral( "docs/source/_static/cover.png" ),
                             QStringLiteral( "docs/source/_build/preview/_images/cover.png" ),
-                            QStringLiteral( ".git/objects/blob" ) };
+                            QStringLiteral( ".git/objects/blob" ),
+                            QStringLiteral( ".gitignore" ),
+                            QStringLiteral( ".editorconfig" ),
+                            QStringLiteral( ".content/kept.txt" ) };
     for( const QString& relative : files )
     {
         QFile file( root.absoluteFilePath( relative ) );
@@ -617,7 +685,10 @@ void TestRstPathCompletion::scanSkipsExcludedDirectoriesAtAnyDepth()
     }
 
     const QStringList found = mrst::scanPathIndex( temporary.path() );
-    QCOMPARE( found, QStringList( { QStringLiteral( "docs/source/_static/cover.png" ) } ) );
+    QCOMPARE( found,
+             QStringList( { QStringLiteral( ".content/kept.txt" ),
+                            QStringLiteral( ".editorconfig" ), QStringLiteral( ".gitignore" ),
+                            QStringLiteral( "docs/source/_static/cover.png" ) } ) );
 }
 
 void TestRstPathCompletion::scanReturnsRootRelativeForwardSlashPaths()
@@ -635,7 +706,7 @@ void TestRstPathCompletion::scanReturnsRootRelativeForwardSlashPaths()
     QCOMPARE( found, QStringList( { QStringLiteral( "a/b/c.txt" ) } ) );
 }
 
-void TestRstPathCompletion::scanRespectsLimit()
+void TestRstPathCompletion::scanRespectsPositiveLimitAndTreatsZeroAsUnlimited()
 {
     QTemporaryDir temporary;
     QVERIFY( temporary.isValid() );
@@ -648,6 +719,282 @@ void TestRstPathCompletion::scanRespectsLimit()
     }
 
     QCOMPARE( mrst::scanPathIndex( temporary.path(), 5 ).size(), 5 );
+    QCOMPARE( mrst::scanPathIndex( temporary.path(), 0 ).size(), 12 );
+    QCOMPARE( mrst::scanPathIndex( temporary.path() ).size(), 12 );
+}
+
+void TestRstPathCompletion::scanDoesNotDescendIntoDirectoryLinks()
+{
+    QTemporaryDir workspace;
+    QTemporaryDir outside;
+    QVERIFY( workspace.isValid() );
+    QVERIFY( outside.isValid() );
+
+    QFile external( QDir( outside.path() ).absoluteFilePath( QStringLiteral( "external.txt" ) ) );
+    QVERIFY( external.open( QIODevice::WriteOnly ) );
+    external.close();
+
+    const QFileInfo target( outside.path() );
+    const QFileInfo link( QDir( workspace.path() ).absoluteFilePath( QStringLiteral( "linked" ) ) );
+    std::error_code error;
+    std::filesystem::create_directory_symlink( target.filesystemAbsoluteFilePath(),
+                                                link.filesystemAbsoluteFilePath(), error );
+    if( error )
+        QSKIP( "이 환경에서는 디렉터리 심볼릭 링크를 만들 수 없음" );
+
+    QVERIFY( mrst::scanPathIndex( workspace.path() ).isEmpty() );
+}
+
+void TestRstPathCompletion::scanDoesNotIncludeFileLinks()
+{
+    QTemporaryDir workspace;
+    QTemporaryDir outside;
+    QVERIFY( workspace.isValid() );
+    QVERIFY( outside.isValid() );
+
+    QFile external( QDir( outside.path() ).absoluteFilePath( QStringLiteral( "external.txt" ) ) );
+    QVERIFY( external.open( QIODevice::WriteOnly ) );
+    external.close();
+
+    const QFileInfo target( external );
+    const QFileInfo link( QDir( workspace.path() ).absoluteFilePath(
+        QStringLiteral( "external-link.txt" ) ) );
+    std::error_code error;
+    std::filesystem::create_symlink( target.filesystemAbsoluteFilePath(),
+                                     link.filesystemAbsoluteFilePath(), error );
+    if( error )
+        QSKIP( "이 환경에서는 파일 심볼릭 링크를 만들 수 없음" );
+
+    QVERIFY( mrst::scanPathIndex( workspace.path() ).isEmpty() );
+}
+
+void TestRstPathCompletion::pathIndexPublishesProgressiveBatchesOnItsThread()
+{
+    QTemporaryDir temporary;
+    QVERIFY( temporary.isValid() );
+    const QDir root( temporary.path() );
+    for( int index = 0; index < 405; ++index )
+    {
+        QFile file( root.absoluteFilePath( QStringLiteral( "file-%1.txt" ).arg( index, 3, 10,
+                                                                                QLatin1Char( '0' ) ) ) );
+        QVERIFY( file.open( QIODevice::WriteOnly ) );
+        file.close();
+    }
+
+    mrst::PathIndex index;
+    QSignalSpy ready( &index, &mrst::PathIndex::ready );
+    QVERIFY( ready.isValid() );
+
+    QVector< qsizetype > batchSizes;
+    QVector< qsizetype > totals;
+    qsizetype publishedSoFar = 0;
+    bool wrongThread = false;
+    bool inconsistentPartialPaths = false;
+    connect( &index, &mrst::PathIndex::progress, &index,
+             [&]( const QString& progressRoot, const QStringList& batch,
+                  const qsizetype scannedCount ) {
+                 wrongThread = wrongThread || QThread::currentThread() != index.thread();
+                 publishedSoFar += batch.size();
+                 inconsistentPartialPaths =
+                     inconsistentPartialPaths || progressRoot != QDir::cleanPath( temporary.path() )
+                     || !index.isScanningFor( temporary.path() )
+                     || index.partialPathCount() != publishedSoFar
+                     || index.partialPathCount() > scannedCount || batch.isEmpty()
+                     || batch.size() > 1'000;
+                 batchSizes << batch.size();
+                 totals << scannedCount;
+             } );
+
+    index.ensure( temporary.path() );
+    QVERIFY( index.isScanning() );
+    QCOMPARE( index.scanningRoot(), QDir::cleanPath( temporary.path() ) );
+    QTRY_COMPARE_WITH_TIMEOUT( ready.size(), 1, 10'000 );
+
+    QVERIFY( !wrongThread );
+    QVERIFY( !inconsistentPartialPaths );
+    QVERIFY( !batchSizes.isEmpty() );
+    const qsizetype publishedCount =
+        std::accumulate( batchSizes.cbegin(), batchSizes.cend(), qsizetype{ 0 } );
+    QVERIFY( publishedCount > 0 );
+    QVERIFY( publishedCount <= 405 );
+    QVERIFY( totals.last() >= publishedCount );
+    QVERIFY( totals.last() <= 405 );
+    for( qsizetype totalIndex = 1; totalIndex < totals.size(); ++totalIndex )
+        QVERIFY( totals.at( totalIndex ) > totals.at( totalIndex - 1 ) );
+    QVERIFY( !index.isScanning() );
+    QVERIFY( index.scanningRoot().isEmpty() );
+    QVERIFY( index.partialPathChunks().isEmpty() );
+    QCOMPARE( index.partialPathCount(), qsizetype{ 0 } );
+    QVERIFY( index.isReadyFor( temporary.path() ) );
+    QCOMPARE( index.paths().size(), 405 );
+}
+
+void TestRstPathCompletion::pathIndexCoalescesQueuedProgressCallbacks()
+{
+    QTemporaryDir temporary;
+    QVERIFY( temporary.isValid() );
+    const QDir root( temporary.path() );
+    for( int fileIndex = 0; fileIndex < 1'205; ++fileIndex )
+    {
+        QFile file( root.absoluteFilePath(
+            QStringLiteral( "queued-%1.txt" ).arg( fileIndex, 4, 10, QLatin1Char( '0' ) ) ) );
+        QVERIFY( file.open( QIODevice::WriteOnly ) );
+        file.close();
+    }
+
+    mrst::PathIndex index;
+    QSignalSpy progress( &index, &mrst::PathIndex::progress );
+    QSignalSpy ready( &index, &mrst::PathIndex::ready );
+
+    index.ensure( temporary.path() );
+    // GUI 이벤트를 처리하지 않은 채 스캔을 끝내 여러 200개 배치가 동시에
+    // 대기하도록 만든다. 병합 구현은 GUI wakeup을 하나만 남겨야 한다.
+    QVERIFY( QThreadPool::globalInstance()->waitForDone( 10'000 ) );
+    QCoreApplication::processEvents();
+
+    QCOMPARE( ready.size(), 1 );
+    QCOMPARE( progress.size(), 1 );
+    QCOMPARE( progress.first().at( 1 ).toStringList().size(), 1'000 );
+    QCOMPARE( progress.first().at( 2 ).value<qsizetype>(), qsizetype{ 1'205 } );
+    QVERIFY( index.partialPathChunks().isEmpty() );
+    QCOMPARE( index.partialPathCount(), qsizetype{ 0 } );
+    QCOMPARE( progress.first().at( 1 ).toStringList().size(), 1'000 );
+    QCOMPARE( index.paths().size(), 1'205 );
+}
+
+void TestRstPathCompletion::pathIndexDiscardsLateGenerations()
+{
+    QTemporaryDir first;
+    QTemporaryDir second;
+    QVERIFY( first.isValid() );
+    QVERIFY( second.isValid() );
+
+    QFile firstFile( QDir( first.path() ).absoluteFilePath( QStringLiteral( "old.txt" ) ) );
+    QVERIFY( firstFile.open( QIODevice::WriteOnly ) );
+    firstFile.close();
+    QFile secondFile( QDir( second.path() ).absoluteFilePath( QStringLiteral( "current.txt" ) ) );
+    QVERIFY( secondFile.open( QIODevice::WriteOnly ) );
+    secondFile.close();
+
+    mrst::PathIndex index;
+    QSignalSpy ready( &index, &mrst::PathIndex::ready );
+    index.ensure( first.path() );
+    index.ensure( second.path() );
+    QTRY_COMPARE_WITH_TIMEOUT( ready.size(), 1, 10'000 );
+
+    QCOMPARE( ready.first().at( 0 ).toString(), QDir::cleanPath( second.path() ) );
+    QVERIFY( index.isReadyFor( second.path() ) );
+    QCOMPARE( index.paths(), QStringList( { QStringLiteral( "current.txt" ) } ) );
+
+    // 취소된 첫 세대가 뒤늦게 큐에 남아 있어도 현재 캐시를 덮지 못한다.
+    QThreadPool::globalInstance()->waitForDone( 10'000 );
+    QCoreApplication::processEvents();
+    QCOMPARE( ready.size(), 1 );
+    QVERIFY( index.isReadyFor( second.path() ) );
+}
+
+void TestRstPathCompletion::pathIndexCoalescesInvalidationDuringScan()
+{
+    QTemporaryDir temporary;
+    QVERIFY( temporary.isValid() );
+    QFile file( QDir( temporary.path() ).absoluteFilePath( QStringLiteral( "first.txt" ) ) );
+    QVERIFY( file.open( QIODevice::WriteOnly ) );
+    file.close();
+
+    mrst::PathIndex index;
+    QSignalSpy started( &index, &mrst::PathIndex::scanStarted );
+    QSignalSpy ready( &index, &mrst::PathIndex::ready );
+    index.ensure( temporary.path() );
+    index.invalidate( temporary.path() );
+    index.invalidate( temporary.path() );
+
+    QTRY_COMPARE_WITH_TIMEOUT( ready.size(), 2, 10'000 );
+    QCOMPARE( started.size(), 2 );
+    QCOMPARE( index.paths(), QStringList( { QStringLiteral( "first.txt" ) } ) );
+}
+
+void TestRstPathCompletion::pathIndexQueuesInvalidationDuringThrottle()
+{
+    QTemporaryDir temporary;
+    QVERIFY( temporary.isValid() );
+    const QDir root( temporary.path() );
+    QFile first( root.absoluteFilePath( QStringLiteral( "first.txt" ) ) );
+    QVERIFY( first.open( QIODevice::WriteOnly ) );
+    first.close();
+
+    mrst::PathIndex index;
+    QSignalSpy ready( &index, &mrst::PathIndex::ready );
+    index.ensure( temporary.path() );
+    QTRY_COMPARE_WITH_TIMEOUT( ready.size(), 1, 10'000 );
+
+    QFile second( root.absoluteFilePath( QStringLiteral( "second.txt" ) ) );
+    QVERIFY( second.open( QIODevice::WriteOnly ) );
+    second.close();
+    index.invalidate( temporary.path() );
+
+    QTimer* timer = index.findChild< QTimer* >( QStringLiteral( "pathIndexRescanTimer" ) );
+    QVERIFY( timer != nullptr );
+    QVERIFY( timer->isActive() );
+    QVERIFY( QMetaObject::invokeMethod( timer, "timeout", Qt::DirectConnection ) );
+    QTRY_COMPARE_WITH_TIMEOUT( ready.size(), 2, 10'000 );
+    QCOMPARE( index.paths(), QStringList( { QStringLiteral( "first.txt" ),
+                                           QStringLiteral( "second.txt" ) } ) );
+}
+
+void TestRstPathCompletion::pathIndexRestartsAfterShutdownDropsResult()
+{
+    QTemporaryDir temporary;
+    QVERIFY( temporary.isValid() );
+    QFile file( QDir( temporary.path() ).absoluteFilePath( QStringLiteral( "queued.txt" ) ) );
+    QVERIFY( file.open( QIODevice::WriteOnly ) );
+    file.close();
+
+    mrst::PathIndex index;
+    QSignalSpy ready( &index, &mrst::PathIndex::ready );
+    index.ensure( temporary.path() );
+
+    // 작업만 끝내고 GUI 콜백은 아직 큐에 둔 뒤 종료 플래그를 세운다.
+    QVERIFY( QThreadPool::globalInstance()->waitForDone( 10'000 ) );
+    mrst::requestShutdown();
+    QCoreApplication::processEvents();
+    const bool resultWasDropped = ready.isEmpty();
+    mrst::cancelShutdownRequest();
+
+    QVERIFY( resultWasDropped );
+    // MainWindow의 종료 취소 경로와 같은 순서로 상태를 새 세대로 만든다.
+    index.clear();
+    QVERIFY( !index.isScanning() );
+    index.ensure( temporary.path() );
+    QTRY_COMPARE_WITH_TIMEOUT( ready.size(), 1, 10'000 );
+    QCOMPARE( index.paths(), QStringList( { QStringLiteral( "queued.txt" ) } ) );
+}
+
+void TestRstPathCompletion::pathIndexClearCancelsAndEmptiesState()
+{
+    QTemporaryDir temporary;
+    QVERIFY( temporary.isValid() );
+    QFile file( QDir( temporary.path() ).absoluteFilePath( QStringLiteral( "queued.txt" ) ) );
+    QVERIFY( file.open( QIODevice::WriteOnly ) );
+    file.close();
+
+    mrst::PathIndex index;
+    QSignalSpy ready( &index, &mrst::PathIndex::ready );
+    QSignalSpy progress( &index, &mrst::PathIndex::progress );
+    index.ensure( temporary.path() );
+    index.clear();
+
+    QVERIFY( !index.isScanning() );
+    QVERIFY( index.scanningRoot().isEmpty() );
+    QVERIFY( index.indexedRoot().isEmpty() );
+    QVERIFY( index.partialPathChunks().isEmpty() );
+    QCOMPARE( index.partialPathCount(), qsizetype{ 0 } );
+    QVERIFY( index.paths().isEmpty() );
+
+    QThreadPool::globalInstance()->waitForDone( 10'000 );
+    QCoreApplication::processEvents();
+    QCOMPARE( ready.size(), 0 );
+    QCOMPARE( progress.size(), 0 );
+    QVERIFY( index.paths().isEmpty() );
 }
 
 // ── Esbonio 항목 재기준화 ─────────────────────────────────

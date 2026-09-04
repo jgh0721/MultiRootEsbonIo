@@ -159,9 +159,12 @@ struct Candidate
 /// 이 기능의 값어치는 대부분 여기서 나온다. 실사용 문서가 쓰는 경로는
 /// `../../../../Resources/Novel/Pt5/Vol12/LN_P5V12-3.jpg` 같은 것이라
 /// 손으로 치기가 고약한데, 이름만 알면 여기서 잡힌다.
+/// `scanLimit`가 양수이면 앞에서 그 개수만 검사한다. 인덱스 자체를 자르지 않고
+/// GUI 스레드에서 호출하는 소비자만 응답시간 상한을 둘 때 사용한다.
 [[nodiscard]] QVector< Candidate > fuzzyCandidates( const Query& query, const QString& indexRoot,
                                                     const QStringList& indexedPaths,
-                                                    int limit = 50 );
+                                                    int limit = 50,
+                                                    qsizetype scanLimit = 0 );
 
 /// 한 단계 후보를 앞에 두고, 전역 후보 중 겹치지 않는 것만 뒤에 붙인다.
 [[nodiscard]] QVector< Candidate > mergeCandidates( QVector< Candidate > oneLevel,

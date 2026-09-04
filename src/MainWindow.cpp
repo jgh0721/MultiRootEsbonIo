@@ -8,6 +8,7 @@
 #include "core/solPythonEnvMgr.hpp"
 #include "core/solRecentItems.hpp"
 #include "core/solRestWorkspaceController.hpp"
+#include "core/solRstPathIndex.hpp"
 #include "core/solSettingsWriter.hpp"
 #include "core/solSphinxDiagnosticsStore.hpp"
 #include "core/solWorkspaceSearch.hpp"
@@ -22,6 +23,7 @@
 #include "uis/dlgSphinxBuild.hpp"
 #include "uis/FileTreeFilterProxy.hpp"
 #include "uis/PanelActionIcons.hpp"
+#include "uis/QuickOpenDialog.hpp"
 #include "uis/TabSwitcherPopup.hpp"
 #include "utils/DwmTitleBar.hpp"
 #include "utils/solBackgroundWork.hpp"
@@ -787,6 +789,12 @@ void MainWindow::createMenus()
     auto* openAction = fileMenu->addAction( QString(), this, &MainWindow::onFileOpen );
     openAction->setObjectName( QStringLiteral( "file.open" ) );
 
+    auto* quickOpenAction = fileMenu->addAction( QString(), this, &MainWindow::showQuickOpen );
+    quickOpenAction->setObjectName( QStringLiteral( "file.quickOpen" ) );
+    quickOpenAction->setProperty( "mv.shortcutId", QStringLiteral( "file.quickOpen" ) );
+    quickOpenAction->setShortcut( QKeySequence( Qt::ALT | Qt::SHIFT | Qt::Key_O ) );
+    quickOpenAction->setShortcutContext( Qt::ApplicationShortcut );
+
     auto* openWorkspace = fileMenu->addAction( QString(), QKeySequence::Open, this, &MainWindow::onWorkspaceOpen );
     openWorkspace->setObjectName( QStringLiteral( "file.openWorkspace" ) );
     openWorkspace->setProperty( "mv.shortcutId", QStringLiteral( "file.openWorkspace" ) );
@@ -1113,6 +1121,7 @@ void MainWindow::retranslateMenus()
     menuTitle ( "menu.file",          tr( "파일(&F)" ) );
     actionText( "file.new",           tr( "새 파일(&N)" ) );
     actionText( "file.open",          tr( "열기..." ) );
+    actionText( "file.quickOpen",     tr( "파일 빠르게 열기(&Q)..." ) );
     actionText( "file.openWorkspace", tr( "워크스페이스 열기(&O)..." ) );
     actionText( "file.closeWorkspace", tr( "워크스페이스 닫기(&W)" ) );
     actionText( "file.save",          tr( "저장(&S)" ) );
@@ -1621,8 +1630,15 @@ void MainWindow::addPreviewZoomControl( QToolBar* toolBar, QBaseView* view )
 
     auto* label = new QLabel( tr( "프리뷰 확대 비율" ) + QLatin1Char( ':' ), controls );
     label->setObjectName( QStringLiteral( "previewZoomLabel" ) );
+    // QToolBar 의 자식 QLabel 은 Qlementine 스타일에서 ButtonText 역할을 상속할
+    // 수 있다. 그 색이 도구모음 배경색과 같아지는 테마에서도 보이도록 실제 전경
+    // 역할을 WindowText 로 되돌리고 모든 상태 그룹에 명시적인 글자색을 지정한다.
+    label->setForegroundRole( QPalette::WindowText );
+    const QColor foreground = ThemeManager::instance().foregroundColor();
     QPalette labelPalette = label->palette();
-    labelPalette.setColor( QPalette::WindowText, ThemeManager::instance().foregroundColor() );
+    labelPalette.setColor( QPalette::All, QPalette::WindowText, foreground );
+    labelPalette.setColor( QPalette::All, QPalette::ButtonText, foreground );
+    labelPalette.setColor( QPalette::All, QPalette::Text, foreground );
     label->setPalette( labelPalette );
 
     auto* combo = new QComboBox( controls );
@@ -2657,6 +2673,15 @@ void MainWindow::closeEvent( QCloseEvent* event )
         if( controller_ == nullptr )
             return;
         controller_->endShutdown();
+        // global thread pool의 대기 작업은 위 clear()에서 시작도 못 한 채
+        // 제거될 수 있다. 그 작업이 PathIndex 스캔이었다면 scanning 상태만
+        // 남으므로, 종료 취소 뒤 현재 워크스페이스 인덱스를 새 세대로 다시 건다.
+        if( mrst::PathIndex* pathIndex = controller_->pathIndex() )
+        {
+            pathIndex->clear();
+            if( !workspaceRoot_.isEmpty() )
+                pathIndex->ensure( workspaceRoot_ );
+        }
         controller_->setActiveDocument( textViewOf( currentView() ) );
     };
 
@@ -3020,6 +3045,154 @@ void MainWindow::showTabSwitcher( const bool forward )
     // 앞으로는 1번(= 직전 문서), 뒤로는 마지막(= 가장 오래 안 본 문서)부터
     // 강조한다. 0번은 지금 보고 있는 문서라 첫 강조 자리로는 의미가 없다.
     tabSwitcher_->showEntries( entries, forward ? 1 : entries.size() - 1 );
+}
+
+QStringList MainWindow::quickOpenRecentPaths( const QString& root ) const
+{
+    QStringList relativePaths;
+    if( root.isEmpty() )
+        return relativePaths;
+
+    const QDir rootDir( QDir::cleanPath( root ) );
+    for( const QString& recentPath : m_recentFiles )
+    {
+        QString relative = QDir::fromNativeSeparators(
+            rootDir.relativeFilePath( QDir::cleanPath( recentPath ) ) );
+        while( relative.startsWith( QLatin1String( "./" ) ) )
+            relative.remove( 0, 2 );
+
+        // 다른 드라이브는 절대 경로로, 다른 상위 폴더는 ../ 로 돌아온다.
+        // 빠른 열기는 현재 워크스페이스 밖으로 나가서는 안 된다.
+        if( relative.isEmpty() || QDir::isAbsolutePath( relative ) || relative == QLatin1String( ".." )
+            || relative.startsWith( QLatin1String( "../" ) ) )
+            continue;
+        if( !relativePaths.contains( relative, Qt::CaseInsensitive ) )
+            relativePaths.push_back( relative );
+    }
+    return relativePaths;
+}
+
+void MainWindow::showQuickOpen()
+{
+    if( workspaceRoot_.isEmpty() || controller_ == nullptr )
+    {
+        showTransientStatus( tr( "열린 워크스페이스가 없습니다." ), 3000 );
+        return;
+    }
+
+    // 경로 정규화/QDir 접근보다 먼저 본다. 연결이 끊긴 매핑 드라이브는 경로를
+    // 확인하는 것만으로도 Windows 재연결 대기에 들어갈 수 있다.
+    if( mrst::isDisconnectedRemoteDrivePath( workspaceRoot_ ) )
+    {
+        showTransientStatus( tr( "원격 드라이브가 연결되어 있지 않습니다: %1" )
+                                 .arg( QDir::toNativeSeparators( workspaceRoot_ ) ), 4000 );
+        return;
+    }
+
+    mrst::PathIndex* index = controller_->pathIndex();
+    if( index == nullptr )
+    {
+        showTransientStatus( tr( "파일 인덱스를 사용할 수 없습니다." ), 3000 );
+        return;
+    }
+
+    if( quickOpenDialog_.isNull() )
+    {
+        quickOpenDialog_ = new mrst::QuickOpenDialog( this );
+        connect( quickOpenDialog_, &mrst::QuickOpenDialog::fileChosen,
+                 this, [this]( const QString& path ) { openFile( path ); } );
+
+        connect( index, &mrst::PathIndex::scanStarted, this,
+                 [this, index]( const QString& root ) {
+                     if( quickOpenDialog_.isNull() || !quickOpenDialog_->isVisible()
+                         || root.compare( workspaceRoot_, Qt::CaseInsensitive ) != 0 )
+                         return;
+                     // 같은 루트 재스캔이면 완성된 이전 snapshot만 유지한다. 새
+                     // partial을 섞으면 fast path에는 중복 제거가 없어 같은 파일이
+                     // 두 줄 생긴다. ready에서 최종 snapshot으로 바꾼다.
+                     if( index->isReadyFor( root ) )
+                     {
+                         // 같은 루트의 완성 snapshot은 이미 표시 중이다. 재스캔
+                         // 시작 시 다시 교체하면 변화가 없어도 전체 랭킹한다.
+                         quickOpenDialog_->setIndexingProgress( index->paths().size() );
+                     }
+                     else
+                     {
+                         quickOpenDialog_->replacePathIndexChunks(
+                             index->partialPathChunks(), index->scannedPathCount() );
+                     }
+                 } );
+        connect( index, &mrst::PathIndex::progress, this,
+                 [this, index]( const QString& root, const QStringList& batch,
+                         const qsizetype scannedCount ) {
+                     if( quickOpenDialog_.isNull() || !quickOpenDialog_->isVisible()
+                         || root.compare( workspaceRoot_, Qt::CaseInsensitive ) != 0 )
+                         return;
+                     if( index->isReadyFor( root ) )
+                     {
+                         quickOpenDialog_->setIndexingProgress( scannedCount );
+                         return;
+                     }
+                     quickOpenDialog_->appendPathIndexBatch( batch, scannedCount );
+                 } );
+        connect( index, &mrst::PathIndex::ready, this,
+                 [this, index]( const QString& root, qsizetype ) {
+                     if( quickOpenDialog_.isNull() || !quickOpenDialog_->isVisible()
+                         || root.compare( workspaceRoot_, Qt::CaseInsensitive ) != 0 )
+                         return;
+                     quickOpenDialog_->finishPathIndexing( index->paths() );
+                 } );
+    }
+
+    QStringList paths;
+    const mrst::PathIndexChunks* partialChunks = nullptr;
+    qsizetype scannedPathCount = 0;
+    bool indexing = false;
+    if( index->isScanningFor( workspaceRoot_ ) )
+    {
+        // 재스캔에서는 이전 완성 snapshot, 첫 스캔에서만 partial을 보인다.
+        if( index->isReadyFor( workspaceRoot_ ) )
+            paths = index->paths();
+        else
+        {
+            partialChunks = &index->partialPathChunks();
+            scannedPathCount = index->scannedPathCount();
+        }
+        indexing = true;
+    }
+    else if( index->isReadyFor( workspaceRoot_ ) )
+    {
+        paths = index->paths();
+    }
+    else
+    {
+        indexing = true;
+        index->ensure( workspaceRoot_ );
+        if( index->isScanningFor( workspaceRoot_ ) )
+        {
+            partialChunks = &index->partialPathChunks();
+            scannedPathCount = index->scannedPathCount();
+        }
+    }
+
+    const QAction* quickOpenAction =
+        menuBar()->findChild<QAction*>( QStringLiteral( "file.quickOpen" ) );
+    const QString shortcutText = quickOpenAction != nullptr
+                                     ? quickOpenAction->shortcut().toString(
+                                           QKeySequence::NativeText )
+                                     : QString{};
+    const QStringList recentPaths = quickOpenRecentPaths( workspaceRoot_ );
+    if( partialChunks != nullptr )
+    {
+        quickOpenDialog_->showForPathIndexChunks(
+            workspaceRoot_, *partialChunks, indexing, scannedPathCount,
+            recentPaths, shortcutText );
+    }
+    else
+    {
+        quickOpenDialog_->showForPathIndex( workspaceRoot_, paths, indexing,
+                                            recentPaths, shortcutText );
+    }
 }
 
 QString MainWindow::stampLogLine( const QString& text )
@@ -4048,6 +4221,9 @@ void MainWindow::shutdownUi()
 
 void MainWindow::resetWorkspaceUi()
 {
+    if( !quickOpenDialog_.isNull() )
+        quickOpenDialog_->close();
+
     stopExplorerFilterWalk();
     explorerExpandedBeforeFilter_.clear();
     externalPromptQueue_.clear();

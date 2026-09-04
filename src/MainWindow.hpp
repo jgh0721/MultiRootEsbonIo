@@ -40,6 +40,7 @@ namespace mrst {
 class ExternalChangeWatcher;
 class FileTreeFilterProxy;
 class PythonEnvManager;
+class QuickOpenDialog;
 class TabSwitcherPopup;
 class UpdateService;
 class WorkspaceController;
@@ -568,6 +569,11 @@ private:
     void                                noteTabActivated( QBaseView* view );
     /// 탭 목록 팝업을 띄운다. forward=false 면 가장 오래된 항목부터 강조한다.
     void                                showTabSwitcher( bool forward );
+
+    // ── 워크스페이스 파일 빠르게 열기 (Alt+Shift+O) ──
+    void                                showQuickOpen();
+    [[nodiscard]] QStringList           quickOpenRecentPaths( const QString& root ) const;
+    QPointer< mrst::QuickOpenDialog >   quickOpenDialog_;
 
 private:
 

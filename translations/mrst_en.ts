@@ -582,6 +582,10 @@ You will be asked about any unsaved documents first. Continue?</translation>
         <translation type="unfinished">No document is open.</translation>
     </message>
     <message>
+        <source>열린 워크스페이스가 없습니다.</source>
+        <translation type="unfinished">No workspace is open.</translation>
+    </message>
+    <message>
         <source>오류</source>
         <translation type="unfinished">Error</translation>
     </message>
@@ -876,6 +880,10 @@ Open it as text anyway?
         <translation type="unfinished">Show in fil&amp;e manager</translation>
     </message>
     <message>
+        <source>파일 빠르게 열기(&amp;Q)...</source>
+        <translation type="unfinished">&amp;Quick Open...</translation>
+    </message>
+    <message>
         <source>파일 여는 중...</source>
         <translation type="unfinished">Opening file...</translation>
     </message>
@@ -886,6 +894,10 @@ Open it as text anyway?
     <message>
         <source>파일 이름으로 쓸 수 없는 글자가 있습니다.</source>
         <translation type="unfinished">The file name contains characters that cannot be used.</translation>
+    </message>
+    <message>
+        <source>파일 인덱스를 사용할 수 없습니다.</source>
+        <translation type="unfinished">The file index is unavailable.</translation>
     </message>
     <message>
         <source>파일 작업이 진행 중입니다. 완료된 뒤 워크스페이스를 다시 닫거나 전환해 주세요.</source>
@@ -2008,6 +2020,10 @@ Enable the last option to have edits reflected in those documents too. While you
     <message>
         <source>텍스트 뷰어</source>
         <translation type="unfinished">Text viewer</translation>
+    </message>
+    <message>
+        <source>파일 빠르게 열기</source>
+        <translation type="unfinished">Quick Open</translation>
     </message>
     <message>
         <source>파일 시스템 알림 (권장)</source>
@@ -3571,6 +3587,103 @@ For example: 42 or 42:5</translation>
     <message>
         <source>프로젝트 가상환경이 없어 내장 환경을 사용합니다.</source>
         <translation type="unfinished">No project virtual environment; using the bundled one.</translation>
+    </message>
+</context>
+<context>
+    <name>mrst::QuickOpenDialog</name>
+    <message>
+        <source>%L1개 파일 · %L2개 일치 · %3</source>
+        <translation type="unfinished">%L1 files · %L2 matches · %3</translation>
+    </message>
+    <message>
+        <source>0개 표시</source>
+        <translation type="unfinished">Showing 0</translation>
+    </message>
+    <message>
+        <source>1–%L1 표시</source>
+        <translation type="unfinished">Showing 1–%L1</translation>
+    </message>
+    <message>
+        <source>↑↓ 선택 · Enter 열기 · Esc 닫기</source>
+        <translation type="unfinished">↑↓ Select · Enter Open · Esc Close</translation>
+    </message>
+    <message>
+        <source>닫기</source>
+        <translation type="unfinished">Close</translation>
+    </message>
+    <message>
+        <source>빠른 파일 열기 단축키: %1</source>
+        <translation type="unfinished">Quick Open shortcut: %1</translation>
+    </message>
+    <message>
+        <source>빠른 파일 열기 닫기</source>
+        <translation type="unfinished">Close Quick Open</translation>
+    </message>
+    <message>
+        <source>슬래시와 역슬래시를 모두 경로 구분자로 사용할 수 있습니다.</source>
+        <translation type="unfinished">You can use both slashes and backslashes as path separators.</translation>
+    </message>
+    <message>
+        <source>위아래 방향키와 Page Up, Page Down 키로 결과를 선택합니다.</source>
+        <translation type="unfinished">Select a result with Up/Down or Page Up/Page Down.</translation>
+    </message>
+    <message>
+        <source>인덱싱 중: %L1개 · %L2개 일치 · %3</source>
+        <translation type="unfinished">Indexing: %L1 files · %L2 matches · %3</translation>
+    </message>
+    <message>
+        <source>일치하는 파일이 없습니다.</source>
+        <translation type="unfinished">No matching files.</translation>
+    </message>
+    <message>
+        <source>키보드 도움말</source>
+        <translation type="unfinished">Keyboard help</translation>
+    </message>
+    <message>
+        <source>파일 검색 결과</source>
+        <translation type="unfinished">File search results</translation>
+    </message>
+    <message>
+        <source>파일 빠르게 열기</source>
+        <translation type="unfinished">Quick Open</translation>
+    </message>
+    <message>
+        <source>파일 이름 또는 경로</source>
+        <translation type="unfinished">File name or path</translation>
+    </message>
+    <message>
+        <source>파일 이름 또는 경로 검색 (예: src/main, docs\api)</source>
+        <translation type="unfinished">Search file name or path (e.g. src/main, docs\api)</translation>
+    </message>
+    <message>
+        <source>파일 인덱스를 만드는 중입니다…</source>
+        <translation type="unfinished">Building the file index…</translation>
+    </message>
+    <message>
+        <source>파일 인덱싱 및 검색 상태</source>
+        <translation type="unfinished">File indexing and search status</translation>
+    </message>
+    <message>
+        <source>파일이 없거나 워크스페이스 밖을 가리켜 열 수 없습니다.</source>
+        <translation type="unfinished">The file is missing or points outside the workspace and cannot be opened.</translation>
+    </message>
+    <message>
+        <source>표시할 파일이 없습니다.</source>
+        <translation type="unfinished">No files to display.</translation>
+    </message>
+</context>
+<context>
+    <name>mrst::QuickOpenItemDelegate</name>
+    <message>
+        <source>워크스페이스 루트</source>
+        <translation type="unfinished">Workspace root</translation>
+    </message>
+</context>
+<context>
+    <name>mrst::QuickOpenListModel</name>
+    <message>
+        <source>%1, 경로 %2</source>
+        <translation type="unfinished">%1, path %2</translation>
     </message>
 </context>
 <context>

@@ -169,7 +169,7 @@ WorkspaceController::WorkspaceController( QObject* parent )
 
     completions_->setPathIndex( pathIndex_ );
     connect( pathIndex_, &PathIndex::ready, this,
-            [this]( const QString& root, int ) { completions_->notifyPathIndexReady( root ); } );
+            [this]( const QString& root, qsizetype ) { completions_->notifyPathIndexReady( root ); } );
     connect( pathIndex_, &PathIndex::logMessage, this, &WorkspaceController::logMessage );
 
     // 자동완성 조율자는 LSP 풀을 모른다. 라우팅은 여기서만 한다.
@@ -1486,6 +1486,11 @@ ProjectRegistry* WorkspaceController::projectRegistry() const
     return registry_;
 }
 
+PathIndex* WorkspaceController::pathIndex()
+{
+    return pathIndex_;
+}
+
 QString WorkspaceController::workspaceRoot() const
 {
     return registry_->workspaceRoot();
@@ -1602,6 +1607,17 @@ void WorkspaceController::setWorkspaceRoot( const QString& root )
     emit projectsChanged( 0 );
     emit projectOutlineReady( {}, {}, 0 );
     emit outlineCleared( tr( "열린 문서가 없습니다." ) );
+
+    // 빠른 파일 열기는 첫 호출 때 전체 트리를 기다리지 않아야 한다. 프로젝트
+    // 스캔과 마찬가지로 워크스페이스를 정한 직후 백그라운드에서 인덱스를 만든다.
+    // 닫을 때는 이전 루트의 늦은 배치가 다음 워크스페이스로 넘어오지 않게 버린다.
+    if( pathIndex_ != nullptr )
+    {
+        if( currentRoot.isEmpty() )
+            pathIndex_->clear();
+        else
+            pathIndex_->ensure( currentRoot );
+    }
 
     if( currentRoot.isEmpty() )
         return;

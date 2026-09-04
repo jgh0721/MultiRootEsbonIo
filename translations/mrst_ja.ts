@@ -578,6 +578,10 @@
         <translation type="unfinished">開いているドキュメントがありません。</translation>
     </message>
     <message>
+        <source>열린 워크스페이스가 없습니다.</source>
+        <translation type="unfinished">開いているワークスペースがありません。</translation>
+    </message>
+    <message>
         <source>오류</source>
         <translation type="unfinished">エラー</translation>
     </message>
@@ -870,6 +874,10 @@
         <translation type="unfinished">ファイルマネージャーで表示(&amp;E)</translation>
     </message>
     <message>
+        <source>파일 빠르게 열기(&amp;Q)...</source>
+        <translation type="unfinished">ファイルをすばやく開く(&amp;Q)...</translation>
+    </message>
+    <message>
         <source>파일 여는 중...</source>
         <translation type="unfinished">ファイルを開いています...</translation>
     </message>
@@ -880,6 +888,10 @@
     <message>
         <source>파일 이름으로 쓸 수 없는 글자가 있습니다.</source>
         <translation type="unfinished">ファイル名に使えない文字が含まれています。</translation>
+    </message>
+    <message>
+        <source>파일 인덱스를 사용할 수 없습니다.</source>
+        <translation type="unfinished">ファイルインデックスを使用できません。</translation>
     </message>
     <message>
         <source>파일 작업이 진행 중입니다. 완료된 뒤 워크스페이스를 다시 닫거나 전환해 주세요.</source>
@@ -2001,6 +2013,10 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
     <message>
         <source>텍스트 뷰어</source>
         <translation type="unfinished">テキストビューア</translation>
+    </message>
+    <message>
+        <source>파일 빠르게 열기</source>
+        <translation type="unfinished">ファイルをすばやく開く</translation>
     </message>
     <message>
         <source>파일 시스템 알림 (권장)</source>
@@ -3564,6 +3580,103 @@ latexpdf · info はビルダーではなく make ターゲットなので、成
     <message>
         <source>프로젝트 가상환경이 없어 내장 환경을 사용합니다.</source>
         <translation type="unfinished">プロジェクトの仮想環境がないため内蔵環境を使用します。</translation>
+    </message>
+</context>
+<context>
+    <name>mrst::QuickOpenDialog</name>
+    <message>
+        <source>%L1개 파일 · %L2개 일치 · %3</source>
+        <translation type="unfinished">%L1ファイル · %L2件一致 · %3</translation>
+    </message>
+    <message>
+        <source>0개 표시</source>
+        <translation type="unfinished">0件を表示</translation>
+    </message>
+    <message>
+        <source>1–%L1 표시</source>
+        <translation type="unfinished">1–%L1件を表示</translation>
+    </message>
+    <message>
+        <source>↑↓ 선택 · Enter 열기 · Esc 닫기</source>
+        <translation type="unfinished">↑↓ 選択 · Enter 開く · Esc 閉じる</translation>
+    </message>
+    <message>
+        <source>닫기</source>
+        <translation type="unfinished">閉じる</translation>
+    </message>
+    <message>
+        <source>빠른 파일 열기 단축키: %1</source>
+        <translation type="unfinished">ファイルをすばやく開くショートカット: %1</translation>
+    </message>
+    <message>
+        <source>빠른 파일 열기 닫기</source>
+        <translation type="unfinished">「ファイルをすばやく開く」を閉じる</translation>
+    </message>
+    <message>
+        <source>슬래시와 역슬래시를 모두 경로 구분자로 사용할 수 있습니다.</source>
+        <translation type="unfinished">スラッシュとバックスラッシュの両方をパス区切りとして使用できます。</translation>
+    </message>
+    <message>
+        <source>위아래 방향키와 Page Up, Page Down 키로 결과를 선택합니다.</source>
+        <translation type="unfinished">上下矢印キーまたはPage Up、Page Downキーで結果を選択します。</translation>
+    </message>
+    <message>
+        <source>인덱싱 중: %L1개 · %L2개 일치 · %3</source>
+        <translation type="unfinished">インデックス作成中: %L1ファイル · %L2件一致 · %3</translation>
+    </message>
+    <message>
+        <source>일치하는 파일이 없습니다.</source>
+        <translation type="unfinished">一致するファイルはありません。</translation>
+    </message>
+    <message>
+        <source>키보드 도움말</source>
+        <translation type="unfinished">キーボードヘルプ</translation>
+    </message>
+    <message>
+        <source>파일 검색 결과</source>
+        <translation type="unfinished">ファイル検索結果</translation>
+    </message>
+    <message>
+        <source>파일 빠르게 열기</source>
+        <translation type="unfinished">ファイルをすばやく開く</translation>
+    </message>
+    <message>
+        <source>파일 이름 또는 경로</source>
+        <translation type="unfinished">ファイル名またはパス</translation>
+    </message>
+    <message>
+        <source>파일 이름 또는 경로 검색 (예: src/main, docs\api)</source>
+        <translation type="unfinished">ファイル名またはパスを検索 (例: src/main、docs\api)</translation>
+    </message>
+    <message>
+        <source>파일 인덱스를 만드는 중입니다…</source>
+        <translation type="unfinished">ファイルインデックスを作成しています…</translation>
+    </message>
+    <message>
+        <source>파일 인덱싱 및 검색 상태</source>
+        <translation type="unfinished">ファイルのインデックス作成と検索の状態</translation>
+    </message>
+    <message>
+        <source>파일이 없거나 워크스페이스 밖을 가리켜 열 수 없습니다.</source>
+        <translation type="unfinished">ファイルが存在しないかワークスペース外を指しているため、開けません。</translation>
+    </message>
+    <message>
+        <source>표시할 파일이 없습니다.</source>
+        <translation type="unfinished">表示するファイルはありません。</translation>
+    </message>
+</context>
+<context>
+    <name>mrst::QuickOpenItemDelegate</name>
+    <message>
+        <source>워크스페이스 루트</source>
+        <translation type="unfinished">ワークスペースルート</translation>
+    </message>
+</context>
+<context>
+    <name>mrst::QuickOpenListModel</name>
+    <message>
+        <source>%1, 경로 %2</source>
+        <translation type="unfinished">%1、パス %2</translation>
     </message>
 </context>
 <context>
