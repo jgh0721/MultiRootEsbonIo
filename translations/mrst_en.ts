@@ -1015,7 +1015,7 @@ Cause: %3</translation>
     </message>
     <message>
         <source>프리뷰 확대:</source>
-        <translation type="unfinished">Preview zoom:</translation>
+        <translation type="obsolete">Preview zoom:</translation>
     </message>
     <message>
         <source>필터 (부분 일치)</source>
@@ -1283,6 +1283,10 @@ Cause: %3</translation>
         <translation type="unfinished">%1 comment</translation>
     </message>
     <message>
+        <source>%1 크기</source>
+        <translation type="unfinished">%1 size</translation>
+    </message>
+    <message>
         <source>%1 키워드</source>
         <translation type="unfinished">%1 keyword</translation>
     </message>
@@ -1353,6 +1357,10 @@ file systems that never notify. Files that could not be registered for notificat
     <message>
         <source>Sphinx:</source>
         <translation type="unfinished">Sphinx:</translation>
+    </message>
+    <message>
+        <source>UI 글꼴</source>
+        <translation type="unfinished">UI font</translation>
     </message>
     <message>
         <source>UV 경로:</source>
@@ -1477,7 +1485,7 @@ When off, the preview reads local files only. Nothing leaves the machine, but th
     </message>
     <message>
         <source>기본값 복원</source>
-        <translation type="unfinished">Restore defaults</translation>
+        <translation type="obsolete">Restore defaults</translation>
     </message>
     <message>
         <source>기본값으로 초기화</source>
@@ -1582,6 +1590,10 @@ Beyond that, the least recently used project&apos;s server is shut down.</transl
         <translation type="unfinished">Marker + indicator</translation>
     </message>
     <message>
+        <source>메뉴, 도구모음, 도킹 탭 이름과 검색 탭 등에 적용합니다.</source>
+        <translation type="unfinished">Applies to menus, toolbars, docking tab titles, the Search tab, and other interface elements.</translation>
+    </message>
+    <message>
         <source>모든 파일</source>
         <translation type="unfinished">All files</translation>
     </message>
@@ -1632,6 +1644,10 @@ Beyond that, the least recently used project&apos;s server is shut down.</transl
     <message>
         <source>색상</source>
         <translation type="unfinished">Color</translation>
+    </message>
+    <message>
+        <source>색상 기본값 복원</source>
+        <translation type="unfinished">Restore default colors</translation>
     </message>
     <message>
         <source>색상 변경 즉시 앱에 적용</source>
@@ -1720,6 +1736,14 @@ A tab with unsaved edits is always asked first, even under &apos;Reload automati
 Where sub-items are left out by the depth, &quot; …&quot; is appended to that row; hover it to see how many were left out. Cutting them without a mark would read as if that row were the last level of the document.
 
 This setting only decides what goes into the tree. Nothing is re-read from disk, so a change takes effect immediately.</translation>
+    </message>
+    <message>
+        <source>요약 글꼴</source>
+        <translation type="unfinished">Outline font</translation>
+    </message>
+    <message>
+        <source>요약 패널의 활성 문서와 프로젝트 항목에 적용합니다.</source>
+        <translation type="unfinished">Applies to the active-document and project items in the Outline panel.</translation>
     </message>
     <message>
         <source>원래 들여쓰기 유지</source>
@@ -1852,6 +1876,10 @@ When turned off, existing hot exit backups are deleted immediately.</translation
         <translation type="unfinished">Only KaTeX is available for now. It applies to the Markdown preview, and because math is fetched from the internet the external resources option above must be on.</translation>
     </message>
     <message>
+        <source>진단/로그 글꼴</source>
+        <translation type="unfinished">Diagnostics/log font</translation>
+    </message>
+    <message>
         <source>창 배치</source>
         <translation type="unfinished">Window layout</translation>
     </message>
@@ -1924,6 +1952,14 @@ Enable the last option to have edits reflected in those documents too. While you
     <message>
         <source>타이핑 중에는 doxygen 지시어를 생략하기</source>
         <translation type="unfinished">Skip doxygen directives while typing</translation>
+    </message>
+    <message>
+        <source>탐색기 트리의 폴더와 파일 항목에 적용합니다.</source>
+        <translation type="unfinished">Applies to the folders and files in the Explorer tree.</translation>
+    </message>
+    <message>
+        <source>탐색기 항목 글꼴</source>
+        <translation type="unfinished">Explorer item font</translation>
     </message>
     <message>
         <source>탭 간격:</source>
@@ -2024,6 +2060,10 @@ Markdown 본문을 그리는 변환기는 프로그램에 내장되어 있어, �
 When off, the preview reads only local resources. In both markups the body, tables and code blocks still show; only math and diagrams stay as plain text — on an isolated network they cannot be fetched anyway, so leaving it off is better.
 
 The converter that draws Markdown body text is built into the program, so it always works even with this option off or without a network.</translation>
+    </message>
+    <message>
+        <source>하단 진단 표와 로그 내용에 적용합니다.</source>
+        <translation type="unfinished">Applies to the bottom Diagnostics table and log contents.</translation>
     </message>
     <message>
         <source>한 단계 더</source>

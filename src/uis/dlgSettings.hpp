@@ -68,6 +68,7 @@ private:
     void                                saveTextViewerSettings();
     void                                loadPreviewSettings();
     void                                savePreviewSettings();
+    void                                saveThemeFontSettings();
     void                                loadUpdateSettings();
     void                                loadEsbonioSettings();
     void                                saveEsbonioSettings();
@@ -86,6 +87,14 @@ private:
     /// 창 크기·패널 배치를 워크스페이스마다 기억할지 (`window/restoreLayout`).
     QCheckBox*                          m_restoreLayoutCheck = nullptr;
     QComboBox*                          m_themeCombo    = nullptr;
+    QFontComboBox*                      m_uiFontCombo = nullptr;
+    QSpinBox*                           m_uiFontSizeSpin = nullptr;
+    QFontComboBox*                      m_explorerFontCombo = nullptr;
+    QSpinBox*                           m_explorerFontSizeSpin = nullptr;
+    QFontComboBox*                      m_outlineFontCombo = nullptr;
+    QSpinBox*                           m_outlineFontSizeSpin = nullptr;
+    QFontComboBox*                      m_diagnosticsFontCombo = nullptr;
+    QSpinBox*                           m_diagnosticsFontSizeSpin = nullptr;
     QComboBox*                          m_themeScopeCombo = nullptr;
     QLabel*                             m_themeLexerListLabel = nullptr;
     QListWidget*                        m_themeLexerList = nullptr;

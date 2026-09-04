@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QWidget>
 #include <QColor>
+#include <QFont>
 #include <QHash>
 #include <QList>
 #include <QString>
@@ -35,6 +36,20 @@ class ThemeManager : public QObject
 public:
     enum Theme { Light, Dark };
     Q_ENUM(Theme)
+
+    /// 화면 글꼴의 적용 범위. UI 는 QApplication 기본 글꼴이고, 나머지는
+    /// 해당 패널의 항목 글꼴만 덮는다.
+    enum class FontRole
+    {
+        UserInterface,
+        Explorer,
+        Outline,
+        DiagnosticsAndLog,
+    };
+    Q_ENUM( FontRole )
+
+    static constexpr int                kMinimumFontPointSize = 6;
+    static constexpr int                kMaximumFontPointSize = 72;
 
     struct ColorEntry {
         QString key;
@@ -70,6 +85,12 @@ public:
     static QString                      scopeLabel( const QString& groupId );
     static QHash<QString, QColor>       defaultColors( Theme theme );
     static QString                      themeName( Theme theme );
+
+    /// 저장된 화면 글꼴. 패널별 값이 없으면 UI 글꼴을 사용한다.
+    static QFont                        configuredFont( FontRole role );
+    /// 화면 글꼴을 설정에 저장한다. 실제 위젯 적용은 applyToApplication() 과
+    /// MainWindow::applyConfiguredFonts() 가 담당한다.
+    static void                         setConfiguredFont( FontRole role, const QFont& font );
 
     bool                                importThemeFile( const QString& filePath, QString* errorMessage = nullptr );
     bool                                exportThemeFile( const QString& filePath, QString* errorMessage = nullptr ) const;

@@ -1009,7 +1009,7 @@ pyproject.toml と uv.lock を使用して現在の環境と同じ場所の隣�
     </message>
     <message>
         <source>프리뷰 확대:</source>
-        <translation type="unfinished">プレビューの拡大:</translation>
+        <translation type="obsolete">プレビューの拡大:</translation>
     </message>
     <message>
         <source>필터 (부분 일치)</source>
@@ -1276,6 +1276,10 @@ pyproject.toml と uv.lock を使用して現在の環境と同じ場所の隣�
         <translation type="unfinished">%1 コメント</translation>
     </message>
     <message>
+        <source>%1 크기</source>
+        <translation type="unfinished">%1 サイズ</translation>
+    </message>
+    <message>
         <source>%1 키워드</source>
         <translation type="unfinished">%1 キーワード</translation>
     </message>
@@ -1346,6 +1350,10 @@ pyproject.toml と uv.lock を使用して現在の環境と同じ場所の隣�
     <message>
         <source>Sphinx:</source>
         <translation type="unfinished">Sphinx:</translation>
+    </message>
+    <message>
+        <source>UI 글꼴</source>
+        <translation type="unfinished">UI フォント</translation>
     </message>
     <message>
         <source>UV 경로:</source>
@@ -1470,7 +1478,7 @@ pyproject.toml と uv.lock を使用して現在の環境と同じ場所の隣�
     </message>
     <message>
         <source>기본값 복원</source>
-        <translation type="unfinished">既定値に戻す</translation>
+        <translation type="obsolete">既定値に戻す</translation>
     </message>
     <message>
         <source>기본값으로 초기화</source>
@@ -1575,6 +1583,10 @@ pyproject.toml と uv.lock を使用して現在の環境と同じ場所の隣�
         <translation type="unfinished">マーカー + インジケーター</translation>
     </message>
     <message>
+        <source>메뉴, 도구모음, 도킹 탭 이름과 검색 탭 등에 적용합니다.</source>
+        <translation type="unfinished">メニュー、ツールバー、ドッキングタブ名、検索タブなどに適用します。</translation>
+    </message>
+    <message>
         <source>모든 파일</source>
         <translation type="unfinished">すべてのファイル</translation>
     </message>
@@ -1625,6 +1637,10 @@ pyproject.toml と uv.lock を使用して現在の環境と同じ場所の隣�
     <message>
         <source>색상</source>
         <translation type="unfinished">色</translation>
+    </message>
+    <message>
+        <source>색상 기본값 복원</source>
+        <translation type="unfinished">色を既定値に戻す</translation>
     </message>
     <message>
         <source>색상 변경 즉시 앱에 적용</source>
@@ -1713,6 +1729,14 @@ pyproject.toml と uv.lock を使用して現在の環境と同じ場所の隣�
 深さで省かれた下位項目がある行の末尾には &quot; …&quot; が付き、マウスを乗せるといくつ省かれたかが分かります。印を付けずに切ると、その行がドキュメントの最後の段階のように読めてしまうからです。
 
 この設定はツリーに載せるものだけを決めます。ドキュメントを読み直さないので、変更は直ちに反映されます。</translation>
+    </message>
+    <message>
+        <source>요약 글꼴</source>
+        <translation type="unfinished">アウトラインのフォント</translation>
+    </message>
+    <message>
+        <source>요약 패널의 활성 문서와 프로젝트 항목에 적용합니다.</source>
+        <translation type="unfinished">アウトラインパネルのアクティブドキュメントとプロジェクト項目に適用します。</translation>
     </message>
     <message>
         <source>원래 들여쓰기 유지</source>
@@ -1845,6 +1869,10 @@ pyproject.toml と uv.lock を使用して現在の環境と同じ場所の隣�
         <translation type="unfinished">現在は KaTeX のみ対応しています。Markdown プレビューにのみ適用され、数式はインターネットから取得して描くため、上の外部リソース項目がオンである必要があります。</translation>
     </message>
     <message>
+        <source>진단/로그 글꼴</source>
+        <translation type="unfinished">診断/ログのフォント</translation>
+    </message>
+    <message>
         <source>창 배치</source>
         <translation type="unfinished">ウィンドウ配置</translation>
     </message>
@@ -1917,6 +1945,14 @@ Breathe で C++ API を取り込む文書のように、ディレクティブ一
     <message>
         <source>타이핑 중에는 doxygen 지시어를 생략하기</source>
         <translation type="unfinished">入力中は doxygen ディレクティブを省略する</translation>
+    </message>
+    <message>
+        <source>탐색기 트리의 폴더와 파일 항목에 적용합니다.</source>
+        <translation type="unfinished">エクスプローラーのツリーにあるフォルダーとファイル項目に適用します。</translation>
+    </message>
+    <message>
+        <source>탐색기 항목 글꼴</source>
+        <translation type="unfinished">エクスプローラー項目のフォント</translation>
     </message>
     <message>
         <source>탭 간격:</source>
@@ -2017,6 +2053,10 @@ Markdown 본문을 그리는 변환기는 프로그램에 내장되어 있어, �
 オフにするとプレビューはローカル資源だけを読みます。どちらのマークアップでも本文・表・コードブロックはそのまま表示され、数式と図だけが元のテキストのまま残ります — 閉鎖網ではどうせ取得できないので、オフにしておくほうがよいでしょう。
 
 Markdown の本文を描く変換器はプログラムに内蔵されているため、この項目をオフにしてもネットワークがなくても常に動作します。</translation>
+    </message>
+    <message>
+        <source>하단 진단 표와 로그 내용에 적용합니다.</source>
+        <translation type="unfinished">下部の診断テーブルとログ内容に適用します。</translation>
     </message>
     <message>
         <source>한 단계 더</source>

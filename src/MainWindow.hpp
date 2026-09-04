@@ -201,6 +201,8 @@ private:
     QString normalizeFilePath( const QString& filePath ) const;
     void                                applyThemeToView( QBaseView* view ) const;
     void                                applyCurrentTheme();
+    /// 전역 UI 글꼴과 탐색기·요약·진단/로그의 범위별 글꼴을 적용한다.
+    void                                applyConfiguredFonts();
     void                                updateTitle();
     void                                updateTabDecoration( QBaseView* view );
     void                                updateViewerToolBar();

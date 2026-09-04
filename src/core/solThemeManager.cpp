@@ -17,6 +17,35 @@ namespace
     constexpr auto kThemeKey                       = "theme";
     constexpr int  kThemeOverridesSchemaVersion    = 4;
 
+    QString fontSettingsPrefix( const ThemeManager::FontRole role )
+    {
+        switch( role )
+        {
+        case ThemeManager::FontRole::UserInterface:
+            return QStringLiteral( "theme/fonts/ui" );
+        case ThemeManager::FontRole::Explorer:
+            return QStringLiteral( "theme/fonts/explorer" );
+        case ThemeManager::FontRole::Outline:
+            return QStringLiteral( "theme/fonts/outline" );
+        case ThemeManager::FontRole::DiagnosticsAndLog:
+            return QStringLiteral( "theme/fonts/diagnosticsAndLog" );
+        }
+        return QStringLiteral( "theme/fonts/ui" );
+    }
+
+    QFont platformDefaultFont()
+    {
+        // 첫 호출은 main() 에서 위젯을 만들기 전이다. 이후 qApp 글꼴을 사용자
+        // 설정으로 바꾸더라도 운영체제 기본값은 이 사본으로 유지한다.
+        static const QFont defaultFont = [] {
+            QFont font = qApp != nullptr ? qApp->font() : QFont();
+            if( font.pointSize() <= 0 )
+                font.setPointSize( 9 );
+            return font;
+        }();
+        return defaultFont;
+    }
+
     QJsonObject colorMapToJson( const QHash< QString, QColor >& colors )
     {
         QJsonObject object;
@@ -557,6 +586,54 @@ QString ThemeManager::themeName( Theme theme )
     return theme == Dark ? QStringLiteral( "Windows 11 Dark" ) : QStringLiteral( "Windows 11 Light" );
 }
 
+QFont ThemeManager::configuredFont( const FontRole role )
+{
+    const QFont fallback = role == FontRole::UserInterface
+                               ? platformDefaultFont()
+                               : configuredFont( FontRole::UserInterface );
+    const QString prefix = fontSettingsPrefix( role );
+    AppSettings settings;
+
+    QString family = settings.value( prefix + QStringLiteral( "/family" ), fallback.family() )
+                         .toString().trimmed();
+    if( family.isEmpty() )
+        family = fallback.family();
+
+    const int fallbackPointSize = fallback.pointSize() > 0 ? fallback.pointSize() : 9;
+    bool pointSizeOk = false;
+    int storedPointSize = settings.value( prefix + QStringLiteral( "/pointSize" ),
+                                          fallbackPointSize ).toInt( &pointSizeOk );
+    if( !pointSizeOk )
+        storedPointSize = fallbackPointSize;
+    const int pointSize = qBound( kMinimumFontPointSize,
+                                  storedPointSize,
+                                  kMaximumFontPointSize );
+
+    QFont font = fallback;
+    font.setFamily( family );
+    font.setPointSize( pointSize );
+    return font;
+}
+
+void ThemeManager::setConfiguredFont( const FontRole role, const QFont& font )
+{
+    const QFont fallback = configuredFont( role );
+    const QString family = font.family().trimmed().isEmpty() ? fallback.family()
+                                                             : font.family().trimmed();
+    const int requestedPointSize = font.pointSize() > 0
+                                       ? font.pointSize()
+                                       : ( font.pointSizeF() > 0.0
+                                               ? qRound( font.pointSizeF() )
+                                               : fallback.pointSize() );
+    const int pointSize = qBound( kMinimumFontPointSize, requestedPointSize,
+                                  kMaximumFontPointSize );
+    const QString prefix = fontSettingsPrefix( role );
+
+    AppSettings settings;
+    settings.setValue( prefix + QStringLiteral( "/family" ), family );
+    settings.setValue( prefix + QStringLiteral( "/pointSize" ), pointSize );
+}
+
 bool ThemeManager::importThemeFile( const QString& filePath, QString* errorMessage )
 {
     QFile file( filePath );
@@ -623,6 +700,10 @@ void ThemeManager::applyToApplication()
 {
     if( !qApp )
         return;
+
+    // 메뉴·도구모음·도킹 탭과 런타임에 추가되는 검색 탭은 QApplication 글꼴을
+    // 그대로 상속한다. 패널별 글꼴은 MainWindow 가 이 적용 뒤에 덮는다.
+    qApp->setFont( configuredFont( FontRole::UserInterface ) );
 
     // Qlementine QStyle 이 켜져 있으면 전역 스타일시트를 절대 걸지 않는다.
     // 이유가 두 가지인데, 두 번째가 치명적이다.

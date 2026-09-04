@@ -581,6 +581,7 @@ MainWindow::MainWindow( QWidget* parent )
     setupPythonEnvironment();
     setupUpdateBar();
     setupUpdateService();
+    applyConfiguredFonts();
 
     // 외부 파일 편집 인식. 지금은 감시할 파일이 없어 타이머도 스레드도 뜨지
     // 않는다 — 탭이 열리면서 refreshExternalWatchSet() 이 채운다.
@@ -1610,13 +1611,21 @@ void MainWindow::addPreviewZoomControl( QToolBar* toolBar, QBaseView* view )
 
     toolBar->addSeparator();
 
-    auto* label = new QLabel( tr( "프리뷰 확대:" ), toolBar );
+    // 레이블과 콤보를 하나의 도구모음 항목으로 묶는다. 따로 추가하면 공간이
+    // 좁을 때 레이블만 확장 메뉴로 밀려 콤보의 의미가 보이지 않을 수 있다.
+    auto* controls = new QWidget( toolBar );
+    controls->setObjectName( QStringLiteral( "previewZoomControl" ) );
+    auto* controlsLayout = new QHBoxLayout( controls );
+    controlsLayout->setContentsMargins( 0, 0, 0, 0 );
+    controlsLayout->setSpacing( 6 );
+
+    auto* label = new QLabel( tr( "프리뷰 확대 비율" ) + QLatin1Char( ':' ), controls );
+    label->setObjectName( QStringLiteral( "previewZoomLabel" ) );
     QPalette labelPalette = label->palette();
     labelPalette.setColor( QPalette::WindowText, ThemeManager::instance().foregroundColor() );
     label->setPalette( labelPalette );
-    toolBar->addWidget( label );
 
-    auto* combo = new QComboBox( toolBar );
+    auto* combo = new QComboBox( controls );
     combo->setObjectName( QStringLiteral( "previewZoomCombo" ) );
     combo->setAccessibleName( tr( "프리뷰 확대 비율" ) );
     combo->setToolTip( tr( "프리뷰 확대 비율" ) );
@@ -1639,7 +1648,10 @@ void MainWindow::addPreviewZoomControl( QToolBar* toolBar, QBaseView* view )
              [this, view, combo]( const int selectedIndex ) {
                  setPreviewZoomPercentForView( view, combo->itemData( selectedIndex ).toInt() );
              } );
-    toolBar->addWidget( combo );
+    label->setBuddy( combo );
+    controlsLayout->addWidget( label );
+    controlsLayout->addWidget( combo );
+    toolBar->addWidget( controls );
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1818,6 +1830,35 @@ void MainWindow::applyCurrentTheme()
     //ToolbarIcons::refreshAction( m_captureProtectionOffAction );
     //ToolbarIcons::refreshAction( m_captureProtectionMonitorAction );
     //ToolbarIcons::refreshAction( m_captureProtectionExcludeAction );
+}
+
+void MainWindow::applyConfiguredFonts()
+{
+    auto& themeManager = ThemeManager::instance();
+    themeManager.applyToApplication();
+
+    if( Ui.treLeftSideFolterTree != nullptr )
+        Ui.treLeftSideFolterTree->setFont(
+            ThemeManager::configuredFont( ThemeManager::FontRole::Explorer ) );
+
+    const QFont outlineFont = ThemeManager::configuredFont( ThemeManager::FontRole::Outline );
+    if( Ui.treOutlineDocument != nullptr )
+        Ui.treOutlineDocument->setFont( outlineFont );
+    if( Ui.treOutlineProject != nullptr )
+        Ui.treOutlineProject->setFont( outlineFont );
+
+    const QFont diagnosticsFont =
+        ThemeManager::configuredFont( ThemeManager::FontRole::DiagnosticsAndLog );
+    if( Ui.tblDiagnostics != nullptr )
+        Ui.tblDiagnostics->setFont( diagnosticsFont );
+    if( Ui.logView != nullptr )
+        Ui.logView->setFont( diagnosticsFont );
+
+    // 검색 페이지는 별도 글꼴 범위가 생기기 전까지 전역 UI 글꼴을 명시적으로
+    // 따른다. 런타임에 만든 페이지라 QApplication 전파 시점을 가정하지 않는다.
+    if( searchTabPage_ != nullptr )
+        searchTabPage_->setFont(
+            ThemeManager::configuredFont( ThemeManager::FontRole::UserInterface ) );
 }
 
 QBaseView* MainWindow::createViewForFile( const QString& filePath )
@@ -3038,6 +3079,8 @@ void MainWindow::onSettings()
         // 단축키 즉시 적용
         const auto shortcuts = QSettingsDialog::LoadShortcutsFromSettings();
         QSettingsDialog::ApplyShortcutsToActions( shortcuts, this );
+        // 메뉴·도구모음·도킹 탭과 패널별 글꼴을 즉시 적용한다.
+        applyConfiguredFonts();
         // 열려있는 뷰어에 변경된 설정 적용
         applySettingsToAllViews();
         // 개요 트리 깊이는 컨트롤러에 다시 묻지 않고 캐시한 개요로 다시 그린다.

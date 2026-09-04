@@ -33,6 +33,33 @@ namespace
         return label;
     }
 
+    QHBoxLayout* createFontSettingRow( QWidget* parent, QFontComboBox*& familyCombo,
+                                       QSpinBox*& sizeSpin, const QFont& font,
+                                       const QString& objectPrefix,
+                                       const QString& accessibleName,
+                                       const QString& toolTip )
+    {
+        auto* row = new QHBoxLayout;
+        familyCombo = new QFontComboBox( parent );
+        familyCombo->setObjectName( objectPrefix + QStringLiteral( "Family" ) );
+        familyCombo->setCurrentFont( font );
+        familyCombo->setAccessibleName( accessibleName );
+        familyCombo->setToolTip( toolTip );
+
+        sizeSpin = new QSpinBox( parent );
+        sizeSpin->setObjectName( objectPrefix + QStringLiteral( "PointSize" ) );
+        sizeSpin->setRange( ThemeManager::kMinimumFontPointSize,
+                            ThemeManager::kMaximumFontPointSize );
+        sizeSpin->setValue( font.pointSize() );
+        sizeSpin->setSuffix( QStringLiteral( " pt" ) );
+        sizeSpin->setAccessibleName( QSettingsDialog::tr( "%1 크기" ).arg( accessibleName ) );
+        sizeSpin->setToolTip( toolTip );
+
+        row->addWidget( familyCombo, 1 );
+        row->addWidget( sizeSpin );
+        return row;
+    }
+
     class RevertableKeySequenceEdit : public QKeySequenceEdit
     {
     public:
@@ -365,6 +392,7 @@ void QSettingsDialog::on_btnApply_clicked( bool Checked )
 {
     Q_UNUSED( Checked )
     saveShortcuts();
+    saveThemeFontSettings();
     saveTextViewerSettings();
     savePreviewSettings();
     saveEsbonioSettings();
@@ -624,6 +652,37 @@ QWidget* QSettingsDialog::createGeneralPage()
     }
     formLayout->addRow( tr( "테마 모드:" ), m_themeCombo );
 
+    const auto addFontRow = [themeGroup, formLayout]( const QString& labelText,
+                                                       QFontComboBox*& familyCombo,
+                                                       QSpinBox*& sizeSpin,
+                                                       const QFont& font,
+                                                       const QString& objectPrefix,
+                                                       const QString& toolTip ) {
+        auto* label = new QLabel( labelText + QLatin1Char( ':' ), themeGroup );
+        auto* row = createFontSettingRow( themeGroup, familyCombo, sizeSpin, font,
+                                          objectPrefix, labelText, toolTip );
+        label->setBuddy( familyCombo );
+        formLayout->addRow( label, row );
+    };
+
+    addFontRow( tr( "UI 글꼴" ), m_uiFontCombo, m_uiFontSizeSpin,
+                ThemeManager::configuredFont( ThemeManager::FontRole::UserInterface ),
+                QStringLiteral( "themeUiFont" ),
+                tr( "메뉴, 도구모음, 도킹 탭 이름과 검색 탭 등에 적용합니다." ) );
+    addFontRow( tr( "탐색기 항목 글꼴" ), m_explorerFontCombo, m_explorerFontSizeSpin,
+                ThemeManager::configuredFont( ThemeManager::FontRole::Explorer ),
+                QStringLiteral( "themeExplorerFont" ),
+                tr( "탐색기 트리의 폴더와 파일 항목에 적용합니다." ) );
+    addFontRow( tr( "요약 글꼴" ), m_outlineFontCombo, m_outlineFontSizeSpin,
+                ThemeManager::configuredFont( ThemeManager::FontRole::Outline ),
+                QStringLiteral( "themeOutlineFont" ),
+                tr( "요약 패널의 활성 문서와 프로젝트 항목에 적용합니다." ) );
+    addFontRow( tr( "진단/로그 글꼴" ), m_diagnosticsFontCombo,
+                m_diagnosticsFontSizeSpin,
+                ThemeManager::configuredFont( ThemeManager::FontRole::DiagnosticsAndLog ),
+                QStringLiteral( "themeDiagnosticsFont" ),
+                tr( "하단 진단 표와 로그 내용에 적용합니다." ) );
+
     m_themeNameLabel = new QLabel( themeGroup );
     formLayout->addRow( tr( "기본 팔레트:" ), m_themeNameLabel );
 
@@ -650,7 +709,8 @@ QWidget* QSettingsDialog::createGeneralPage()
     themeLayout->addLayout( formLayout );
 
     auto* buttonLayout  = new QHBoxLayout;
-    m_themeResetButton  = new QPushButton( tr( "기본값 복원" ), themeGroup );
+    // 글꼴 설정이 같은 그룹에 있으므로 무엇을 되돌리는지 버튼에서 명시한다.
+    m_themeResetButton  = new QPushButton( tr( "색상 기본값 복원" ), themeGroup );
     m_themeImportButton = new QPushButton( tr( "가져오기..." ), themeGroup );
     m_themeExportButton = new QPushButton( tr( "내보내기..." ), themeGroup );
     buttonLayout->addWidget( m_themeResetButton );
@@ -819,6 +879,25 @@ QWidget* QSettingsDialog::createGeneralPage()
     populateThemeColorTable();
 
     return page;
+}
+
+void QSettingsDialog::saveThemeFontSettings()
+{
+    const auto saveFont = []( const ThemeManager::FontRole role,
+                              const QFontComboBox* familyCombo,
+                              const QSpinBox* sizeSpin ) {
+        if( familyCombo == nullptr || sizeSpin == nullptr )
+            return;
+        QFont font = familyCombo->currentFont();
+        font.setPointSize( sizeSpin->value() );
+        ThemeManager::setConfiguredFont( role, font );
+    };
+
+    saveFont( ThemeManager::FontRole::UserInterface, m_uiFontCombo, m_uiFontSizeSpin );
+    saveFont( ThemeManager::FontRole::Explorer, m_explorerFontCombo, m_explorerFontSizeSpin );
+    saveFont( ThemeManager::FontRole::Outline, m_outlineFontCombo, m_outlineFontSizeSpin );
+    saveFont( ThemeManager::FontRole::DiagnosticsAndLog, m_diagnosticsFontCombo,
+              m_diagnosticsFontSizeSpin );
 }
 
 QWidget* QSettingsDialog::createShortcutsPage()
