@@ -453,6 +453,9 @@ private:
     QString                             previewStatus_;
     /// 마지막으로 내보낸 진행도(0..1000, 음수 = 모름).
     int                                 previewPermille_ = -1;
+    /// IME 는 조합 문자열을 교체하면서 삭제/삽입 통지를 한 입력 이벤트 안에서
+    /// 연달아 낸다. 그 이벤트가 끝난 뒤 Markdown 원문을 한 번만 다시 읽는다.
+    bool                                markdownEditRefreshQueued_ = false;
 
     // ── 개요 상태 ──
     QTimer*                             outlineDebounce_ = nullptr;

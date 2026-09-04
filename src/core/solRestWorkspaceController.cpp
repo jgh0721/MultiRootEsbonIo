@@ -1682,8 +1682,33 @@ void WorkspaceController::attachDocument( QTextView* view )
     connect( view, &QTextView::sigTextEdited, this, [this, view] {
         if( activeView_ != view )
             return;
-        requestPreviewBuild( false );
-        if( DocumentContext* context = contextFor( view ) )
+
+        DocumentContext* context = contextFor( view );
+        if( context != nullptr
+            && filekinds::hasExtension( context->path, filekinds::markdownExtensions() ) )
+        {
+            // 한글 IME 는 기존 조합 문자를 먼저 지운 뒤 새 조합 문자를 넣는다.
+            // sigTextEdited 에서 곧바로 전문을 복사하면 입력 이벤트 중간의, 마지막
+            // 글자가 빠진 문자열이 Markdown 디바운스 큐에 남을 수 있다. 이벤트가
+            // 끝난 다음 현재 버퍼를 다시 읽어 삭제/삽입 묶음을 한 요청으로 접는다.
+            if( !markdownEditRefreshQueued_ )
+            {
+                markdownEditRefreshQueued_ = true;
+                const QPointer< QTextView > editedView( view );
+                QTimer::singleShot( 0, this, [this, editedView] {
+                    markdownEditRefreshQueued_ = false;
+                    if( editedView.isNull() || activeView_ != editedView )
+                        return;
+                    requestPreviewBuild( false );
+                } );
+            }
+        }
+        else
+        {
+            requestPreviewBuild( false );
+        }
+
+        if( context != nullptr )
             syncDocumentToServer( *context, false );
         outlineDebounce_->start();
     } );
