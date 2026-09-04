@@ -3,6 +3,7 @@
 
 #include "editor/QBaseEditor.hpp"
 #include "editor/RstContainerLexer.hpp"
+#include "solFileKinds.hpp"
 #include "solRstLineUtils.hpp"
 #include "solGlossaryIndex.hpp"
 #include "solRstPathIndex.hpp"
@@ -21,6 +22,15 @@ namespace {
 /// 파이썬 원본과 같은 감각. 너무 짧으면 한 글자마다 요청이 날아가고,
 /// 너무 길면 팝업이 뒤늦게 뜬다.
 constexpr int kDebounceMs = 150;
+
+/// reST 완성기는 모든 텍스트 편집기에 연결되지만 Markdown 문법까지 해석해서는
+/// 안 된다. 확장자 없는 새 문서와 사용자 정의 Sphinx 소스 확장자는 기존처럼
+/// 허용하고, 앱이 Markdown 으로 확정한 확장자만 명시적으로 제외한다.
+bool isMarkdownEditor( const QTextView* view )
+{
+    return view != nullptr
+           && filekinds::hasExtension( view->currentFilePath(), filekinds::markdownExtensions() );
+}
 
 /// 이 문자를 입력했을 때만 완성을 시작한다. 그 외 글자는 이미 떠 있는 팝업의
 /// 필터만 갱신한다. 평범한 산문을 치는 동안 팝업이 튀어나오면 안 된다.
@@ -651,6 +661,12 @@ void CompletionCoordinator::hidePopup()
 
 void CompletionCoordinator::requestExplicit()
 {
+    if( isMarkdownEditor( activeView_ ) )
+    {
+        hidePopup();
+        return;
+    }
+
     // 사용자가 직접 부른 것이다. Esc 로 눌러 둔 것을 푼다.
     dismissedPathPrefix_ = QString{};
     debounce_->stop();
@@ -663,6 +679,11 @@ void CompletionCoordinator::onCharAdded( const int character )
 {
     if( activeView_.isNull() || sender() != activeView_ )
         return;
+    if( isMarkdownEditor( activeView_ ) )
+    {
+        hidePopup();
+        return;
+    }
 
     // 이미 떠 있으면 여기서는 아무것도 하지 않는다. 갱신은 onTextEdited 가
     // 한 곳에서 맡는다 — 삭제도 그쪽으로 오므로 규칙이 하나로 남는다.
@@ -705,6 +726,11 @@ void CompletionCoordinator::onTextEdited()
 {
     if( activeView_.isNull() || sender() != activeView_ )
         return;
+    if( isMarkdownEditor( activeView_ ) )
+    {
+        hidePopup();
+        return;
+    }
     if( !isPopupVisible() && !sessionArmed_ )
         return;
     if( refreshQueued_ )
@@ -794,8 +820,11 @@ void CompletionCoordinator::flushTrigger()
 
 void CompletionCoordinator::trigger( const QString& triggerCharacter, const bool explicitInvoke )
 {
-    if( activeView_.isNull() || popup_.isNull() )
+    if( activeView_.isNull() || popup_.isNull() || isMarkdownEditor( activeView_ ) )
+    {
+        hidePopup();
         return;
+    }
 
     const rstcomplete::Context context = contextAtCaret();
     if( context.kind == rstcomplete::ContextKind::None )
