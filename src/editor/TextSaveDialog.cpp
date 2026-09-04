@@ -3,6 +3,7 @@
 
 #include "uniqueLibs/solEncodingDetector.hpp"
 
+#include <QApplication>
 #include <QComboBox>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -10,6 +11,7 @@
 #include <QLabel>
 #include <QLayout>
 #include <QSignalBlocker>
+#include <QStyleFactory>
 #include <QWidget>
 
 namespace {
@@ -32,9 +34,21 @@ QString bomModeLabel(TextSaveDialog::BomMode mode)
 TextSaveDialog::TextSaveDialog(QWidget* parent)
     : QFileDialog(parent)
 {
+    // Qlementine's combo-box event filter recursively calls QComboBox::view()
+    // while Qt constructs the non-native file dialog, causing a stack overflow.
+    // Limit the fallback style to this dialog so the encoding/BOM controls remain available.
+    static QStyle* dialogStyle = [] {
+        QStyle* style = QStyleFactory::create(QStringLiteral("Fusion"));
+        if (style)
+            style->setParent(qApp);
+        return style;
+    }();
+    if (dialogStyle)
+        setStyle(dialogStyle);
+
+    setOption(QFileDialog::DontUseNativeDialog, true);
     setAcceptMode(QFileDialog::AcceptSave);
     setFileMode(QFileDialog::AnyFile);
-    setOption(QFileDialog::DontUseNativeDialog, true);
     setDefaultSuffix(QStringLiteral("txt"));
     setWindowTitle(tr("다른 이름으로 저장"));
     buildAccessoryUi();
