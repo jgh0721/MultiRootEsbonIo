@@ -103,6 +103,26 @@ namespace
                    path, mrst::filekinds::restructuredTextExtensions() );
     }
 
+    void selectPreviewZoomPercent( QComboBox* combo, const int percent )
+    {
+        if( combo == nullptr )
+            return;
+
+        int index = combo->findData( percent );
+        if( index < 0 )
+        {
+            // Ctrl+Wheel 이 프리셋에 없는 유효한 값을 만들더라도 현재 배율을
+            // 정확히 표시한다. 탭을 바꾸었다 돌아왔을 때도 같은 경로를 쓴다.
+            index = 0;
+            while( index < combo->count() && combo->itemData( index ).toInt() < percent )
+                ++index;
+            combo->insertItem( index, QStringLiteral( "%1%" ).arg( percent ), percent );
+        }
+
+        const QSignalBlocker blocker( combo );
+        combo->setCurrentIndex( index );
+    }
+
     /// 이 파일이 텍스트 편집기로 열리는가.
     ///
     /// 쓰는 곳은 shouldConfirmBinaryTextOpen() 하나다 — 이진 내용을 텍스트로 열려고
@@ -706,7 +726,39 @@ void MainWindow::initialisePreview()
     showPreviewStartPage();
 
     // 생성자의 applyCurrentTheme() 는 page() 가 없어 바탕색을 못 칠했다. 지금 칠한다.
-    Ui.webEngineView->page()->setBackgroundColor( ThemeManager::instance().backgroundColor() );
+    QWebEnginePage* previewPage = Ui.webEngineView->page();
+    previewPage->setBackgroundColor( ThemeManager::instance().backgroundColor() );
+
+    // QWebEngineView::setZoomFactor() 와 Ctrl+Wheel 은 모두 page 의 같은 속성을
+    // 바꾼다. 콤보에서 프리뷰로 가는 연결만 두면 Ctrl+Wheel 로 바꾼 값이 문서
+    // 상태와 콤보에 돌아오지 않으므로 page 신호를 반대 방향의 단일 진입점으로 쓴다.
+    connect( previewPage, &QWebEnginePage::zoomFactorChanged, this,
+             [this]( const qreal factor ) {
+                 if( !std::isfinite( factor ) )
+                     return;
+
+                 const int percent = qRound( factor * 100.0 );
+                 if( percent < mrst::kMinimumPreviewZoomPercent
+                     || percent > mrst::kMaximumPreviewZoomPercent )
+                     return;
+
+                 QBaseView* view = currentView();
+                 if( !isPreviewDocumentView( view ) )
+                     return;
+
+                 // 콤보에서 시작된 변경과 탭 전환은 속성을 먼저 기록하므로 다시
+                 // 저장하지 않는다. Ctrl+Wheel 에서만 새 값을 문서/세션에 반영한다.
+                 if( previewZoomPercentForView( view ) != percent )
+                     setPreviewZoomPercentForView( view, percent );
+
+                 if( m_viewerToolBar != nullptr )
+                 {
+                     selectPreviewZoomPercent(
+                         m_viewerToolBar->findChild< QComboBox* >(
+                             QStringLiteral( "previewZoomCombo" ) ),
+                         percent );
+                 }
+             } );
 
     if( controller_ )
         controller_->setPreviewView( Ui.webEngineView );
@@ -1608,8 +1660,8 @@ void MainWindow::setPreviewZoomPercentForView( QBaseView* view, const int percen
     if( currentView() == view && previewInitialised_ && Ui.webEngineView != nullptr )
         Ui.webEngineView->setZoomFactor( static_cast< qreal >( percent ) / 100.0 );
 
-    // 콤보 선택은 한 번에 끝나는 조작이라 디바운스가 필요 없다. 여기서 바로
-    // workspace.json 을 갱신해야 탭을 닫은 뒤 다시 열어도 파일별 값이 남는다.
+    // 배율 한 단계는 곧바로 확정되는 조작이다. 여기서 workspace.json 을
+    // 갱신해야 탭을 닫은 뒤 다시 열어도 콤보와 Ctrl+Wheel 의 값이 모두 남는다.
     saveWorkspaceSessionNow();
 }
 
@@ -1649,17 +1701,7 @@ void MainWindow::addPreviewZoomControl( QToolBar* toolBar, QBaseView* view )
     for( const int option : { 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200 } )
         combo->addItem( QStringLiteral( "%1%" ).arg( option ), option );
 
-    const int percent = previewZoomPercentForView( view );
-    int index = combo->findData( percent );
-    if( index < 0 )
-    {
-        // 수동으로 편집했거나 미래 버전이 남긴 유효한 값을 잃지 않는다.
-        index = 0;
-        while( index < combo->count() && combo->itemData( index ).toInt() < percent )
-            ++index;
-        combo->insertItem( index, QStringLiteral( "%1%" ).arg( percent ), percent );
-    }
-    combo->setCurrentIndex( index );
+    selectPreviewZoomPercent( combo, previewZoomPercentForView( view ) );
     connect( combo, QOverload<int>::of( &QComboBox::currentIndexChanged ), combo,
              [this, view, combo]( const int selectedIndex ) {
                  setPreviewZoomPercentForView( view, combo->itemData( selectedIndex ).toInt() );
