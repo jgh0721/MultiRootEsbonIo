@@ -484,6 +484,7 @@ if(MRST_BUILD_TESTS)
             tests/ui/tst_PanelActionIcons.cpp
             tests/ui/tst_PreviewMorph.cpp
             tests/ui/tst_QuickOpenDialog.cpp
+            tests/ui/tst_PopupInteraction.cpp
 
             src/uis/PanelActionIcons.cpp
             src/uis/PanelActionIcons.hpp

@@ -1,4 +1,4 @@
-﻿include_guard(GLOBAL)
+include_guard(GLOBAL)
 include(FetchContent)
 
 # oclero/qlementine — 모던 데스크톱 Qt 앱용 QStyle.
@@ -115,6 +115,29 @@ else()
             "우리 사본과 이 교체 단계를 지운다. 아니라면 새 상류 내용에 우리 고침을\n"
             "다시 얹고 두 해시를 갱신한다.")
 endif()
+
+# 팝업 입력 패치. 메뉴의 합성 클릭 재전송과 콤보박스 생성 중 view() 재진입을
+# 제거한다. 상류 파일이 변경되면 자동 덮어쓰기 대신 재검토하도록 중단한다.
+foreach(_popupFilter IN ITEMS MenuEventFilter ComboboxItemViewFilter)
+    set(_popupUpstream "${qlementine_SOURCE_DIR}/lib/src/style/eventFilters/${_popupFilter}.hpp")
+    set(_popupOurs "${CMAKE_SOURCE_DIR}/src/thirdparty/qlementine/${_popupFilter}.hpp")
+    if(_popupFilter STREQUAL "MenuEventFilter")
+        set(_popupExpected "525d85ddbcce949bd615ae6fc35b8bce6b34cbcef61b5ec36cc397eebf049afd")
+    else()
+        set(_popupExpected "6a7234339d5160883a191f58f1b99d0a6e0cdb059bf21c0168305979cd88e634")
+    endif()
+    file(SHA256 "${_popupUpstream}" _popupSeen)
+    file(SHA256 "${_popupOurs}" _popupMine)
+    if(_popupSeen STREQUAL _popupMine)
+        message(STATUS "Qlementine ${_popupFilter} patch: already applied")
+    elseif(_popupSeen STREQUAL _popupExpected)
+        file(COPY_FILE "${_popupOurs}" "${_popupUpstream}")
+        message(STATUS "Qlementine ${_popupFilter} patch: applied")
+    else()
+        message(FATAL_ERROR "Qlementine ${_popupFilter} differs from the reviewed upstream. Rebase the local patch before updating. SHA256=${_popupSeen}")
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_popupOurs}")
+endforeach()
 
 # 정적 링크는 요구사항이다. qlementine 은 qt_add_library(... STATIC ...) 로
 # 만들지만, 태그를 올렸을 때 조용히 SHARED 로 바뀌면 배포 구성이 어긋난다.
