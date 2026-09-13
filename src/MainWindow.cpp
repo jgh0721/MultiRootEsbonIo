@@ -25,6 +25,7 @@
 #include "uis/PanelActionIcons.hpp"
 #include "uis/QuickOpenDialog.hpp"
 #include "uis/TabSwitcherPopup.hpp"
+#include "uis/ExternalFilesProxy.hpp"
 #include "utils/DwmTitleBar.hpp"
 #include "utils/solBackgroundWork.hpp"
 #include "utils/solPhaseTrace.hpp"
@@ -1731,6 +1732,7 @@ void MainWindow::openFile( const QString& filePath )
         {
             // 이미 열려 있어도 "방금 본 문서" 다. 목록의 맨 앞으로 올린다.
             addRecentFile( normalizedPath );
+            trackExternalFile( normalizedPath );
             m_tabWidget->setCurrentIndex( i );
             // 트리뷰·진단 표·개요에서 문서를 불러낸 경우 포커스는 아직 그 패널에
             // 있다. 문서를 앞에 냈으면 키보드도 문서에 있어야 한다. 미루는 이유는
@@ -1815,6 +1817,32 @@ void MainWindow::openFile( const QString& filePath )
     // 여기까지 왔으면 열기가 시작됐다(비동기 경로는 아직 읽는 중이다). 실패
     // 경로는 모두 위에서 돌아갔으므로, 못 여는 파일이 목록에 쌓이지 않는다.
     addRecentFile( normalizedPath );
+    trackExternalFile( normalizedPath );
+}
+
+void MainWindow::trackExternalFile( const QString& path )
+{
+    if( externalFiles_ == nullptr || path.isEmpty() || mrst::isDisconnectedRemoteDrivePath( path ) )
+        return;
+    if( externalFiles_->addFile( path ) && Ui.treLeftSideFolterTree != nullptr )
+        Ui.treLeftSideFolterTree->expand( externalFiles_->externalRoot() );
+}
+
+QModelIndex MainWindow::explorerSourceIndex( const QModelIndex& index ) const
+{
+    if( explorerProxy_ == nullptr )
+        return {};
+    const QModelIndex filtered = externalFiles_ != nullptr
+        ? externalFiles_->mapToSource( index ) : index;
+    return explorerProxy_->mapToSource( filtered );
+}
+
+QModelIndex MainWindow::explorerTreeIndex( const QModelIndex& index ) const
+{
+    if( explorerProxy_ == nullptr )
+        return {};
+    const QModelIndex filtered = explorerProxy_->mapFromSource( index );
+    return externalFiles_ != nullptr ? externalFiles_->mapFromSource( filtered ) : filtered;
 }
 
 QString MainWindow::normalizeFilePath( const QString& filePath ) const
@@ -2064,6 +2092,7 @@ void MainWindow::connectViewWatchSignals( QBaseView* view )
         externalWatcher_->beginSelfWrite( path );
     } );
     connect( textView, &QTextView::sigFileSaved, this, [this]( const QString& path ) {
+        trackExternalFile( path );
         // "다른 이름으로 저장" 이면 감시 대상 경로가 바뀐다. 목록을 먼저 맞춰야
         // endSelfWrite() 가 새 경로의 항목을 찾아 기준을 다시 잡을 수 있다.
         refreshExternalWatchSet();
@@ -4268,6 +4297,7 @@ void MainWindow::resetWorkspaceUi()
 
     stopExplorerFilterWalk();
     explorerExpandedBeforeFilter_.clear();
+    externalExpandedBeforeFilter_ = false;
     externalPromptQueue_.clear();
 
     if( Ui.edtExplorerFilter != nullptr )
@@ -4378,8 +4408,24 @@ bool MainWindow::setWorkspace( const QString& Folder )
         // 프록시가 조상 검사를 멈출 자리다. 이것이 없으면 워크스페이스 폴더
         // 이름이 우연히 필터와 맞는 순간 필터가 통째로 무력해진다.
         explorerProxy_->setRootSourceIndex( sourceRoot );
+        if( externalFiles_ != nullptr )
+        {
+            externalFiles_->setWorkspace( workspaceRoot, explorerProxy_->mapFromSource( sourceRoot ) );
+            const auto session = mrst::loadWorkspaceSession( workspaceRoot );
+            for( const auto& path : session.externalFiles )
+                if( !mrst::isDisconnectedRemoteDrivePath( path ) && QFileInfo( path ).isFile() )
+                    trackExternalFile( path );
+            // Hot Exit may have restored these tabs before workspace selection.
+            for( int tab = 0; tab < m_tabWidget->count(); ++tab )
+                if( auto* view = qobject_cast<QBaseView*>( m_tabWidget->widget( tab ) ) )
+                    trackExternalFile( view->currentFilePath() );
+        }
         if( Ui.treLeftSideFolterTree != nullptr )
-            Ui.treLeftSideFolterTree->setRootIndex( explorerProxy_->mapFromSource( sourceRoot ) );
+        {
+            Ui.treLeftSideFolterTree->setRootIndex( explorerTreeIndex( sourceRoot ) );
+            if( externalFiles_ != nullptr )
+                Ui.treLeftSideFolterTree->expand( externalFiles_->externalRoot() );
+        }
     }
     else if( Ui.treLeftSideFolterTree != nullptr )
     {
@@ -4612,7 +4658,9 @@ void MainWindow::setupExplorerPanel()
     explorerProxy_ = new mrst::FileTreeFilterProxy( this );
     explorerProxy_->setSourceModel( treLeftFolderTreeModel_ );
 
-    tree->setModel( explorerProxy_ );
+    externalFiles_ = new mrst::ExternalFilesProxy( this );
+    externalFiles_->setSourceModel( explorerProxy_ );
+    tree->setModel( externalFiles_ );
     tree->setIndentation( 15 );
     for( int column = 1; column < explorerProxy_->columnCount(); ++column )
         tree->header()->hideSection( column );
@@ -4802,9 +4850,17 @@ void MainWindow::retranslateExplorerPanel()
 
 QFileInfo MainWindow::explorerFileInfo( const QModelIndex& proxyIndex ) const
 {
+    if( externalFiles_ != nullptr )
+    {
+        const QString path = externalFiles_->filePath( proxyIndex );
+        if( !path.isEmpty() )
+            return QFileInfo( path );
+        if( externalFiles_->isExternalRoot( proxyIndex ) )
+            return {};
+    }
     if( !proxyIndex.isValid() || explorerProxy_ == nullptr || treLeftFolderTreeModel_ == nullptr )
         return {};
-    return treLeftFolderTreeModel_->fileInfo( explorerProxy_->mapToSource( proxyIndex ) );
+    return treLeftFolderTreeModel_->fileInfo( explorerSourceIndex( proxyIndex ) );
 }
 
 QFileInfo MainWindow::explorerCurrentFileInfo() const
@@ -4826,7 +4882,7 @@ QString MainWindow::explorerTargetDirectory() const
     if( explorerProxy_ == nullptr || treLeftFolderTreeModel_ == nullptr )
         return {};
     return treLeftFolderTreeModel_->filePath(
-        explorerProxy_->mapToSource( Ui.treLeftSideFolterTree->rootIndex() ) );
+        explorerSourceIndex( Ui.treLeftSideFolterTree->rootIndex() ) );
 }
 
 // ── 필터 ──────────────────────────────────────────────────
@@ -4843,6 +4899,8 @@ void MainWindow::refreshExplorerFilter()
         // 필터를 걸기 직전의 펼침 상태를 기억해 둔다. 필터를 지웠을 때 트리가
         // 통째로 펼쳐진 채 남으면 그 전에 보고 있던 자리를 다시 찾아야 한다.
         explorerExpandedBeforeFilter_ = expandedExplorerPaths();
+        externalExpandedBeforeFilter_ = externalFiles_ != nullptr
+            && tree->isExpanded( externalFiles_->externalRoot() );
     }
 
     // 지난 문구를 좇던 일감을 버린다. 남겨 두면 이제 아무도 찾지 않는 폴더를
@@ -4864,6 +4922,8 @@ void MainWindow::refreshExplorerFilter()
         tree->setUpdatesEnabled( false );
         tree->collapseAll();
         restoreExplorerExpansion( explorerExpandedBeforeFilter_ );
+        if( externalExpandedBeforeFilter_ && externalFiles_ != nullptr )
+            tree->expand( externalFiles_->externalRoot() );
         tree->setUpdatesEnabled( true );
         explorerExpandedBeforeFilter_.clear();
     }
@@ -4882,7 +4942,7 @@ void MainWindow::beginExplorerFilterWalk()
         return;
 
     explorerWalkBudget_ = kExplorerWalkBudget;
-    queueExplorerDirectory( explorerProxy_->mapToSource( root ) );
+    queueExplorerDirectory( explorerSourceIndex( root ) );
 }
 
 void MainWindow::queueExplorerDirectory( const QModelIndex& sourceIndex )
@@ -4927,22 +4987,22 @@ void MainWindow::stepExplorerFilterWalk()
             continue;
         }
 
-        const QModelIndex parent = explorerProxy_->mapFromSource( source );
+        const QModelIndex parent = explorerTreeIndex( source );
         if( !parent.isValid() )
             continue;   // 그새 필터에 걸러졌다
 
         if( parent != treeRoot )
             tree->expand( parent );
 
-        const int rows = explorerProxy_->rowCount( parent );
+        const int rows = tree->model()->rowCount( parent );
         for( int row = 0; row < rows; ++row )
         {
-            const QModelIndex child = explorerProxy_->index( row, 0, parent );
+            const QModelIndex child = tree->model()->index( row, 0, parent );
             // hasChildren() 은 QFileSystemModel 에서 그대로 isDir() 이다.
             // 파일은 여기서 걸러진다.
-            if( !explorerProxy_->hasChildren( child ) )
+            if( !tree->model()->hasChildren( child ) )
                 continue;
-            queueExplorerDirectory( explorerProxy_->mapToSource( child ) );
+            queueExplorerDirectory( explorerSourceIndex( child ) );
         }
     }
 
@@ -4966,13 +5026,15 @@ QStringList MainWindow::expandedExplorerPaths() const
 
     QStringList paths;
     const std::function< void( const QModelIndex& ) > walk = [ & ]( const QModelIndex& parent ) {
-        const int rows = explorerProxy_->rowCount( parent );
+        const int rows = tree->model()->rowCount( parent );
         for( int row = 0; row < rows; ++row )
         {
-            const QModelIndex index = explorerProxy_->index( row, 0, parent );
+            const QModelIndex index = tree->model()->index( row, 0, parent );
             if( !tree->isExpanded( index ) )
                 continue;
-            paths << treLeftFolderTreeModel_->filePath( explorerProxy_->mapToSource( index ) );
+            const QString path = treLeftFolderTreeModel_->filePath( explorerSourceIndex( index ) );
+            if( !path.isEmpty() )
+                paths << path;
             walk( index );
         }
     };
@@ -4993,7 +5055,7 @@ void MainWindow::restoreExplorerExpansion( const QStringList& paths )
         const QModelIndex source = treLeftFolderTreeModel_->index( path );
         if( !source.isValid() )
             continue;
-        const QModelIndex index = explorerProxy_->mapFromSource( source );
+        const QModelIndex index = explorerTreeIndex( source );
         if( index.isValid() )
             tree->expand( index );
     }
@@ -5005,11 +5067,22 @@ void MainWindow::selectExplorerPath( const QString& path )
     if( tree == nullptr || explorerProxy_ == nullptr || treLeftFolderTreeModel_ == nullptr )
         return;
 
+    if( externalFiles_ != nullptr )
+    {
+        const auto external = externalFiles_->indexForFile( path );
+        if( external.isValid() )
+        {
+            tree->expand( externalFiles_->externalRoot() );
+            tree->setCurrentIndex( external );
+            tree->scrollTo( external );
+            return;
+        }
+    }
     const QModelIndex source = treLeftFolderTreeModel_->index( path );
     if( !source.isValid() )
         return;   // 모델이 아직 그 폴더를 읽지 않았다. 최선을 다한 것으로 둔다
 
-    const QModelIndex index = explorerProxy_->mapFromSource( source );
+    const QModelIndex index = explorerTreeIndex( source );
     if( !index.isValid() )
         return;   // 지금 필터에 걸리지 않는다
 
@@ -5045,6 +5118,8 @@ void MainWindow::onExplorerContextMenu( const QPoint& pos )
         return;
 
     const QModelIndex index = tree->indexAt( pos );
+    if( externalFiles_ != nullptr && externalFiles_->isExternalRoot( index ) )
+        return;
     if( index.isValid() )
         tree->setCurrentIndex( index );
 
@@ -5255,6 +5330,11 @@ void MainWindow::onExplorerRename()
     }
 
     appendLog( tr( "이름 바꾸기: %1 → %2" ).arg( oldPath, newPath ) );
+    if( externalFiles_ != nullptr && externalFiles_->indexForFile( oldPath ).isValid() )
+    {
+        externalFiles_->removeFile( oldPath );
+        trackExternalFile( newPath );
+    }
 
     // 닫아 두었던 탭을 새 경로로 되돌린다.
     for( const QString& path : std::as_const( affected ) )
@@ -5291,6 +5371,8 @@ void MainWindow::onExplorerDelete()
         return;
     }
     appendLog( tr( "삭제: %1" ).arg( path ) );
+    if( externalFiles_ != nullptr )
+        externalFiles_->removeFile( path );
 }
 
 void MainWindow::revealInFileManager( const QString& path )
@@ -5861,11 +5943,13 @@ void MainWindow::applyWorkspaceReplace()
 // ═══════════════════════════════════════════════════════════
 void MainWindow::saveWorkspaceSessionNow()
 {
-    if( workspaceRoot_.isEmpty() || m_tabWidget == nullptr )
+    if( m_tabWidget == nullptr )
         return;
 
     mrst::WorkspaceSession session;
     session.workspaceRoot = workspaceRoot_;
+    if( externalFiles_ != nullptr )
+        session.externalFiles = externalFiles_->files();
 
     for( int index = 0; index < m_tabWidget->count(); ++index )
     {
@@ -6006,13 +6090,16 @@ void MainWindow::restoreLastSession()
 {
     const mrst::PhaseSpan restoreSpan( "session.restore" );
     const QString lastRoot = AppSettings().value( QStringLiteral( "workspace/lastRoot" ) ).toString();
-    if( lastRoot.isEmpty() || mrst::isDisconnectedRemoteDrivePath( lastRoot )
-        || !QFileInfo( lastRoot ).isDir() )
+    if( !lastRoot.isEmpty() && ( mrst::isDisconnectedRemoteDrivePath( lastRoot )
+        || !QFileInfo( lastRoot ).isDir() ) )
         return;
 
     setWorkspace( lastRoot );
 
     const mrst::WorkspaceSession session = mrst::loadWorkspaceSession( lastRoot );
+    for( const auto& path : session.externalFiles )
+        if( !mrst::isDisconnectedRemoteDrivePath( path ) && QFileInfo( path ).isFile() )
+            trackExternalFile( path );
     if( session.documents.isEmpty() )
         return;   // 워크스페이스만 되살렸다
 
@@ -6024,7 +6111,7 @@ void MainWindow::restoreLastSession()
 
     for( const mrst::OpenDocumentState& document : session.documents )
     {
-        if( !QFileInfo::exists( document.path ) )
+        if( mrst::isDisconnectedRemoteDrivePath( document.path ) || !QFileInfo( document.path ).isFile() )
             continue;   // 그 사이 지워진 파일
         openFile( document.path );
     }

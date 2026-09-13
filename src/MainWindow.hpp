@@ -39,6 +39,7 @@ class CDockWidget;
 namespace mrst {
 class ExternalChangeWatcher;
 class FileTreeFilterProxy;
+class ExternalFilesProxy;
 class PythonEnvManager;
 class QuickOpenDialog;
 class TabSwitcherPopup;
@@ -368,10 +369,15 @@ private:
     QFileSystemModel*                   treLeftFolderTreeModel_ = nullptr;
     /// 탐색기 트리의 필터 · 정렬. treLeftFolderTreeModel_ 위에 얹는다.
     mrst::FileTreeFilterProxy*          explorerProxy_ = nullptr;
+    mrst::ExternalFilesProxy*           externalFiles_ = nullptr;
+    QModelIndex                         explorerSourceIndex( const QModelIndex& index ) const;
+    QModelIndex                         explorerTreeIndex( const QModelIndex& index ) const;
+    void                                trackExternalFile( const QString& path );
     /// 한 글자마다 트리를 다시 펼치지 않도록.
     QTimer*                             explorerFilterDebounce_ = nullptr;
     /// 필터를 걸기 **직전**에 펼쳐져 있던 폴더들. 필터를 지우면 이대로 되돌린다.
     QStringList                         explorerExpandedBeforeFilter_;
+    bool                                externalExpandedBeforeFilter_ = false;
     /// 아직 훑지 않은 디렉터리들 (원본 모델 인덱스). 앞에서 꺼내 너비 우선으로
     /// 돈다 — 얕은 곳이 먼저 보여야 사용자가 결과를 일찍 본다.
     QList< QPersistentModelIndex >      explorerWalkQueue_;

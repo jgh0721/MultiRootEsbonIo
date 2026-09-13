@@ -206,6 +206,8 @@ add_executable(${PROJECT_NAME}
         src/uis/dlgSphinxBuild.hpp
         src/uis/FileTreeFilterProxy.cpp
         src/uis/FileTreeFilterProxy.hpp
+        src/uis/ExternalFilesProxy.cpp
+        src/uis/ExternalFilesProxy.hpp
         src/uis/PanelActionIcons.cpp
         src/uis/PanelActionIcons.hpp
         src/uis/QuickOpenDialog.cpp
@@ -378,6 +380,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_MdOutline.cpp
             tests/tst_LspMessageRouting.cpp
             tests/tst_ProjectResolution.cpp
+            tests/tst_VirtualProject.cpp
             tests/tst_QuickOpenSearch.cpp
             tests/tst_RstCompletionContext.cpp
             tests/tst_RstPathCompletion.cpp
@@ -418,6 +421,9 @@ if(MRST_BUILD_TESTS)
             src/core/solRestOutlineService.cpp
             src/core/solWorkspaceSearch.cpp
             src/core/solWorkspaceSession.cpp
+            src/core/solShadowBackupStore.cpp
+            src/core/solVirtualProjectMgr.cpp
+            src/core/solVirtualProjectMgr.hpp
             src/core/solRecentItems.cpp
             src/core/solExternalChangeWatcher.cpp
             src/core/solEsbonioLspClient.cpp
@@ -485,6 +491,11 @@ if(MRST_BUILD_TESTS)
             tests/ui/tst_PreviewMorph.cpp
             tests/ui/tst_QuickOpenDialog.cpp
             tests/ui/tst_PopupInteraction.cpp
+            tests/ui/tst_ExternalFilesTree.cpp
+
+            src/uis/ExternalFilesProxy.cpp
+            src/uis/ExternalFilesProxy.hpp
+            src/core/solWorkspaceSession.cpp
 
             src/uis/PanelActionIcons.cpp
             src/uis/PanelActionIcons.hpp

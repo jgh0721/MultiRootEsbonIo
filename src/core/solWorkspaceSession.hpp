@@ -4,6 +4,7 @@
 #include <QList>
 #include <QMap>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 namespace mrst {
@@ -31,6 +32,7 @@ struct WorkspaceSession
     int                                 schema = 1;
     QString                             workspaceRoot;
     QVector< OpenDocumentState >        documents;
+    QStringList                         externalFiles;
     int                                 activeIndex = -1;
     QList< int >                        previewSplitterSizes;   ///< 편집기 | 프리뷰
     /// 파일별 프리뷰 확대 비율. 기본값(100)은 저장하지 않는다. 탭을 닫았다가
@@ -54,7 +56,7 @@ struct WorkspaceSession
     /// 전체 화면으로 뜬다. 저장하는 쪽이 전체 화면에 들어가기 직전 값을 쓴다.
     QString                             windowGeometry;
 
-    [[nodiscard]] bool isEmpty() const { return workspaceRoot.isEmpty() && documents.isEmpty(); }
+    [[nodiscard]] bool isEmpty() const { return workspaceRoot.isEmpty() && documents.isEmpty() && externalFiles.isEmpty(); }
 };
 
 /// 마지막으로 보고 있던 문서의 경로. 없으면 빈 문자열.
@@ -66,8 +68,9 @@ struct WorkspaceSession
 /// 아니라 "경로" 를 돌려주는 이름 있는 함수로 못 박는다.
 [[nodiscard]] QString activeDocumentPath( const WorkspaceSession& session );
 
-/// `<root>/.multiroot/workspace.json`
+/// `<root>/.multiroot/workspace.json`, or app-local storage without a workspace.
 [[nodiscard]] QString sessionFilePath( const QString& workspaceRoot );
+[[nodiscard]] bool isPathInWorkspace( const QString& path, const QString& workspaceRoot );
 
 [[nodiscard]] QJsonObject sessionToJson( const WorkspaceSession& session );
 /// 스키마가 다르거나 형식이 깨졌으면 빈 세션을 돌려준다.

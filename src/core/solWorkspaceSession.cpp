@@ -6,6 +6,8 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSaveFile>
+#include <QStandardPaths>
 
 namespace mrst {
 namespace {
@@ -38,8 +40,31 @@ QList< int > toIntList( const QJsonValue& value )
 QString sessionFilePath( const QString& workspaceRoot )
 {
     if( workspaceRoot.isEmpty() )
-        return {};
+    {
+        const QString directory = QStandardPaths::writableLocation( QStandardPaths::AppLocalDataLocation );
+        return directory.isEmpty() ? QString{} : QDir( directory ).filePath( QStringLiteral( "standalone-session.json" ) );
+    }
     return QDir( workspaceRoot ).filePath( QStringLiteral( ".multiroot/workspace.json" ) );
+}
+
+bool isPathInWorkspace( const QString& path, const QString& workspaceRoot )
+{
+    if( path.isEmpty() || workspaceRoot.isEmpty() )
+        return false;
+    const auto normalized = []( const QString& value ) {
+        const QFileInfo info( value );
+        const QString canonical = info.canonicalFilePath();
+        return QDir::cleanPath( canonical.isEmpty() ? info.absoluteFilePath() : canonical );
+    };
+    const QString file = normalized( path );
+    QString root = normalized( workspaceRoot );
+    if( !root.endsWith( QLatin1Char( '/' ) ) )
+        root += QLatin1Char( '/' );
+#ifdef Q_OS_WIN
+    return file.startsWith( root, Qt::CaseInsensitive );
+#else
+    return file.startsWith( root, Qt::CaseSensitive );
+#endif
 }
 
 QJsonObject sessionToJson( const WorkspaceSession& session )
@@ -70,6 +95,7 @@ QJsonObject sessionToJson( const WorkspaceSession& session )
         { QStringLiteral( "schema" ), kSchema },
         { QStringLiteral( "workspaceRoot" ), session.workspaceRoot },
         { QStringLiteral( "documents" ), documents },
+        { QStringLiteral( "externalFiles" ), QJsonArray::fromStringList( session.externalFiles ) },
         { QStringLiteral( "activeIndex" ), session.activeIndex },
         { QStringLiteral( "previewSplitterSizes" ), toJsonArray( session.previewSplitterSizes ) },
         { QStringLiteral( "previewZoomPercentByPath" ), previewZoomPercentByPath },
@@ -93,6 +119,12 @@ WorkspaceSession sessionFromJson( const QJsonObject& object )
     WorkspaceSession session;
     session.schema = kSchema;
     session.workspaceRoot = object.value( QStringLiteral( "workspaceRoot" ) ).toString();
+    for( const auto& value : object.value( QStringLiteral( "externalFiles" ) ).toArray() )
+    {
+        const QString path = value.toString();
+        if( !path.isEmpty() && !session.externalFiles.contains( path ) )
+            session.externalFiles.append( path );
+    }
 
     for( const QJsonValue& value : object.value( QStringLiteral( "documents" ) ).toArray() )
     {
@@ -162,11 +194,12 @@ bool saveWorkspaceSession( const WorkspaceSession& session )
     if( !QDir().mkpath( QFileInfo( path ).absolutePath() ) )
         return false;
 
-    QFile file( path );
-    if( !file.open( QIODevice::WriteOnly | QIODevice::Truncate ) )
+    QSaveFile file( path );
+    if( !file.open( QIODevice::WriteOnly ) )
         return false;
 
-    return file.write( QJsonDocument( sessionToJson( session ) ).toJson( QJsonDocument::Indented ) ) > 0;
+    const QByteArray bytes = QJsonDocument( sessionToJson( session ) ).toJson( QJsonDocument::Indented );
+    return file.write( bytes ) == bytes.size() && file.commit();
 }
 
 }  // namespace mrst

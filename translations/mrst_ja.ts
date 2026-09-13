@@ -4182,4 +4182,15 @@ latexpdf · info はビルダーではなく make ターゲットなので、成
         <translation type="unfinished">アクティブプロジェクト: %1</translation>
     </message>
 </context>
+<context>
+    <name>mrst::ExternalFilesProxy</name>
+    <message>
+        <source>외부</source>
+        <translation>外部</translation>
+    </message>
+    <message>
+        <source>워크스페이스 외부 파일</source>
+        <translation>ワークスペース外のファイル</translation>
+    </message>
+</context>
 </TS>

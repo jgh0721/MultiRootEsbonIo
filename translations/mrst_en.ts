@@ -4189,4 +4189,15 @@ Please download it from the release page.</translation>
         <translation type="unfinished">Active project: %1</translation>
     </message>
 </context>
+<context>
+    <name>mrst::ExternalFilesProxy</name>
+    <message>
+        <source>외부</source>
+        <translation>External</translation>
+    </message>
+    <message>
+        <source>워크스페이스 외부 파일</source>
+        <translation>Files outside the workspace</translation>
+    </message>
+</context>
 </TS>

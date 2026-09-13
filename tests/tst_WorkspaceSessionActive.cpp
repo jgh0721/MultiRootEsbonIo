@@ -1,8 +1,15 @@
 ﻿#include "TestRunner.hpp"
 
 #include "core/solWorkspaceSession.hpp"
+#include "core/solShadowBackupStore.hpp"
+#include <QKeySequence>
+#include "core/solAppSettings.hpp"
 
 #include <QTest>
+#include <QTemporaryDir>
+#include <QStandardPaths>
+#include <QFile>
+#include <QScopeGuard>
 
 using namespace mrst;
 
@@ -37,6 +44,10 @@ private slots:
     void emptyWhenNeverSet();
     void emptyWhenOutOfRange();
     void emptyWithoutDocuments();
+    void externalFilesRoundTrip();
+    void legacySession();
+    void standaloneSessionPath();
+    void externalHotExit();
 };
 
 void TestWorkspaceSessionActive::returnsPathAtIndex()
@@ -63,6 +74,101 @@ void TestWorkspaceSessionActive::emptyWhenOutOfRange()
 void TestWorkspaceSessionActive::emptyWithoutDocuments()
 {
     QVERIFY( activeDocumentPath( sessionWith( {}, 0 ) ).isEmpty() );
+}
+
+void TestWorkspaceSessionActive::externalFilesRoundTrip()
+{
+    QTemporaryDir workspace;
+    QTemporaryDir outside;
+    QVERIFY( workspace.isValid() && outside.isValid() );
+    auto session = sessionWith( { workspace.filePath( "inside.rst" ), outside.filePath( "outside.md" ),
+                                 outside.filePath( "notes.txt" ) }, 1 );
+    session.workspaceRoot = workspace.path();
+    session.externalFiles = { outside.filePath( "outside.md" ), outside.filePath( "notes.txt" ),
+                              outside.filePath( "closed-tab.rst" ) };
+    session.documents[1].caretLine = 15;
+    session.documents[1].caretColumn = 7;
+    session.documents[1].firstVisibleLine = 10;
+    QVERIFY( saveWorkspaceSession( session ) );
+    const auto restored = loadWorkspaceSession( workspace.path() );
+    QCOMPARE( restored.externalFiles, session.externalFiles );
+    QCOMPARE( restored.documents.size(), 3 );
+    QCOMPARE( activeDocumentPath( restored ), outside.filePath( "outside.md" ) );
+    QCOMPARE( restored.documents[1].caretLine, 15 );
+    QCOMPARE( restored.documents[1].caretColumn, 7 );
+    QCOMPARE( restored.documents[1].firstVisibleLine, 10 );
+    QVERIFY( isPathInWorkspace( restored.documents[0].path, workspace.path() ) );
+    QVERIFY( !isPathInWorkspace( restored.documents[1].path, workspace.path() ) );
+}
+
+void TestWorkspaceSessionActive::legacySession()
+{
+    auto json = sessionToJson( sessionWith( { "/outside/doc.md" }, 0 ) );
+    json.remove( "externalFiles" );
+    const auto restored = sessionFromJson( json );
+    QVERIFY( restored.externalFiles.isEmpty() );
+    QCOMPARE( activeDocumentPath( restored ), QString( "/outside/doc.md" ) );
+}
+
+void TestWorkspaceSessionActive::standaloneSessionPath()
+{
+    const QString path = sessionFilePath( {} );
+    QVERIFY( !path.isEmpty() );
+    QVERIFY( path.startsWith( QStandardPaths::writableLocation( QStandardPaths::AppLocalDataLocation ) ) );
+    auto session = sessionWith( { "/outside/doc.md" }, 0 );
+    session.workspaceRoot.clear();
+    session.externalFiles = { "/outside/doc.md" };
+    const auto restored = sessionFromJson( sessionToJson( session ) );
+    QVERIFY( restored.workspaceRoot.isEmpty() );
+    QCOMPARE( restored.externalFiles, session.externalFiles );
+    QCOMPARE( activeDocumentPath( restored ), QString( "/outside/doc.md" ) );
+}
+
+void TestWorkspaceSessionActive::externalHotExit()
+{
+    QTemporaryDir workspace;
+    QTemporaryDir outside;
+    QVERIFY( workspace.isValid() && outside.isValid() );
+    AppSettings settings;
+    const auto enabledKey = QStringLiteral( "textView/hotExitEnabled" );
+    const QVariant oldEnabled = settings.value( enabledKey );
+    settings.setValue( enabledKey, true );
+    settings.sync();
+    const auto restoreSetting = qScopeGuard( [&] {
+        if( oldEnabled.isValid() )
+            settings.setValue( enabledKey, oldEnabled );
+        else
+            settings.remove( enabledKey );
+        settings.sync();
+    } );
+    for( const auto& name : { "external.rst", "external.md", "external.txt" } )
+    {
+        const QString path = outside.filePath( name );
+        QFile original( path );
+        QVERIFY( original.open( QIODevice::WriteOnly ) );
+        original.write( "saved content" );
+        original.close();
+        QVERIFY( !isPathInWorkspace( path, workspace.path() ) );
+        TextShadowBackupStore::Snapshot snapshot;
+        snapshot.originalFilePath = path;
+        snapshot.text = QString::fromUtf8( "저장하지 않은 변경\nsecond line" );
+        snapshot.encoding = "UTF-8";
+        snapshot.caretPosition = 5;
+        snapshot.firstVisibleLine = 1;
+        snapshot.originalSize = QFileInfo( path ).size();
+        snapshot.originalLastModifiedUtcMs = QFileInfo( path ).lastModified().toUTC().toMSecsSinceEpoch();
+        const auto removeBackup = qScopeGuard( [&] { TextShadowBackupStore::deleteSnapshot( path ); } );
+        QVERIFY( TextShadowBackupStore::saveSnapshot( snapshot ) );
+        TextShadowBackupStore::Snapshot restored;
+        QVERIFY( TextShadowBackupStore::loadSnapshot( path, &restored ) );
+        QCOMPARE( restored.text, snapshot.text );
+        QCOMPARE( restored.caretPosition, snapshot.caretPosition );
+        QCOMPARE( restored.firstVisibleLine, snapshot.firstVisibleLine );
+        QVERIFY( TextShadowBackupStore::originalFileMatchesSnapshot( restored ) );
+        QVERIFY( TextShadowBackupStore::restorableFilePaths().contains( QFileInfo( path ).canonicalFilePath() ) );
+        QVERIFY( original.open( QIODevice::ReadOnly ) );
+        QCOMPARE( original.readAll(), QByteArray( "saved content" ) );
+    }
 }
 
 MRST_REGISTER_TEST( TestWorkspaceSessionActive );

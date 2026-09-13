@@ -49,4 +49,15 @@
         </translation>
     </message>
 </context>
+<context>
+    <name>mrst::ExternalFilesProxy</name>
+    <message>
+        <source>외부</source>
+        <translation>외부</translation>
+    </message>
+    <message>
+        <source>워크스페이스 외부 파일</source>
+        <translation>워크스페이스 외부 파일</translation>
+    </message>
+</context>
 </TS>
