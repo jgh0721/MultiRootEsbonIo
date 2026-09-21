@@ -51,6 +51,7 @@ public:
 
 	bool hasSelectedText() const;
 	QString selectedText() const;
+	QString wordAtCaret() const;
 
 	/// 문서 전체의 **UTF-16 코드 유닛 수** (상태바의 "문자 N").
 	///

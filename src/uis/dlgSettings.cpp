@@ -7,6 +7,7 @@
 #include "core/solUpdateManifest.hpp"
 #include "core/solLanguageManager.hpp"
 #include "core/solThemeManager.hpp"
+#include "core/solPreviewFonts.hpp"
 #include "core/solShadowBackupStore.hpp"
 #include "uis/PanelActionIcons.hpp"
 #include "uniqueLibs/solEncodingDetector.hpp"
@@ -358,6 +359,11 @@ QList< ShortcutItem > QSettingsDialog::DefaultShortcuts()
             QKeySequence( Qt::CTRL | Qt::Key_F )
         },
         {
+            tr( "텍스트" ), QStringLiteral( "search.findInFiles" ), tr( "파일에서 찾기" ),
+            QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_F ),
+            QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_F )
+        },
+        {
             tr( "텍스트" ), QStringLiteral( "text.replace" ), tr( "바꾸기" ), QKeySequence( Qt::CTRL | Qt::Key_H ),
             QKeySequence( Qt::CTRL | Qt::Key_H )
         },
@@ -688,6 +694,22 @@ QWidget* QSettingsDialog::createGeneralPage()
                 QStringLiteral( "themeDiagnosticsFont" ),
                 tr( "하단 진단 표와 로그 내용에 적용합니다." ) );
 
+    for( int format = 0; format < 2; ++format )
+    {
+        auto& controls = m_previewFonts[format];
+        const bool md = format == 1;
+        addFontRow( md ? tr( "미리보기 사용자 글꼴 — 본문 (.MD)" ) : tr( "미리보기 사용자 글꼴 — 본문 (.RST)" ),
+                    controls.body, controls.bodySize,
+                    ThemeManager::configuredFont( md ? ThemeManager::FontRole::PreviewMarkdownBody : ThemeManager::FontRole::PreviewRstBody ),
+                    md ? QStringLiteral( "themePreviewMdBody" ) : QStringLiteral( "themePreviewRstBody" ),
+                    tr( "프리뷰에서 사용자 글꼴을 선택했을 때 적용합니다." ) );
+        addFontRow( md ? tr( "미리보기 사용자 글꼴 — 코드 (.MD)" ) : tr( "미리보기 사용자 글꼴 — 코드 (.RST)" ),
+                    controls.code, controls.codeSize,
+                    ThemeManager::configuredFont( md ? ThemeManager::FontRole::PreviewMarkdownCode : ThemeManager::FontRole::PreviewRstCode ),
+                    md ? QStringLiteral( "themePreviewMdCode" ) : QStringLiteral( "themePreviewRstCode" ),
+                    tr( "코드 블록과 인라인 코드에 적용합니다. 수식과 아이콘은 제외합니다." ) );
+    }
+
     m_themeNameLabel = new QLabel( themeGroup );
     formLayout->addRow( tr( "기본 팔레트:" ), m_themeNameLabel );
 
@@ -903,6 +925,14 @@ void QSettingsDialog::saveThemeFontSettings()
     saveFont( ThemeManager::FontRole::Outline, m_outlineFontCombo, m_outlineFontSizeSpin );
     saveFont( ThemeManager::FontRole::DiagnosticsAndLog, m_diagnosticsFontCombo,
               m_diagnosticsFontSizeSpin );
+    for( int format = 0; format < 2; ++format )
+    {
+        const auto& controls = m_previewFonts[format];
+        saveFont( format ? ThemeManager::FontRole::PreviewMarkdownBody : ThemeManager::FontRole::PreviewRstBody,
+                  controls.body, controls.bodySize );
+        saveFont( format ? ThemeManager::FontRole::PreviewMarkdownCode : ThemeManager::FontRole::PreviewRstCode,
+                  controls.code, controls.codeSize );
+    }
 }
 
 QWidget* QSettingsDialog::createShortcutsPage()
@@ -1052,6 +1082,11 @@ QWidget* QSettingsDialog::createEditorPage()
     layout->addRow( tr( "괄호 강조:" ), m_textBraceHighlightCheck );
 
     // 저장 대화상자 기본 인코딩
+    m_textDefaultLineEndingCombo = new QComboBox( page );
+    m_textDefaultLineEndingCombo->addItems( { "CRLF", "LF", "CR" } );
+    m_textDefaultLineEndingCombo->setToolTip( tr( "새 빈 문서와 줄바꿈이 없는 파일에 적용합니다. 기존 파일의 줄바꿈은 유지합니다." ) );
+    layout->addRow( tr( "새 문서 기본 줄바꿈:" ), m_textDefaultLineEndingCombo );
+
     m_textSaveEncodingCombo = new QComboBox( page );
     m_textSaveEncodingCombo->addItems( EncodingDetector::availableEncodings() );
     layout->addRow( tr( "저장 기본 인코딩:" ), m_textSaveEncodingCombo );
@@ -1123,10 +1158,124 @@ QWidget* QSettingsDialog::createEditorPage()
     return page;
 }
 
+void QSettingsDialog::createPreviewFontSettings( QWidget* page, QVBoxLayout* layout )
+{
+    const AppSettings settings;
+    for( int format = 0; format < 2; ++format )
+    {
+        auto& controls = m_previewFonts[format];
+        const bool md = format == 1;
+        const QString prefix = mrst::previewFontSettingsPrefix( md );
+        auto* group = new QGroupBox( md ? tr( "미리보기 글꼴 (.MD)" ) : tr( "미리보기 글꼴 (.RST)" ), page );
+        auto* form = new QFormLayout( group );
+        controls.enabled = new QCheckBox( tr( "글꼴 사용자 설정 사용" ), group );
+        controls.enabled->setChecked( settings.value( prefix + "enabled", false ).toBool() );
+        form->addRow( controls.enabled );
+        controls.mode = new QComboBox( group );
+        controls.mode->addItem( tr( "웹뷰 기본" ), QStringLiteral( "web" ) );
+        controls.mode->addItem( tr( "사용자 글꼴" ), QStringLiteral( "user" ) );
+        controls.mode->addItem( tr( "문서 글꼴 (없으면 웹뷰 기본)" ), QStringLiteral( "document" ) );
+        const int mode = controls.mode->findData( settings.value( prefix + "mode", "document" ).toString() );
+        controls.mode->setCurrentIndex( mode < 0 ? 2 : mode );
+        form->addRow( tr( "글꼴 적용:" ), controls.mode );
+
+        const auto addMirroredFont = [this, group, form]( const QString& label,
+                QFontComboBox* commonFamily, QSpinBox* commonSize, ThemeManager::FontRole role ) {
+            QFontComboBox* family = nullptr;
+            QSpinBox* size = nullptr;
+            auto* row = createFontSettingRow( group, family, size, ThemeManager::configuredFont( role ),
+                commonFamily->objectName() + "Preview", label,
+                tr( "공통 → 테마의 미리보기 사용자 글꼴과 같은 설정입니다." ) );
+            form->addRow( label + QLatin1Char( ':' ), row );
+            const auto persist = [this, commonFamily, commonSize, role] {
+                QFont font = commonFamily->currentFont();
+                font.setPointSize( commonSize->value() );
+                ThemeManager::setConfiguredFont( role, font );
+                emit settingsApplied();
+            };
+            connect( family, &QFontComboBox::currentFontChanged, group, [commonFamily, persist]( const QFont& font ) {
+                const QSignalBlocker blocker( commonFamily );
+                commonFamily->setCurrentFont( font );
+                persist();
+            } );
+            connect( commonFamily, &QFontComboBox::currentFontChanged, group, [family, persist]( const QFont& font ) {
+                const QSignalBlocker blocker( family );
+                family->setCurrentFont( font );
+                persist();
+            } );
+            connect( size, &QSpinBox::valueChanged, group, [commonSize, persist]( int value ) {
+                const QSignalBlocker blocker( commonSize );
+                commonSize->setValue( value );
+                persist();
+            } );
+            connect( commonSize, &QSpinBox::valueChanged, group, [size, persist]( int value ) {
+                const QSignalBlocker blocker( size );
+                size->setValue( value );
+                persist();
+            } );
+            return qMakePair( family, size );
+        };
+        const auto body = addMirroredFont( tr( "본문 글꼴" ), controls.body, controls.bodySize,
+            md ? ThemeManager::FontRole::PreviewMarkdownBody : ThemeManager::FontRole::PreviewRstBody );
+        const auto code = addMirroredFont( tr( "코드 글꼴" ), controls.code, controls.codeSize,
+            md ? ThemeManager::FontRole::PreviewMarkdownCode : ThemeManager::FontRole::PreviewRstCode );
+        controls.lineHeight = new QDoubleSpinBox( group );
+        controls.lineHeight->setRange( 1.0, 3.0 );
+        controls.lineHeight->setSingleStep( 0.1 );
+        controls.lineHeight->setValue( settings.value( prefix + "lineHeight", 1.7 ).toDouble() );
+        controls.lineHeight->setToolTip( tr( "글자 크기에 대한 행 높이의 배율입니다." ) );
+        form->addRow( tr( "본문 행간:" ), controls.lineHeight );
+        controls.headings = new QCheckBox( tr( "제목에도 선택한 글꼴 적용" ), group );
+        controls.headings->setChecked( settings.value( prefix + "headings", true ).toBool() );
+        form->addRow( controls.headings );
+        auto* hint = new QLabel( tr( "미리보기에만 적용합니다. 문서 글꼴을 선택하거나 사용자 설정을 끄면 원래 문서 스타일로 돌아갑니다. 수식·아이콘 글꼴은 유지합니다." ), group );
+        hint->setWordWrap( true );
+        form->addRow( hint );
+        const auto updateEnabled = [this, format, body, code] {
+            const auto& c = m_previewFonts[format];
+            c.mode->setEnabled( c.enabled->isChecked() );
+            const bool custom = c.enabled->isChecked() && c.mode->currentData() == "user";
+            const bool override = c.enabled->isChecked() && c.mode->currentData() != "document";
+            body.first->setEnabled( custom ); body.second->setEnabled( custom );
+            code.first->setEnabled( custom ); code.second->setEnabled( custom );
+            c.lineHeight->setEnabled( override );
+            c.headings->setEnabled( override );
+        };
+        const auto changed = [this, updateEnabled] {
+            updateEnabled();
+            savePreviewFontSettings();
+            emit settingsApplied();
+        };
+        connect( controls.enabled, &QCheckBox::toggled, group, changed );
+        connect( controls.mode, &QComboBox::currentIndexChanged, group, changed );
+        connect( controls.lineHeight, &QDoubleSpinBox::valueChanged, group, changed );
+        connect( controls.headings, &QCheckBox::toggled, group, changed );
+        updateEnabled();
+        layout->addWidget( group );
+    }
+}
+
+void QSettingsDialog::savePreviewFontSettings()
+{
+    AppSettings settings;
+    for( int format = 0; format < 2; ++format )
+    {
+        const auto& c = m_previewFonts[format];
+        if( !c.enabled || !c.mode || !c.lineHeight || !c.headings )
+            continue;
+        const QString prefix = mrst::previewFontSettingsPrefix( format == 1 );
+        settings.setValue( prefix + "enabled", c.enabled->isChecked() );
+        settings.setValue( prefix + "mode", c.mode->currentData().toString() );
+        settings.setValue( prefix + "lineHeight", c.lineHeight->value() );
+        settings.setValue( prefix + "headings", c.headings->isChecked() );
+    }
+}
+
 QWidget* QSettingsDialog::createPreviewPage()
 {
     auto* page   = new QWidget( this );
     auto* layout = new QVBoxLayout( page );
+    createPreviewFontSettings( page, layout );
 
     auto* group       = new QGroupBox( tr( "외부 리소스" ), page );
     auto* groupLayout = new QVBoxLayout( group );
@@ -1415,6 +1564,7 @@ void QSettingsDialog::loadPreviewSettings()
 
 void QSettingsDialog::savePreviewSettings()
 {
+    savePreviewFontSettings();
     if( m_previewAllowRemoteCheck == nullptr )
         return;
 
@@ -1657,6 +1807,9 @@ void QSettingsDialog::loadTextViewerSettings()
 
     // 텍스트
     m_textFontCombo->setCurrentFont( QFont( s.value( "textView/fontFamily", "Consolas" ).toString() ) );
+    const int lineEndingIndex = m_textDefaultLineEndingCombo->findText(
+        s.value( "textView/defaultLineEnding", "CRLF" ).toString() );
+    m_textDefaultLineEndingCombo->setCurrentIndex( lineEndingIndex < 0 ? 0 : lineEndingIndex );
     m_textFontSizeSpin->setValue( s.value( "textView/fontSize", 10 ).toInt() );
     m_textFontRenderCombo->setCurrentIndex(
         m_textFontRenderCombo->findData( s.value( "textView/fontRendering", 2 ).toInt() ) );
@@ -1707,6 +1860,7 @@ void QSettingsDialog::saveTextViewerSettings()
     const bool wasHotExitEnabled = s.value( "textView/hotExitEnabled", true ).toBool();
     const bool hotExitEnabled = m_textHotExitCheck->isChecked();
     s.setValue( "textView/fontFamily", m_textFontCombo->currentFont().family() );
+    s.setValue( "textView/defaultLineEnding", m_textDefaultLineEndingCombo->currentText() );
     s.setValue( "textView/fontSize", m_textFontSizeSpin->value() );
     s.setValue( "textView/fontRendering", m_textFontRenderCombo->currentData().toInt() );
     s.setValue( "textView/lineSpacing", m_textLineSpacingSpin->value() );

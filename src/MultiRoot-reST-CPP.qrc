@@ -7,6 +7,7 @@
     </qresource>
     <qresource prefix="/preview">
         <file alias="mrr_preview.js">../tools/js/mrr_preview.js</file>
+        <file alias="mrr_fonts.js">../tools/js/mrr_fonts.js</file>
         <!-- Markdown 프리뷰 셸. 별칭에서 버전을 벗겨 셸의 src 를 안정시키고,
              디스크 파일 이름에는 버전을 남겨 감사할 수 있게 한다. 버전의 단일
              출처는 src/core/solMarkdownAssets.hpp 이고 CMake 가 대조한다. -->

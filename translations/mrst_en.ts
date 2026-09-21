@@ -1084,6 +1084,10 @@ Cause: %3</translation>
         <source>활성 프로젝트에 문서가 없습니다.</source>
         <translation type="unfinished">No documents in the active project.</translation>
     </message>
+    <message>
+        <source>파일에서 찾기</source>
+        <translation>Find in Files</translation>
+    </message>
 </context>
 <context>
     <name>PythonEnvironment</name>
@@ -2116,6 +2120,98 @@ The converter that draws Markdown body text is built into the program, so it alw
     <message>
         <source>환경 디렉터리:</source>
         <translation type="unfinished">Environment directory:</translation>
+    </message>
+    <message>
+        <source>파일에서 찾기</source>
+        <translation>Find in Files</translation>
+    </message>
+    <message>
+        <source>미리보기 사용자 글꼴 — 본문 (.MD)</source>
+        <translation>Preview custom font — body (.MD)</translation>
+    </message>
+    <message>
+        <source>미리보기 사용자 글꼴 — 본문 (.RST)</source>
+        <translation>Preview custom font — body (.RST)</translation>
+    </message>
+    <message>
+        <source>미리보기 사용자 글꼴 — 코드 (.MD)</source>
+        <translation>Preview custom font — code (.MD)</translation>
+    </message>
+    <message>
+        <source>미리보기 사용자 글꼴 — 코드 (.RST)</source>
+        <translation>Preview custom font — code (.RST)</translation>
+    </message>
+    <message>
+        <source>프리뷰에서 사용자 글꼴을 선택했을 때 적용합니다.</source>
+        <translation>Used when custom fonts are selected in Preview settings.</translation>
+    </message>
+    <message>
+        <source>코드 블록과 인라인 코드에 적용합니다. 수식과 아이콘은 제외합니다.</source>
+        <translation>Applies to code blocks and inline code, excluding formulas and icons.</translation>
+    </message>
+    <message>
+        <source>미리보기 글꼴 (.MD)</source>
+        <translation>Preview fonts (.MD)</translation>
+    </message>
+    <message>
+        <source>미리보기 글꼴 (.RST)</source>
+        <translation>Preview fonts (.RST)</translation>
+    </message>
+    <message>
+        <source>글꼴 사용자 설정 사용</source>
+        <translation>Enable custom font settings</translation>
+    </message>
+    <message>
+        <source>웹뷰 기본</source>
+        <translation>Web view defaults</translation>
+    </message>
+    <message>
+        <source>사용자 글꼴</source>
+        <translation>Custom fonts</translation>
+    </message>
+    <message>
+        <source>문서 글꼴 (없으면 웹뷰 기본)</source>
+        <translation>Document fonts (otherwise web view defaults)</translation>
+    </message>
+    <message>
+        <source>글꼴 적용:</source>
+        <translation>Font source:</translation>
+    </message>
+    <message>
+        <source>본문 글꼴</source>
+        <translation>Body font</translation>
+    </message>
+    <message>
+        <source>코드 글꼴</source>
+        <translation>Code font</translation>
+    </message>
+    <message>
+        <source>공통 → 테마의 미리보기 사용자 글꼴과 같은 설정입니다.</source>
+        <translation>Shares the preview custom fonts in General → Theme.</translation>
+    </message>
+    <message>
+        <source>글자 크기에 대한 행 높이의 배율입니다.</source>
+        <translation>Line height as a multiple of the font size.</translation>
+    </message>
+    <message>
+        <source>본문 행간:</source>
+        <translation>Body line height:</translation>
+    </message>
+    <message>
+        <source>제목에도 선택한 글꼴 적용</source>
+        <translation>Apply the selected font to headings too</translation>
+    </message>
+    <message>
+        <source>미리보기에만 적용합니다. 문서 글꼴을 선택하거나 사용자 설정을 끄면 원래 문서 스타일로 돌아갑니다. 수식·아이콘 글꼴은 유지합니다.</source>
+        <translation>Applies only to the preview. Select document fonts or disable custom settings to restore the original document style. Formula and icon fonts are preserved.</translation>
+    </message>
+    <message>
+        <source>새 빈 문서와 줄바꿈이 없는 파일에 적용합니다. 기존 파일의 줄바꿈은 유지합니다.</source>
+        <translation>Applies to new blank documents and files without line endings. Existing line endings are preserved.</translation>
+    </message>
+    <message>
+        <source>새 문서 기본 줄바꿈:</source>
+        <translation>Default line ending for new documents:</translation>
     </message>
 </context>
 <context>

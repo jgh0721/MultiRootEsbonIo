@@ -650,6 +650,7 @@ private:
 
     // ── 워크스페이스 검색 ──
     void                                setupWorkspaceSearchTab();
+    void                                showWorkspaceSearch();
     void                                runWorkspaceSearch();
     void                                runWorkspaceReplacePreview();
     void                                applyWorkspaceReplace();

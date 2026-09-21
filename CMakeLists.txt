@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project("MultiRoot-reST-Editor" VERSION 0.8.7 LANGUAGES CXX)
+project("MultiRoot-reST-Editor" VERSION 0.9.0 LANGUAGES CXX)
 
 # 실행 파일 아이콘(resources/app.rc)을 컴파일하려면 RC 언어가 필요하다.
 if(WIN32)
@@ -162,6 +162,8 @@ add_executable(${PROJECT_NAME}
         src/core/solMarkdownAssets.hpp
         src/core/solMarkdownPreviewController.cpp
         src/core/solMarkdownPreviewController.hpp
+        src/core/solPreviewFonts.cpp
+        src/core/solPreviewFonts.hpp
         src/core/solRecentItems.cpp
         src/core/solRecentItems.hpp
         src/core/solRestCompletionCoordinator.cpp
@@ -217,6 +219,8 @@ add_executable(${PROJECT_NAME}
         src/editor/ScintillaEditorSettings.cpp
         src/editor/ScintillaEditorSettings.hpp
         src/editor/ScintillaQtDirectBackend.cpp
+        src/editor/ScintillaSearchWord.hpp
+        src/editor/DocumentLineEnding.hpp
         src/editor/ScintillaQtDirectBackend.hpp
         src/editor/QBaseEditor.cpp
         src/editor/QBaseEditor.hpp
@@ -492,6 +496,12 @@ if(MRST_BUILD_TESTS)
             tests/ui/tst_QuickOpenDialog.cpp
             tests/ui/tst_PopupInteraction.cpp
             tests/ui/tst_ExternalFilesTree.cpp
+            tests/ui/tst_SearchPrefill.cpp
+            tests/ui/tst_PreviewFonts.cpp
+            src/core/solPreviewFonts.cpp
+
+            src/editor/FindReplaceWidget.cpp
+            src/editor/FindReplaceWidget.hpp
 
             src/uis/ExternalFilesProxy.cpp
             src/uis/ExternalFilesProxy.hpp
@@ -549,6 +559,10 @@ if(MRST_BUILD_TESTS)
     endif()
 
     add_test(NAME mrst_ui_tests COMMAND mrst_ui_tests)
+    qt_add_resources(mrst_ui_tests preview_fonts
+            PREFIX "/preview"
+            BASE "${CMAKE_CURRENT_SOURCE_DIR}/tools/js"
+            FILES tools/js/mrr_fonts.js)
 
     # ── 테스트 실행 환경 ───────────────────────────────────
     # 두 테스트 exe 는 Qt6::Test 를 링크하지만 앱용 windeployqt 는 앱이 쓰지 않는

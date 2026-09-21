@@ -69,6 +69,8 @@ private:
     void                                loadPreviewSettings();
     void                                savePreviewSettings();
     void                                saveThemeFontSettings();
+    void                                createPreviewFontSettings( QWidget* page, QVBoxLayout* layout );
+    void                                savePreviewFontSettings();
     void                                loadUpdateSettings();
     void                                loadEsbonioSettings();
     void                                saveEsbonioSettings();
@@ -95,6 +97,18 @@ private:
     QSpinBox*                           m_outlineFontSizeSpin = nullptr;
     QFontComboBox*                      m_diagnosticsFontCombo = nullptr;
     QSpinBox*                           m_diagnosticsFontSizeSpin = nullptr;
+    struct PreviewFontControls
+    {
+        QFontComboBox* body = nullptr;
+        QSpinBox* bodySize = nullptr;
+        QFontComboBox* code = nullptr;
+        QSpinBox* codeSize = nullptr;
+        QCheckBox* enabled = nullptr;
+        QComboBox* mode = nullptr;
+        QDoubleSpinBox* lineHeight = nullptr;
+        QCheckBox* headings = nullptr;
+    };
+    PreviewFontControls                 m_previewFonts[2]; // RST, Markdown
     QComboBox*                          m_themeScopeCombo = nullptr;
     QLabel*                             m_themeLexerListLabel = nullptr;
     QListWidget*                        m_themeLexerList = nullptr;
@@ -135,6 +149,7 @@ private:
     QCheckBox*                          m_textBraceHighlightCheck = nullptr;
     QComboBox*                          m_textSaveEncodingCombo = nullptr;
     QComboBox*                          m_textSaveBomCombo = nullptr;
+    QComboBox*                          m_textDefaultLineEndingCombo = nullptr;
     QCheckBox*                          m_textHotExitCheck = nullptr;
     QSpinBox*                           m_textLargeFileMBSpin = nullptr;
     QComboBox*                          m_textExternalChangeActionCombo = nullptr;

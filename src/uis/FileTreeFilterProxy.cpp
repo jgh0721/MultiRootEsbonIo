@@ -142,9 +142,12 @@ bool FileTreeFilterProxy::isDisconnectedRemoteDrive( const QModelIndex& sourceIn
 
     // 파일 모델 최상위에 들어오는 "Z:/" 형태의 드라이브 루트만 검사한다.
     // 하위 경로에서 상태 API 를 반복 호출하지 않으며 UNC 워크스페이스도 건드리지 않는다.
-    const QString path = QDir::fromNativeSeparators( fileSystem->filePath( sourceIndex ) );
-    if( path.size() != 3 || path.at( 1 ) != QLatin1Char( ':' )
-        || path.at( 2 ) != QLatin1Char( '/' ) )
+    // filePath() 는 Qt 내부에서 심볼릭 링크 속성까지 확인하므로 연결이 끊긴
+    // 드라이브에서는 이 검사에 도달하기도 전에 재연결을 기다릴 수 있다.
+    // 최상위 노드의 fileName() 은 캐시된 드라이브 이름만 반환한다.
+    const QString path = QDir::fromNativeSeparators( fileSystem->fileName( sourceIndex ) );
+    if( ( path.size() != 2 && path.size() != 3 ) || path.at( 1 ) != QLatin1Char( ':' )
+        || ( path.size() == 3 && path.at( 2 ) != QLatin1Char( '/' ) ) )
     {
         return false;
     }

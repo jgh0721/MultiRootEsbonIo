@@ -1077,6 +1077,10 @@ pyproject.toml と uv.lock を使用して現在の環境と同じ場所の隣�
         <source>활성 프로젝트에 문서가 없습니다.</source>
         <translation type="unfinished">アクティブなプロジェクトにドキュメントがありません。</translation>
     </message>
+    <message>
+        <source>파일에서 찾기</source>
+        <translation>ファイル内検索</translation>
+    </message>
 </context>
 <context>
     <name>PythonEnvironment</name>
@@ -2109,6 +2113,98 @@ Markdown の本文を描く変換器はプログラムに内蔵されている�
     <message>
         <source>환경 디렉터리:</source>
         <translation type="unfinished">環境ディレクトリ:</translation>
+    </message>
+    <message>
+        <source>파일에서 찾기</source>
+        <translation>ファイル内検索</translation>
+    </message>
+    <message>
+        <source>미리보기 사용자 글꼴 — 본문 (.MD)</source>
+        <translation>プレビューのユーザーフォント — 本文 (.MD)</translation>
+    </message>
+    <message>
+        <source>미리보기 사용자 글꼴 — 본문 (.RST)</source>
+        <translation>プレビューのユーザーフォント — 本文 (.RST)</translation>
+    </message>
+    <message>
+        <source>미리보기 사용자 글꼴 — 코드 (.MD)</source>
+        <translation>プレビューのユーザーフォント — コード (.MD)</translation>
+    </message>
+    <message>
+        <source>미리보기 사용자 글꼴 — 코드 (.RST)</source>
+        <translation>プレビューのユーザーフォント — コード (.RST)</translation>
+    </message>
+    <message>
+        <source>프리뷰에서 사용자 글꼴을 선택했을 때 적용합니다.</source>
+        <translation>プレビュー設定でユーザーフォントを選択した場合に適用します。</translation>
+    </message>
+    <message>
+        <source>코드 블록과 인라인 코드에 적용합니다. 수식과 아이콘은 제외합니다.</source>
+        <translation>コードブロックとインラインコードに適用します。数式とアイコンは除きます。</translation>
+    </message>
+    <message>
+        <source>미리보기 글꼴 (.MD)</source>
+        <translation>プレビューフォント (.MD)</translation>
+    </message>
+    <message>
+        <source>미리보기 글꼴 (.RST)</source>
+        <translation>プレビューフォント (.RST)</translation>
+    </message>
+    <message>
+        <source>글꼴 사용자 설정 사용</source>
+        <translation>フォントのカスタム設定を使用</translation>
+    </message>
+    <message>
+        <source>웹뷰 기본</source>
+        <translation>Web ビューの既定値</translation>
+    </message>
+    <message>
+        <source>사용자 글꼴</source>
+        <translation>ユーザーフォント</translation>
+    </message>
+    <message>
+        <source>문서 글꼴 (없으면 웹뷰 기본)</source>
+        <translation>文書のフォント（指定がなければ Web ビューの既定値）</translation>
+    </message>
+    <message>
+        <source>글꼴 적용:</source>
+        <translation>適用するフォント:</translation>
+    </message>
+    <message>
+        <source>본문 글꼴</source>
+        <translation>本文フォント</translation>
+    </message>
+    <message>
+        <source>코드 글꼴</source>
+        <translation>コードフォント</translation>
+    </message>
+    <message>
+        <source>공통 → 테마의 미리보기 사용자 글꼴과 같은 설정입니다.</source>
+        <translation>共通 → テーマのプレビュー用ユーザーフォントと同じ設定です。</translation>
+    </message>
+    <message>
+        <source>글자 크기에 대한 행 높이의 배율입니다.</source>
+        <translation>文字サイズに対する行の高さの倍率です。</translation>
+    </message>
+    <message>
+        <source>본문 행간:</source>
+        <translation>本文の行間:</translation>
+    </message>
+    <message>
+        <source>제목에도 선택한 글꼴 적용</source>
+        <translation>見出しにも選択したフォントを適用</translation>
+    </message>
+    <message>
+        <source>미리보기에만 적용합니다. 문서 글꼴을 선택하거나 사용자 설정을 끄면 원래 문서 스타일로 돌아갑니다. 수식·아이콘 글꼴은 유지합니다.</source>
+        <translation>プレビューにのみ適用します。文書のフォントを選択するかカスタム設定を無効にすると、元の文書スタイルに戻ります。数式とアイコンのフォントは維持します。</translation>
+    </message>
+    <message>
+        <source>새 빈 문서와 줄바꿈이 없는 파일에 적용합니다. 기존 파일의 줄바꿈은 유지합니다.</source>
+        <translation>新しい空の文書と改行のないファイルに適用します。既存ファイルの改行は維持します。</translation>
+    </message>
+    <message>
+        <source>새 문서 기본 줄바꿈:</source>
+        <translation>新規文書の既定の改行:</translation>
     </message>
 </context>
 <context>

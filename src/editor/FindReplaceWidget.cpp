@@ -253,6 +253,12 @@ QString FindReplaceWidget::searchText() const
     return m_searchEdit ? m_searchEdit->text() : QString();
 }
 
+void FindReplaceWidget::setSearchText(const QString& text)
+{
+    if (m_searchEdit)
+        m_searchEdit->setText(text);
+}
+
 QString FindReplaceWidget::replaceText() const
 {
     return m_replaceEdit ? m_replaceEdit->text() : QString();

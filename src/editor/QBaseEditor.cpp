@@ -1,5 +1,6 @@
 ﻿#include "stdafx.h"
 #include "QBaseEditor.hpp"
+#include "DocumentLineEnding.hpp"
 
 #include "core/solAppSettings.hpp"
 #include "core/solSettingsWriter.hpp"
@@ -176,6 +177,7 @@ namespace
 QTextView::QTextView( QWidget* parent )
     : QBaseView( parent )
 {
+    m_document.setLineEnding( mrst::defaultDocumentLineEnding() );
     m_editorSettings = ScintillaEditorSettings::standard();
     loadPersistedEditorPreferences();
 
@@ -206,14 +208,7 @@ QTextView::QTextView( QWidget* parent )
     findAction->setObjectName( QStringLiteral( "text.find" ) );
     findAction->setShortcut( QKeySequence( Qt::CTRL | Qt::Key_F ) );
     connect( findAction, &QAction::triggered, this, [this] {
-        if( m_findWidget && m_findWidget->isVisible() && !m_findWidget->isReplaceMode() )
-        {
-            hideFindBar();
-        }
-        else
-        {
-            showFindBar( false );
-        }
+        showFindBar( false );
     } );
     addAction( findAction );
 
@@ -410,6 +405,7 @@ bool QTextView::openFile( const QString& filePath )
             }
             self->m_applyingFileContent = true;
             self->m_editor->setText( result.text );
+            self->m_editor->setLineEnding( self->m_document.lineEnding(), false );
             self->m_applyingFileContent = false;
             self->m_editor->setModified( restoredFromHotExit );
             self->m_cachedCurrentLine = 1;
@@ -691,6 +687,7 @@ void QTextView::reloadWithEncoding( const QString& encoding )
     m_document.setLineEnding( toDocumentLineEnding( detectLineEnding( text ) ) );
     m_applyingFileContent = true;
     m_editor->setText( text );
+    m_editor->setLineEnding( m_document.lineEnding(), false );
     m_applyingFileContent = false;
     m_editor->setModified( false );
     m_cachedCurrentLine = 1;
@@ -817,6 +814,7 @@ void QTextView::applyReloadedContent( TextFileSession session,
 
     m_applyingFileContent = true;
     m_editor->setText( text );
+    m_editor->setLineEnding( m_document.lineEnding(), false );
     m_applyingFileContent = false;
     m_editor->setModified( false );
     m_editor->restoreViewState( caretPosition, topLine );
@@ -1057,6 +1055,7 @@ bool QTextView::openHotExitBackup( const QString& untitledId )
     applyEditorSettings();
     m_applyingFileContent = true;
     m_editor->setText( snapshot.text );
+    m_editor->setLineEnding( m_document.lineEnding(), false );
     m_applyingFileContent = false;
     m_editor->setModified( true );
     m_editor->restoreViewState( snapshot.caretPosition, snapshot.firstVisibleLine );
@@ -2086,6 +2085,8 @@ bool QTextView::ensureEditorBackend()
     if( layout() )
         layout()->addWidget( m_editor->widget() );
 
+    m_editor->setLineEnding( m_document.lineEnding(), false );
+
     connect( m_editor, &QObject::destroyed, this, [this] {
         m_editor = nullptr;
     } );
@@ -2334,11 +2335,7 @@ QTextView::LineEnding QTextView::fromDocumentLineEnding( ScintillaDocument::Line
 
 QTextView::LineEnding QTextView::detectLineEnding( const QString& text )
 {
-    if( text.contains( QStringLiteral( "\r\n" ) ) )
-        return CRLF;
-    if( text.contains( QLatin1Char( '\r' ) ) )
-        return CR;
-    return LF;
+    return fromDocumentLineEnding( mrst::detectDocumentLineEnding( text ) );
 }
 
 QString QTextView::newHotExitUntitledId()
@@ -2391,10 +2388,26 @@ void QTextView::connectFindWidgetSignals()
     } );
 }
 
+QString QTextView::searchTextAtCursor() const
+{
+    if( !m_editor )
+        return {};
+    const QString selected = m_editor->selectedText();
+    if( !selected.isEmpty() && !selected.contains( QLatin1Char( '\n' ) )
+        && !selected.contains( QLatin1Char( '\r' ) ) )
+        return selected;
+    return m_editor->wordAtCaret();
+}
+
 void QTextView::showFindBar( bool replaceMode )
 {
     if( !m_findWidget )
         return;
+
+    // Repeating Ctrl+F in the search field selects the existing query.
+    const bool seedFromEditor = !m_findWidget->isVisible()
+        || ( m_editor && m_editor->widget()->hasFocus() );
+    const QString seed = seedFromEditor ? searchTextAtCursor() : QString{};
 
     // 포커스 이동 전에 선택 범위 저장
     m_isSearching = true; // 설정 중 선택 변경 무시
@@ -2418,6 +2431,8 @@ void QTextView::showFindBar( bool replaceMode )
     }
 
     m_findWidget->setReplaceMode( replaceMode );
+    if( !seed.isEmpty() )
+        m_findWidget->setSearchText( seed );
     m_findWidget->setVisible( true );
     m_findWidget->focusSearchField();
     m_isSearching = false;

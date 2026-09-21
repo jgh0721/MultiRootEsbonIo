@@ -6,6 +6,7 @@
 #include <QFileInfo>
 #include <QSaveFile>
 #include <QSettings>
+#include <QKeySequence>
 
 #include "uniqueLibs/solDocument_Defs.hpp"
 

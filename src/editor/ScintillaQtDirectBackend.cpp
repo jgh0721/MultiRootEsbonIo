@@ -7,6 +7,7 @@
 #include "MarkdownStructure.hpp"
 #include "ScintillaDocument.hpp"
 #include "Utf16Length.hpp"
+#include "ScintillaSearchWord.hpp"
 #include "utils/solPhaseTrace.hpp"
 
 #include <QAbstractScrollArea>
@@ -547,6 +548,11 @@ QString ScintillaQtDirectBackend::selectedText() const
 		return {};
 
 	return QString::fromUtf8(selectionBytes(m_editor));
+}
+
+QString ScintillaQtDirectBackend::wordAtCaret() const
+{
+    return m_editor ? mrst::sci::wordAtCaret( *m_editor ) : QString{};
 }
 
 int ScintillaQtDirectBackend::recountCharacters() const

@@ -267,6 +267,7 @@ private:
     /// 값이 바뀌었으면 이미 떠 있는 페이지를 다시 읽는다 (실패한 스크립트는
     /// 설정만 바꿔서는 다시 실행되지 않는다).
     void                                applyPreviewWebSettings();
+    void                                applyPreviewFontSettings();
     /// 입력이 안 바뀌었는지 워커 스레드에서 판정하고, 결과에 따라 빌드하거나
     /// 지난 산출물을 그대로 올린다.
     void                                tryServeFromLastBuild( const PreviewBuildRequest& request,

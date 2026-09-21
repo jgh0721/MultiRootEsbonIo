@@ -904,6 +904,12 @@ void MainWindow::createMenus()
     m_pasteAction->setEnabled( false );
 
     editMenu->addSeparator();
+    auto* findInFilesAction = editMenu->addAction( QString(), this, &MainWindow::showWorkspaceSearch );
+    findInFilesAction->setObjectName( QStringLiteral( "search.findInFiles" ) );
+    findInFilesAction->setProperty( "mv.shortcutId", QStringLiteral( "search.findInFiles" ) );
+    findInFilesAction->setShortcut( QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_F ) );
+    findInFilesAction->setShortcutContext( Qt::WindowShortcut );
+
     auto* completionAction = editMenu->addAction( QString(), this, [this] {
         if( controller_ != nullptr )
             controller_->requestCompletion();
@@ -1186,6 +1192,7 @@ void MainWindow::retranslateMenus()
     menuTitle ( "menu.edit",          tr( "편집(&E)" ) );
     actionText( "edit.copy",          tr( "복사(&C)" ) );
     actionText( "edit.paste",         tr( "붙여넣기(&P)" ) );
+    actionText( "search.findInFiles", tr( "파일에서 찾기" ) );
     actionText( "editor.completion",  tr( "자동 완성(&M)" ) );
 
     menuTitle ( "menu.view",          tr( "보기(&V)" ) );
@@ -1490,7 +1497,7 @@ void MainWindow::retranslateDockTitles()
     title( dockOutlineProject_,  tr( "프로젝트" ) );
     title( dockDiagnostics_,     tr( "진단" ) );
     title( dockLog_,             tr( "로그" ) );
-    title( dockSearch_,          tr( "검색" ) );
+    title( dockSearch_,          tr( "파일에서 찾기" ) );
 }
 
 void MainWindow::restoreDockLayout( const QString& base64 )
@@ -5733,6 +5740,22 @@ void MainWindow::retranslateOutlinePlaceholders()
 // ═══════════════════════════════════════════════════════════
 // 워크스페이스 검색
 // ═══════════════════════════════════════════════════════════
+void MainWindow::showWorkspaceSearch()
+{
+    if( dockSearch_ == nullptr || searchQueryEdit_ == nullptr )
+        return;
+    const auto* view = textViewOf( currentView() );
+    const QString seed = view != nullptr && !searchQueryEdit_->hasFocus()
+        ? view->searchTextAtCursor() : QString{};
+    if( !seed.isEmpty() )
+        searchQueryEdit_->setText( seed );
+    dockSearch_->toggleView( true );
+    dockSearch_->raise();
+    dockSearch_->setAsCurrentTab();
+    searchQueryEdit_->setFocus( Qt::ShortcutFocusReason );
+    searchQueryEdit_->selectAll();
+}
+
 void MainWindow::setupWorkspaceSearchTab()
 {
     if( dockManager_ == nullptr || dockDiagnostics_ == nullptr )
@@ -5783,7 +5806,7 @@ void MainWindow::setupWorkspaceSearchTab()
     layout->addWidget( searchResultTree_, 1 );
 
     searchTabPage_ = page;
-    dockSearch_ = makeDock( "dock.search", tr( "검색" ), page );
+    dockSearch_ = makeDock( "dock.search", tr( "파일에서 찾기" ), page );
     if( ads::CDockAreaWidget* bottomArea = dockDiagnostics_->dockAreaWidget() )
         dockManager_->addDockWidgetTabToArea( dockSearch_, bottomArea );
     else

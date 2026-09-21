@@ -26,6 +26,10 @@ void ThemeFontSettingsTest::rolesRoundTripIndependently()
         ThemeManager::FontRole::Explorer,
         ThemeManager::FontRole::Outline,
         ThemeManager::FontRole::DiagnosticsAndLog,
+        ThemeManager::FontRole::PreviewRstBody,
+        ThemeManager::FontRole::PreviewRstCode,
+        ThemeManager::FontRole::PreviewMarkdownBody,
+        ThemeManager::FontRole::PreviewMarkdownCode,
     };
 
     std::array< QFont, roles.size() > previous;

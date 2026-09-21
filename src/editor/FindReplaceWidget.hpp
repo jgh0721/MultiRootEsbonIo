@@ -22,6 +22,7 @@ public:
     bool isReplaceMode() const;
 
     QString searchText() const;
+    void setSearchText(const QString& text);
     QString replaceText() const;
 
     bool isCaseSensitive() const;

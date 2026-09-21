@@ -45,6 +45,10 @@ public:
         Explorer,
         Outline,
         DiagnosticsAndLog,
+        PreviewRstBody,
+        PreviewRstCode,
+        PreviewMarkdownBody,
+        PreviewMarkdownCode,
     };
     Q_ENUM( FontRole )
 

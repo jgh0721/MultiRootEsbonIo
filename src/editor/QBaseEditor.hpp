@@ -176,6 +176,7 @@ public:
     [[nodiscard]] QString textRange( int startPos, int endPos ) const;
     [[nodiscard]] int     positionFromLineColumn( int line, int column ) const;
     [[nodiscard]] int     currentPosition() const;
+    [[nodiscard]] QString searchTextAtCursor() const;
     /// 캐럿의 줄/열 (1-based). currentLine()/currentColumn() 과 달리 캐시를
     /// 거치지 않고 Scintilla 에 직접 묻는다.
     ///

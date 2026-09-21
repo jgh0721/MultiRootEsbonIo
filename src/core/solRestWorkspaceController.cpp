@@ -11,6 +11,7 @@
 #include "solGlossaryIndex.hpp"
 #include "solRstSubstitutionIndex.hpp"
 #include "solMarkdownPreviewController.hpp"
+#include "solPreviewFonts.hpp"
 #include "solRstPathIndex.hpp"
 #include "solRestCompletionCoordinator.hpp"
 #include "solRestOutlineService.hpp"
@@ -407,6 +408,7 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
     previewBridge_ = new PreviewBridge( this );
     previewBridge_->attachTo( previewView_ );
     applyPreviewWebSettings();
+    applyPreviewFontSettings();
 
     // 큰 문서는 빌드가 끝난 뒤에도 WebEngine 이 읽는 데 오래 걸린다(이 저장소의
     // Breathe API 페이지는 HTML 하나가 22MB 다). 그 구간을 비워 두면 빌드가
@@ -430,6 +432,7 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
             return;
         }
         previewUrl_ = previewView_->url();
+        applyPreviewFontSettings();
         traceP( "preview.load.end", previewView_->url().fileName() );
         // 초기 placeholder 는 setHtml 로 넣은 것이라 파일 URL 이 아니다.
         // fileName() 이 의미 없는 조각을 내놓으므로 로그를 남기지 않는다.
@@ -1640,6 +1643,15 @@ void WorkspaceController::rescanProjects()
     registry_->rescanAsync();
 }
 
+void WorkspaceController::applyPreviewFontSettings()
+{
+    if( previewView_ == nullptr )
+        return;
+    const auto* context = contextFor( activeView_ );
+    applyPreviewFonts( previewView_->page(), context != nullptr &&
+        filekinds::hasExtension( context->path, filekinds::markdownExtensions() ) );
+}
+
 void WorkspaceController::reloadSettings()
 {
     AppSettings settings;
@@ -1691,6 +1703,7 @@ void WorkspaceController::reloadSettings()
     applyVirtualProjectTheme();
 
     applyPreviewWebSettings();
+    applyPreviewFontSettings();
 }
 
 void WorkspaceController::beginShutdown()
@@ -1958,6 +1971,8 @@ void WorkspaceController::setActiveDocument( QTextView* view )
     {
         resolveProject( *context );
     }
+
+    applyPreviewFontSettings();
 
     // 프로젝트가 바뀌었는지와 문서가 바뀌었는지는 별개다.
     //

@@ -29,6 +29,14 @@ namespace
             return QStringLiteral( "theme/fonts/outline" );
         case ThemeManager::FontRole::DiagnosticsAndLog:
             return QStringLiteral( "theme/fonts/diagnosticsAndLog" );
+        case ThemeManager::FontRole::PreviewRstBody:
+            return QStringLiteral( "theme/fonts/previewRstBody" );
+        case ThemeManager::FontRole::PreviewRstCode:
+            return QStringLiteral( "theme/fonts/previewRstCode" );
+        case ThemeManager::FontRole::PreviewMarkdownBody:
+            return QStringLiteral( "theme/fonts/previewMarkdownBody" );
+        case ThemeManager::FontRole::PreviewMarkdownCode:
+            return QStringLiteral( "theme/fonts/previewMarkdownCode" );
         }
         return QStringLiteral( "theme/fonts/ui" );
     }
@@ -588,9 +596,13 @@ QString ThemeManager::themeName( Theme theme )
 
 QFont ThemeManager::configuredFont( const FontRole role )
 {
-    const QFont fallback = role == FontRole::UserInterface
+    QFont fallback = role == FontRole::UserInterface
                                ? platformDefaultFont()
                                : configuredFont( FontRole::UserInterface );
+    if( role == FontRole::PreviewRstBody || role == FontRole::PreviewMarkdownBody )
+        fallback.setPointSize( 11 );
+    if( role == FontRole::PreviewRstCode || role == FontRole::PreviewMarkdownCode )
+        fallback = QFont( QStringLiteral( "Consolas" ), 10 );
     const QString prefix = fontSettingsPrefix( role );
     AppSettings settings;
 
