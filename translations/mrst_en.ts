@@ -147,6 +147,14 @@
 <context>
     <name>MainWindow</name>
     <message>
+        <source>검색 중…</source>
+        <translation>Searching…</translation>
+    </message>
+    <message>
+        <source>참조 이동</source>
+        <translation>Go to Reference</translation>
+    </message>
+    <message>
         <source>&quot;%1&quot; 파일 열기를 취소합니다.</source>
         <translation type="unfinished">Cancels opening &quot;%1&quot;.</translation>
     </message>
@@ -1256,6 +1264,22 @@ Cause: %3</translation>
 </context>
 <context>
     <name>QSettingsDialog</name>
+    <message>
+        <source>참조 이동</source>
+        <translation>Go to Reference</translation>
+    </message>
+    <message>
+        <source>CSS 수정 (reStructuredText)</source>
+        <translation>CSS overrides (reStructuredText)</translation>
+    </message>
+    <message>
+        <source>본문 너비 제한 해제</source>
+        <translation>Remove content width limit</translation>
+    </message>
+    <message>
+        <source>sphinx_rtd_theme 등 테마의 본문 너비 제한을 해제하여 프리뷰 폭에 맞춥니다. 현재 프리뷰에 즉시 적용되며, 끄면 테마의 원래 너비로 돌아갑니다.</source>
+        <translation>Removes content width limits imposed by themes such as sphinx_rtd_theme to fit the preview pane. Applies immediately to the current preview; turn it off to restore the original theme width.</translation>
+    </message>
     <message>
         <source> 단계</source>
         <extracomment>스핀박스 접미사. 앞의 공백을 지우지 말 것 — 숫자와 붙는다.</extracomment>
@@ -4116,6 +4140,22 @@ Please download it from the release page.</translation>
 </context>
 <context>
     <name>mrst::WorkspaceController</name>
+    <message>
+        <source>커서 위치에 이동할 참조가 없습니다.</source>
+        <translation>No reference at the cursor.</translation>
+    </message>
+    <message>
+        <source>URL을 열 수 없습니다: %1</source>
+        <translation>Cannot open URL: %1</translation>
+    </message>
+    <message>
+        <source>참조 대상을 찾는 중: %1</source>
+        <translation>Finding reference target: %1</translation>
+    </message>
+    <message>
+        <source>참조 대상을 찾을 수 없습니다: %1</source>
+        <translation>Reference target not found: %1</translation>
+    </message>
     <message>
         <source>(프로젝트 없음)</source>
         <translation type="unfinished">(no project)</translation>

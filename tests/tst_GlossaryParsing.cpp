@@ -1,6 +1,7 @@
 ﻿#include "TestRunner.hpp"
 
 #include "core/solGlossaryIndex.hpp"
+#include "core/solReferenceNavigation.hpp"
 
 #include <QTest>
 
@@ -35,7 +36,68 @@ private slots:
     void ignoresDirectiveOptions();
     void stopsAtDedentedContent();
     void handlesIndentedGlossary();
+    void referenceTargets_data();
+    void referenceTargets();
+    void referenceDefinitions();
 };
+
+void TestGlossaryParsing::referenceTargets_data()
+{
+    QTest::addColumn<QString>( "marked" );
+    QTest::addColumn<bool>( "rst" );
+    QTest::addColumn<int>( "kind" );
+    QTest::addColumn<QString>( "target" );
+    using reference::Kind;
+    QTest::newRow("term") << QStringLiteral(":term:`doc|utils`") << true << int(Kind::Term) << QStringLiteral("docutils");
+    QTest::newRow("ref-title") << QStringLiteral(":ref:`표시 |이름 <section-label>`") << true << int(Kind::Ref) << QStringLiteral("section-label");
+    QTest::newRow("unicode-tab") << QStringLiteral("\t한글 😀 :term:`|용어`") << true << int(Kind::Term) << QStringLiteral("용어");
+    QTest::newRow("std-domain") << QStringLiteral(":std:ref:`ab|c`") << true << int(Kind::Ref) << QStringLiteral("abc");
+    QTest::newRow("role-end") << QStringLiteral(":ref:`abc`|") << true << int(Kind::Ref) << QStringLiteral("abc");
+    QTest::newRow("literal") << QStringLiteral("``:ref:`ab|c` ``") << true << -1 << QStringLiteral("");
+    QTest::newRow("escaped") << QStringLiteral("\\:ref:`ab|c`") << true << -1 << QStringLiteral("");
+    QTest::newRow("role-in-md") << QStringLiteral(":ref:`ab|c`") << false << -1 << QStringLiteral("");
+    QTest::newRow("plain") << QStringLiteral("nothing |here") << true << -1 << QStringLiteral("");
+    QTest::newRow("bare-url") << QStringLiteral("See https://exa|mple.org/a?q=1&b=2#part.") << true << int(Kind::Url) << QStringLiteral("https://example.org/a?q=1&b=2#part");
+    QTest::newRow("md-url") << QStringLiteral("[link](https://exa|mple.org/a_(b))") << false << int(Kind::Url) << QStringLiteral("https://example.org/a_(b)");
+    QTest::newRow("rst-link") << QStringLiteral("`link <http://exam|ple.org/a>`_") << true << int(Kind::Url) << QStringLiteral("http://example.org/a");
+    QTest::newRow("autolink") << QStringLiteral("<https://exa|mple.org/>") << false << int(Kind::Url) << QStringLiteral("https://example.org/");
+    QTest::newRow("url-end") << QStringLiteral("https://example.org/|") << false << int(Kind::Url) << QStringLiteral("https://example.org/");
+    QTest::newRow("multiple") << QStringLiteral("http://first.org https://sec|ond.org") << false << int(Kind::Url) << QStringLiteral("https://second.org");
+    QTest::newRow("non-http") << QStringLiteral("file:///C:/ex|ample.txt") << false << -1 << QStringLiteral("");
+    QTest::newRow("outside-url") << QStringLiteral("|see https://example.org/") << false << -1 << QStringLiteral("");
+}
+
+void TestGlossaryParsing::referenceTargets()
+{
+    QFETCH(QString, marked);
+    QFETCH(bool, rst);
+    QFETCH(int, kind);
+    QFETCH(QString, target);
+    const int column = static_cast<int>( marked.indexOf( QLatin1Char('|') ) );
+    QVERIFY( column >= 0 );
+    marked.remove( column, 1 );
+    const auto result = reference::targetAt( marked, column, rst );
+    QCOMPARE( result.has_value(), kind >= 0 );
+    if( result )
+    {
+        QCOMPARE( int(result->kind), kind );
+        QCOMPARE( result->value, target );
+    }
+}
+
+void TestGlossaryParsing::referenceDefinitions()
+{
+    using reference::Kind;
+    const QString source = QStringLiteral(".. _section-label:\r\n\r\n제목\r\n====\r\n\r\n"
+        ".. glossary::\r\n\r\n   용어\r\n      정의 본문.\r\n\r\n.. _`Label With Spaces`:\r\n");
+    QCOMPARE( reference::definitionLine( source, {Kind::Ref, "SECTION-label"} ), 1 );
+    QCOMPARE( reference::definitionLine( QChar(0xfeff) + source, {Kind::Ref, "section-label"} ), 1 );
+    QCOMPARE( reference::definitionLine( source, {Kind::Term, QStringLiteral("용어")} ), 8 );
+    QCOMPARE( reference::definitionLine( source, {Kind::Ref, "label   with spaces"} ), 11 );
+    QCOMPARE( reference::definitionLine( source, {Kind::Ref, "missing"} ), 0 );
+    QCOMPARE( reference::definitionLine( source, {Kind::Ref, QStringLiteral("용어")} ), 0 );
+    QCOMPARE( reference::definitionLine( source, {Kind::Term, "section-label"} ), 0 );
+}
 
 void TestGlossaryParsing::noGlossaryYieldsNothing()
 {

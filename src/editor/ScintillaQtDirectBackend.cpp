@@ -174,6 +174,11 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 {
 	m_editorFont = m_editor->font();
 
+	// End / Shift+End 는 마지막 공백을 포함한 화면 줄 끝으로 이동 / 선택한다.
+	m_editor->send(sciMessage(SCI_ASSIGNCMDKEY), SCK_END, SCI_LINEENDDISPLAY);
+	m_editor->send(sciMessage(SCI_ASSIGNCMDKEY), SCK_END | (SCMOD_SHIFT << 16),
+		SCI_LINEENDDISPLAYEXTEND);
+
 	// 리사이즈 시 깜빡임 방지: 시스템 배경 지움 비활성화
 	m_editor->setAttribute(Qt::WA_OpaquePaintEvent);
 	m_editor->setAttribute(Qt::WA_NoSystemBackground);
@@ -202,7 +207,12 @@ ScintillaQtDirectBackend::ScintillaQtDirectBackend(QWidget* editorParent, QObjec
 	m_editor->send(sciMessage(SCI_SETLAYOUTCACHE), SC_CACHE_PAGE);
 	// 선택 레이어: 텍스트 아래 반투명 배경으로 그려 원래 lexer 글자가 계속 보이게 한다.
 	m_editor->send(sciMessage(SCI_SETSELECTIONLAYER), SC_LAYER_UNDER_TEXT);
-	// 사각형 선택 활성화
+	// Alt+Shift+방향키로 만든 사각형 선택/커서를 입력 시에도 유지한다.
+	// 폭이 있으면 각 줄의 선택을 치환하고, 폭이 없으면 모든 커서에 입력한다.
+	m_editor->send(sciMessage(SCI_SETMULTIPLESELECTION), 1);
+	m_editor->send(sciMessage(SCI_SETADDITIONALSELECTIONTYPING), 1);
+	m_editor->send(sciMessage(SCI_SETMULTIPASTE), SC_MULTIPASTE_EACH);
+	// 짧은 줄 끝을 넘는 사각형 선택도 같은 열에 입력할 수 있다.
 	m_editor->send(sciMessage(SCI_SETVIRTUALSPACEOPTIONS), SCVS_RECTANGULARSELECTION);
 
 	// 제어문자/공백/EOL 기본 숨김

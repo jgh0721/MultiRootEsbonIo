@@ -47,6 +47,7 @@ class UpdateService;
 class WorkspaceController;
 struct UpdateInfo;
 struct WorkspaceSession;
+struct SearchMatch;
 }
 
 class MainWindow final : public QMainWindow
@@ -57,7 +58,7 @@ public:
     explicit MainWindow( QWidget* parent = nullptr );
     ~MainWindow() override;
 
-    void openFile( const QString& filePath );
+    void openFile( const QString& filePath, bool focusEditor = true );
     /// 명령줄 인자로 받은 경로들을 연다.
     /// 첫 인자가 폴더면 그것을 워크스페이스로 삼고 나머지를 파일로 연다.
     /// 첫 인자가 파일이면 그 상위 폴더가 워크스페이스가 된다.
@@ -256,7 +257,7 @@ private:
     /// 로그 한 건에 시각을 찍는다. `[ MM-dd HH:mm:ss.zzz ] ` 를 앞에 두고,
     /// 여러 줄이면 이어지는 줄을 같은 칸만큼 밀어 한 덩어리로 보이게 한다.
     [[nodiscard]] static QString        stampLogLine( const QString& text );
-    int                                 addViewTab( QBaseView* view );
+    int                                 addViewTab( QBaseView* view, bool focusEditor = true );
     void                                disconnectViewSignals( QBaseView* view );
     void                                removeViewTabWithoutSignals( QBaseView* view );
     void                                teardownView( QBaseView* view );
@@ -305,6 +306,7 @@ private:
     /// 도구 단추와 필터칸의 아이콘을 지금 팔레트로 다시 그린다.
     /// 아이콘은 그려서 만들므로 테마가 바뀌면 다시 만들어야 한다.
     void                                applyExplorerIcons();
+    void                                applyMenuIcons();
     void                                retranslateExplorerPanel();
     /// 필터칸의 내용을 프록시에 넣고 펼침 상태를 맞춘다.
     void                                refreshExplorerFilter();
@@ -652,6 +654,8 @@ private:
     void                                setupWorkspaceSearchTab();
     void                                showWorkspaceSearch();
     void                                runWorkspaceSearch();
+    void                                showWorkspaceSearchResults( const QString& root,
+                                                                     const QVector<mrst::SearchMatch>& matches );
     void                                runWorkspaceReplacePreview();
     void                                applyWorkspaceReplace();
 
@@ -701,6 +705,7 @@ private:
     int                                 outlineProjectTruncated_ = 0;
 
     QString                             workspaceRoot_;
+    quint64                             workspaceSearchGeneration_ = 0;
 
     // 검색 탭 위젯들. .ui 를 건드리지 않고 코드로 만든다.
     /// 검색 탭의 페이지 위젯. 탭 제목을 다시 칠할 때 indexOf() 에 쓴다

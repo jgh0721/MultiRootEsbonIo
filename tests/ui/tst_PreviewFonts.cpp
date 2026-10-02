@@ -1,5 +1,6 @@
 ﻿#include "TestRunner.hpp"
 #include "core/solPreviewFonts.hpp"
+#include "core/solPreviewCss.hpp"
 #include "core/solThemeManager.hpp"
 #include "editor/DocumentLineEnding.hpp"
 
@@ -63,6 +64,7 @@ private slots:
     void overridesAndRestores();
     void navigationAndIndependentSettings();
     void newDocumentLineEndings();
+    void contentWidthOverride();
 };
 
 void TestPreviewFonts::overridesAndRestores()
@@ -134,6 +136,73 @@ void TestPreviewFonts::navigationAndIndependentSettings()
     page.setHtml( QString::fromUtf8( html ) );
     QVERIFY( loaded.wait( 10000 ) );
     QCOMPARE( run( page, "getComputedStyle(p).fontSize" ).toString(), QString( "19px" ) );
+}
+
+void TestPreviewFonts::contentWidthOverride()
+{
+    AppSettings settings;
+    const QString key = QLatin1String(mrst::kPreviewRstUnlimitedWidth);
+    const QVariant previous = settings.value(key);
+    const auto restore = qScopeGuard([&] {
+        if (previous.isValid()) settings.setValue(key, previous);
+        else settings.remove(key);
+    });
+    const QString content = QStringLiteral(R"HTML(<!doctype html><html><head><style>
+        body {width:1400px;margin:0;}
+        .wy-nav-side {width:300px;position:fixed;}
+        .wy-nav-content-wrap {margin-left:300px;}
+        .wy-nav-content {max-width:800px;width:800px;padding:20px;box-sizing:border-box;}
+        @layer theme {div.document {max-width:900px !important;width:900px !important;}}
+        div.body {max-width:700px;}
+        table {width:220px;} img {width:120px;max-width:100%;}
+    </style></head><body><aside class="wy-nav-side" id="sidebar">Navigation</aside>
+    <div class="wy-nav-content-wrap"><main class="wy-nav-content" id="content">
+    <div class="document" id="doc"><div class="body" id="body">
+    <p>Text</p><table id="table"><tr><td>Cell</td></tr></table><img id="image">
+    </div></div></main></div></body></html>)HTML");
+    QWebEnginePage page;
+    QSignalSpy loaded(&page, &QWebEnginePage::loadFinished);
+    settings.remove(key);
+    mrst::applyPreviewCss(&page, true);
+    page.setHtml(content);
+    QVERIFY(loaded.wait(10000));
+    const QString dimensions = QStringLiteral(
+        "JSON.stringify(['content','doc','body','sidebar','table','image'].map(id=>"
+        "document.getElementById(id).getBoundingClientRect().width))");
+    const QString original = run(page, dimensions).toString();
+    QCOMPARE(run(page, "getComputedStyle(document.getElementById('content')).maxWidth").toString(),
+             QString("800px"));
+
+    settings.setValue(key, true);
+    mrst::applyPreviewCss(&page, true);
+    QTRY_COMPARE(run(page, "getComputedStyle(document.getElementById('content')).maxWidth").toString(),
+                 QString("none"));
+    QCOMPARE(run(page, "document.getElementById('content').getBoundingClientRect().width").toInt(), 1100);
+    QCOMPARE(run(page, "document.getElementById('doc').getBoundingClientRect().width").toInt(), 1060);
+    QCOMPARE(run(page, "document.getElementById('body').getBoundingClientRect().width").toInt(), 1060);
+    QCOMPARE(run(page, "document.getElementById('sidebar').getBoundingClientRect().width").toInt(), 300);
+    QCOMPARE(run(page, "document.getElementById('table').getBoundingClientRect().width").toInt(), 220);
+    QCOMPARE(run(page, "document.getElementById('image').getBoundingClientRect().width").toInt(), 120);
+
+    // Body replacement (preview hot swap) keeps the head stylesheet.
+    run(page, "document.body.innerHTML=document.body.innerHTML");
+    QCOMPARE(run(page, "getComputedStyle(document.getElementById('content')).maxWidth").toString(), QString("none"));
+    mrst::applyPreviewCss(&page, true);
+    QCOMPARE(run(page, "document.querySelectorAll('#mrr-preview-width').length").toInt(), 1);
+    page.setHtml(content);
+    QVERIFY(loaded.wait(10000));
+    QCOMPARE(run(page, "getComputedStyle(document.getElementById('doc')).maxWidth").toString(), QString("none"));
+
+    // Disabling restores the theme exactly; Markdown stays untouched even when enabled.
+    settings.setValue(key, false);
+    mrst::applyPreviewCss(&page, true);
+    QCOMPARE(run(page, dimensions).toString(), original);
+    settings.setValue(key, true);
+    mrst::applyPreviewCss(&page, false);
+    QCOMPARE(run(page, dimensions).toString(), original);
+    page.setHtml(content);
+    QVERIFY(loaded.wait(10000));
+    QCOMPARE(run(page, dimensions).toString(), original);
 }
 
 void TestPreviewFonts::newDocumentLineEndings()

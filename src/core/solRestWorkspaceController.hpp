@@ -140,6 +140,7 @@ public:
 
     /// Ctrl+Space. 트리거 문자 없이 지금 캐럿 위치에서 자동완성을 연다.
     void                                requestCompletion();
+    void                                requestReferenceNavigation();
 
     // ── 사용자가 요청한 1회성 빌드 ──
     /// 탐색기에서 프로젝트 루트를 오른쪽 클릭해 부르는 빌드.
@@ -171,6 +172,8 @@ signals:
     /// 끝까지 빈 문자열이고, 그래서 한 번도 나오지 않는다.
     void                                activeDocumentResolved( bool standalone );
     void                                navigateRequested( const QString& path, int line, int column );
+    void                                referenceNavigateRequested( const QString& path, int line );
+    void                                referenceNavigationStatus( const QString& text );
     void                                diagnosticsChanged( const QString& source,
                                                             const QVector< DiagnosticEntry >& entries );
     void                                missingDependenciesDetected( const QString& projectId,
@@ -267,7 +270,7 @@ private:
     /// 값이 바뀌었으면 이미 떠 있는 페이지를 다시 읽는다 (실패한 스크립트는
     /// 설정만 바꿔서는 다시 실행되지 않는다).
     void                                applyPreviewWebSettings();
-    void                                applyPreviewFontSettings();
+    void                                applyPreviewAppearanceSettings();
     /// 입력이 안 바뀌었는지 워커 스레드에서 판정하고, 결과에 따라 빌드하거나
     /// 지난 산출물을 그대로 올린다.
     void                                tryServeFromLastBuild( const PreviewBuildRequest& request,
@@ -468,6 +471,7 @@ private:
 
     QHash< QTextView*, DocumentContext > documents_;
     QPointer< QTextView >               activeView_;
+    quint64                             referenceNavigationGeneration_ = 0;
     QString                             activeProjectId_;
     bool                                shuttingDown_ = false;
 

@@ -9,9 +9,11 @@
 #include "solPreviewProgress.hpp"
 #include "solThemeManager.hpp"
 #include "solGlossaryIndex.hpp"
+#include "solReferenceNavigation.hpp"
 #include "solRstSubstitutionIndex.hpp"
 #include "solMarkdownPreviewController.hpp"
 #include "solPreviewFonts.hpp"
+#include "solPreviewCss.hpp"
 #include "solRstPathIndex.hpp"
 #include "solRestCompletionCoordinator.hpp"
 #include "solRestOutlineService.hpp"
@@ -29,6 +31,8 @@
 #include "solSphinxDiagnosticsStore.hpp"
 
 #include <QCryptographicHash>
+#include <QDesktopServices>
+#include <limits>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -408,7 +412,7 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
     previewBridge_ = new PreviewBridge( this );
     previewBridge_->attachTo( previewView_ );
     applyPreviewWebSettings();
-    applyPreviewFontSettings();
+    applyPreviewAppearanceSettings();
 
     // 큰 문서는 빌드가 끝난 뒤에도 WebEngine 이 읽는 데 오래 걸린다(이 저장소의
     // Breathe API 페이지는 HTML 하나가 22MB 다). 그 구간을 비워 두면 빌드가
@@ -432,7 +436,7 @@ void WorkspaceController::setPreviewView( QWebEngineView* view )
             return;
         }
         previewUrl_ = previewView_->url();
-        applyPreviewFontSettings();
+        applyPreviewAppearanceSettings();
         traceP( "preview.load.end", previewView_->url().fileName() );
         // 초기 placeholder 는 setHtml 로 넣은 것이라 파일 URL 이 아니다.
         // fileName() 이 의미 없는 조각을 내놓으므로 로그를 남기지 않는다.
@@ -1386,6 +1390,98 @@ void WorkspaceController::refreshDocumentOutline()
     }
 }
 
+void WorkspaceController::requestReferenceNavigation()
+{
+    const quint64 generation = ++referenceNavigationGeneration_;
+    if( shuttingDown_ || activeView_.isNull() ) return;
+    const auto* context = contextFor( activeView_ );
+    if( !context ) return;
+    const QString path = context->path;
+    const bool rst = filekinds::hasExtension( path, filekinds::restructuredTextExtensions() );
+    if( !rst && !filekinds::hasExtension( path, filekinds::markdownExtensions() ) ) return;
+    const int lineStart = activeView_->positionFromLineColumn( activeView_->caretLine(), 1 );
+    const int column = static_cast<int>( activeView_->textRange( lineStart, activeView_->currentPosition() ).size() );
+    const auto target = reference::targetAt( activeView_->lineText( activeView_->caretLine() ), column, rst );
+    if( !target )
+    {
+        emit referenceNavigationStatus( tr( "커서 위치에 이동할 참조가 없습니다." ) );
+        return;
+    }
+    if( target->kind == reference::Kind::Url )
+    {
+        if( !QDesktopServices::openUrl( QUrl( target->value ) ) )
+            emit referenceNavigationStatus( tr( "URL을 열 수 없습니다: %1" ).arg( target->value ) );
+        return;
+    }
+
+    QString root = QFileInfo( path ).absolutePath();
+    QString rootDoc;
+    if( const auto* project = lookupProject( context->projectId ); project && !context->isVirtual )
+    {
+        root = toQString( project->sourcePath );
+        rootDoc = QString::fromStdString( project->rootDoc );
+    }
+    else if( !workspaceRoot().isEmpty() )
+    {
+        const QString relative = QDir( workspaceRoot() ).relativeFilePath( path );
+        if( relative != QLatin1String( ".." ) && !relative.startsWith( QLatin1String( "../" ) )
+            && !QDir::isAbsolutePath( relative ) ) root = workspaceRoot();
+    }
+    QHash<QString, QString> buffers;
+    for( const auto& doc : std::as_const( documents_ ) )
+    {
+        const QString relative = QDir( root ).relativeFilePath( doc.path );
+        if( doc.view && filekinds::hasExtension( doc.path, filekinds::restructuredTextExtensions() )
+            && !relative.startsWith( QLatin1String( "../" ) ) && !QDir::isAbsolutePath( relative ) )
+            buffers.insert( doc.path, doc.view->text() );
+    }
+    buffers.insert( path, activeView_->text() );
+    const QPointer<QTextView> origin = activeView_;
+    const int originLine = activeView_->caretLine();
+    const int originColumn = activeView_->caretColumn();
+    QPointer<WorkspaceController> guard( this );
+    emit referenceNavigationStatus( tr( "참조 대상을 찾는 중: %1" ).arg( target->value ) );
+    QThreadPool::globalInstance()->start( [guard, origin, originLine, originColumn, generation,
+                                         path, root, rootDoc, buffers, target = *target] {
+        QStringList paths = collectProjectDocuments( root, rootDoc, std::numeric_limits<int>::max() );
+        for( auto it = buffers.constBegin(); it != buffers.constEnd(); ++it )
+            if( !paths.contains( it.key() ) ) paths.append( it.key() );
+        paths.removeAll( path );
+        paths.prepend( path );
+        QString destination;
+        int line = 0;
+        for( const auto& candidate : paths )
+        {
+            if( !guard ) return;
+            if( !filekinds::hasExtension( candidate, filekinds::restructuredTextExtensions() ) ) continue;
+            QString text;
+            if( buffers.contains( candidate ) ) text = buffers.value( candidate );
+            else
+            {
+                QFile file( candidate );
+                if( !file.open( QIODevice::ReadOnly | QIODevice::Text ) ) continue;
+                text = QString::fromUtf8( file.readAll() );
+            }
+            line = reference::definitionLine( text, target );
+            if( line > 0 ) { destination = candidate; break; }
+        }
+        if( !guard ) return;
+        QMetaObject::invokeMethod( guard, [guard, origin, originLine, originColumn, generation,
+                                          destination, line, value = target.value] {
+            if( !guard || guard->shuttingDown_ || !origin || guard->activeView_ != origin
+                || generation != guard->referenceNavigationGeneration_
+                || origin->caretLine() != originLine || origin->caretColumn() != originColumn ) return;
+            if( destination.isEmpty() )
+                emit guard->referenceNavigationStatus( tr( "참조 대상을 찾을 수 없습니다: %1" ).arg( value ) );
+            else
+            {
+                emit guard->referenceNavigationStatus( QString() );
+                emit guard->referenceNavigateRequested( destination, line );
+            }
+        }, Qt::QueuedConnection );
+    } );
+}
+
 void WorkspaceController::refreshProjectOutline( const bool force )
 {
     if( shuttingDown_ )
@@ -1643,13 +1739,15 @@ void WorkspaceController::rescanProjects()
     registry_->rescanAsync();
 }
 
-void WorkspaceController::applyPreviewFontSettings()
+void WorkspaceController::applyPreviewAppearanceSettings()
 {
     if( previewView_ == nullptr )
         return;
     const auto* context = contextFor( activeView_ );
     applyPreviewFonts( previewView_->page(), context != nullptr &&
         filekinds::hasExtension( context->path, filekinds::markdownExtensions() ) );
+    applyPreviewCss( previewView_->page(), context != nullptr &&
+        filekinds::hasExtension( context->path, filekinds::restructuredTextExtensions() ) );
 }
 
 void WorkspaceController::reloadSettings()
@@ -1703,7 +1801,7 @@ void WorkspaceController::reloadSettings()
     applyVirtualProjectTheme();
 
     applyPreviewWebSettings();
-    applyPreviewFontSettings();
+    applyPreviewAppearanceSettings();
 }
 
 void WorkspaceController::beginShutdown()
@@ -1972,7 +2070,7 @@ void WorkspaceController::setActiveDocument( QTextView* view )
         resolveProject( *context );
     }
 
-    applyPreviewFontSettings();
+    applyPreviewAppearanceSettings();
 
     // 프로젝트가 바뀌었는지와 문서가 바뀌었는지는 별개다.
     //

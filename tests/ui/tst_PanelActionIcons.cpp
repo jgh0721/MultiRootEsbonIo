@@ -43,6 +43,15 @@ const QVector< IconEntry >& allIcons()
         { "newFile", &panelicons::newFile },     { "newFolder", &panelicons::newFolder },
         { "rename", &panelicons::rename },       { "remove", &panelicons::remove },
         { "filter", &panelicons::filter },       { "showAllFiles", &panelicons::showAllFiles },
+#define MENU_ICON_ENTRY(name) { #name, []( const QPalette& p ) { return panelicons::menuIcon( panelicons::MenuIcon::name, p ); } }
+        MENU_ICON_ENTRY(File), MENU_ICON_ENTRY(Folder), MENU_ICON_ENTRY(Save), MENU_ICON_ENTRY(SaveAs),
+        MENU_ICON_ENTRY(Close), MENU_ICON_ENTRY(Exit), MENU_ICON_ENTRY(Copy), MENU_ICON_ENTRY(Paste),
+        MENU_ICON_ENTRY(History), MENU_ICON_ENTRY(Completion), MENU_ICON_ENTRY(Theme), MENU_ICON_ENTRY(Panels),
+        MENU_ICON_ENTRY(Fold), MENU_ICON_ENTRY(Unfold), MENU_ICON_ENTRY(Refresh), MENU_ICON_ENTRY(FullScreen),
+        MENU_ICON_ENTRY(Next), MENU_ICON_ENTRY(Previous), MENU_ICON_ENTRY(Settings), MENU_ICON_ENTRY(Update),
+        MENU_ICON_ENTRY(Info), MENU_ICON_ENTRY(Outline), MENU_ICON_ENTRY(Warning), MENU_ICON_ENTRY(Log),
+        MENU_ICON_ENTRY(Build),
+#undef MENU_ICON_ENTRY
     };
     return entries;
 }

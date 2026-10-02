@@ -158,6 +158,7 @@ private:
 
     /// 프리뷰 페이지
     QCheckBox*                          m_previewAllowRemoteCheck = nullptr;
+    QCheckBox*                          m_previewUnlimitedWidthCheck = nullptr;
     QCheckBox*                          m_previewUnsavedCheck = nullptr;
     QSpinBox*                           m_previewUnsavedMaxReadSpin = nullptr;
     QComboBox*                          m_previewVirtualThemeCombo = nullptr;

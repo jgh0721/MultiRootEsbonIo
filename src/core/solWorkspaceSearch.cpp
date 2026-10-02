@@ -68,23 +68,24 @@ QStringList collectSearchableFiles( const QString& root, const QStringList& suff
         wanted << suffix.toCaseFolded();
 
     QStringList files;
-    QDirIterator iterator( rootDir.absolutePath(), QDir::Files | QDir::NoDotAndDotDot,
-                          QDirIterator::Subdirectories );
-    while( iterator.hasNext() )
+    QStringList directories{ rootDir.absolutePath() };
+    while( !directories.isEmpty() )
     {
-        const QString absolute = iterator.next();
-        if( !wanted.contains( QFileInfo( absolute ).suffix().toCaseFolded() ) )
-            continue;
-
-        const QStringList parts =
-            rootDir.relativeFilePath( absolute ).split( QLatin1Char( '/' ), Qt::SkipEmptyParts );
-        bool excluded = false;
-        for( qsizetype index = 0; index + 1 < parts.size(); ++index )
-            excluded = excluded || filekinds::isExcludedDirectoryName( parts.at( index ) );
-        if( excluded )
-            continue;
-
-        files << QDir::cleanPath( absolute );
+        // Prune excluded directories before entering them; recursive iteration
+        // still visits every generated/cache file even when results are filtered.
+        QDirIterator iterator( directories.takeLast(), QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot );
+        while( iterator.hasNext() )
+        {
+            const QString absolute = iterator.next();
+            const QFileInfo info = iterator.fileInfo();
+            if( info.isDir() )
+            {
+                if( !info.isSymLink() && !filekinds::isExcludedDirectoryName( info.fileName() ) )
+                    directories.append( absolute );
+            }
+            else if( wanted.contains( info.suffix().toCaseFolded() ) )
+                files << QDir::cleanPath( absolute );
+        }
     }
 
     files.sort( Qt::CaseInsensitive );

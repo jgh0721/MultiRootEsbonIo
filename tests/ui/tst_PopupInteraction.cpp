@@ -13,6 +13,15 @@
 #include <QTest>
 #include <QTreeView>
 #include <QWindow>
+#include <QLineEdit>
+#include <QStandardItemModel>
+#include <QVBoxLayout>
+#include "uis/ExplorerShortcuts.hpp"
+#include "uis/WorkspaceSearchUi.hpp"
+#include <DockManager.h>
+#include <DockWidget.h>
+#include <DockAreaWidget.h>
+#include <QMainWindow>
 
 class PopupTestDelegate : public QStyledItemDelegate
 {
@@ -34,6 +43,9 @@ private slots:
     void comboClickAfterRepolish();
     void contextMenuExecAndMenuBarClick();
     void comboViewReplacementKeepsCustomDelegate();
+    void explorerShortcutsRespectFocus();
+    void searchDockEnter_data();
+    void searchDockEnter();
 
 private:
     QString previousStyle_;
@@ -41,6 +53,120 @@ private:
     QFont previousFont_;
     QPalette previousPalette_;
 };
+
+void PopupInteractionTest::searchDockEnter_data()
+{
+    QTest::addColumn<int>( "mode" );
+    QTest::addColumn<int>( "key" );
+    for( int mode = 0; mode < 4; ++mode )
+        for( const int key : { int(Qt::Key_Return), int(Qt::Key_Enter) } )
+            QTest::newRow( qPrintable(QString::number(mode) + '-' + QString::number(key)) ) << mode << key;
+}
+
+void PopupInteractionTest::searchDockEnter()
+{
+    QFETCH(int, mode);
+    QFETCH(int, key);
+    const auto flags = ads::CDockManager::configFlags();
+    const auto autoHideFlags = ads::CDockManager::autoHideConfigFlags();
+    ads::CDockManager::setConfigFlags( ads::CDockManager::DefaultOpaqueConfig | ads::CDockManager::FocusHighlighting );
+    ads::CDockManager::setAutoHideConfigFlags( ads::CDockManager::DefaultAutoHideConfig );
+    QMainWindow window;
+    window.resize( 720, 480 );
+    auto* manager = new ads::CDockManager( &window );
+    auto* editor = new QLineEdit;
+    auto* editorDock = new ads::CDockWidget( "Editor" );
+    editorDock->setWidget( editor );
+    manager->addDockWidget( ads::LeftDockWidgetArea, editorDock );
+    auto* results = new ads::CDockWidget( "Diagnostics" );
+    results->setWidget( new QTreeView );
+    auto* area = manager->addDockWidget( ads::BottomDockWidgetArea, results );
+    auto* page = new QWidget;
+    auto* layout = new QVBoxLayout( page );
+    auto* query = new QLineEdit( page );
+    query->setText( "needle" );
+    layout->addWidget( query );
+    layout->addWidget( new QLineEdit( page ) );
+    auto* search = new ads::CDockWidget( "Search" );
+    search->setWidget( page, ads::CDockWidget::ForceNoScrollArea );
+    manager->addDockWidgetTabToArea( search, area );
+    results->setAsCurrentTab();
+    if( mode == 1 ) search->toggleView( false );
+    if( mode == 2 ) search->setFloating();
+    if( mode == 3 ) search->setAutoHide( true, ads::SideBarBottom );
+    auto* action = new QAction( &window );
+    action->setShortcut( QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_F ) );
+    action->setShortcutContext( Qt::ApplicationShortcut );
+    window.addAction( action );
+    connect( action, &QAction::triggered, &window, [=] {
+        mrst::showWorkspaceSearchDock( search, query );
+    } );
+    QSignalSpy submitted( query, &QLineEdit::returnPressed );
+    QSignalSpy activated( action, &QAction::triggered );
+    window.show();
+    window.activateWindow();
+    editor->setFocus();
+    QApplication::processEvents();
+    window.activateWindow();
+    editor->setFocus();
+    QTRY_VERIFY( window.isActiveWindow() );
+    QTRY_VERIFY( editor->hasFocus() );
+    QTest::keyClick( editor, Qt::Key_F, Qt::ControlModifier | Qt::ShiftModifier );
+    QApplication::processEvents();
+    QTRY_VERIFY( query->hasFocus() );
+    QCOMPARE( activated.count(), 1 );
+    QTRY_COMPARE( query->selectedText(), QStringLiteral("needle") );
+    QTest::keyClick( QApplication::focusWidget(), static_cast<Qt::Key>(key) );
+    QCOMPARE( submitted.count(), 1 );
+    ads::CDockManager::setConfigFlags( flags );
+    ads::CDockManager::setAutoHideConfigFlags( autoHideFlags );
+}
+
+void PopupInteractionTest::explorerShortcutsRespectFocus()
+{
+    QWidget window;
+    auto* layout = new QVBoxLayout( &window );
+    auto* tree = new QTreeView( &window );
+    auto* filter = new QLineEdit( &window );
+    layout->addWidget( tree );
+    layout->addWidget( filter );
+    QStandardItemModel model;
+    model.appendRow( new QStandardItem( "sample.rst" ) );
+    tree->setModel( &model );
+    tree->setEditTriggers( QAbstractItemView::NoEditTriggers );
+    tree->setCurrentIndex( model.index( 0, 0 ) );
+    int renames = 0;
+    int deletions = 0;
+    mrst::installExplorerShortcuts( tree, [&] { ++renames; }, [&] { ++deletions; } );
+    window.show();
+    window.activateWindow();
+    tree->setFocus();
+    QTRY_VERIFY( tree->hasFocus() );
+    QTest::keyClick( tree, Qt::Key_F2 );
+    QTest::keyClick( tree, Qt::Key_Delete );
+    QCOMPARE( renames, 1 );
+    QCOMPARE( deletions, 1 );
+
+    filter->setText( "abc" );
+    filter->setCursorPosition( 0 );
+    filter->setFocus();
+    QTRY_VERIFY( filter->hasFocus() );
+    QTest::keyClick( filter, Qt::Key_Delete );
+    QTest::keyClick( filter, Qt::Key_F2 );
+    QCOMPARE( filter->text(), QStringLiteral( "bc" ) );
+    QCOMPARE( renames, 1 );
+    QCOMPARE( deletions, 1 );
+
+    tree->setFocus();
+    tree->setCurrentIndex( {} );
+    QTRY_VERIFY( tree->hasFocus() );
+    QTest::keyClick( tree, Qt::Key_F2 );
+    QTest::keyClick( tree, Qt::Key_Delete );
+    QCOMPARE( renames, 1 );
+    QCOMPARE( deletions, 1 );
+    for( QShortcut* shortcut : tree->findChildren<QShortcut*>() )
+        QVERIFY( !shortcut->autoRepeat() );
+}
 
 void PopupInteractionTest::initTestCase()
 {

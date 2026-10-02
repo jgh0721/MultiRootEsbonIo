@@ -23,6 +23,8 @@
 #include "uis/dlgSphinxBuild.hpp"
 #include "uis/FileTreeFilterProxy.hpp"
 #include "uis/PanelActionIcons.hpp"
+#include "uis/ExplorerShortcuts.hpp"
+#include "uis/WorkspaceSearchUi.hpp"
 #include "uis/QuickOpenDialog.hpp"
 #include "uis/TabSwitcherPopup.hpp"
 #include "uis/ExternalFilesProxy.hpp"
@@ -592,12 +594,25 @@ MainWindow::MainWindow( QWidget* parent )
     connect( controller_, &mrst::WorkspaceController::logMessage, this, &MainWindow::appendLog );
     connect( controller_, &mrst::WorkspaceController::navigateRequested, this,
             [this]( const QString& path, const int line, const int column ) {
-                openFile( path );
+                // 프리뷰 클릭은 원문 위치만 맞춘다. 지연된 편집기 포커스 전환을
+                // 예약하면 클릭 직후 PageDown 등이 다시 편집기로 들어간다.
+                openFile( path, false );
                 if( QTextView* view = textViewOf( currentView() ) )
                     view->goToPosition( line, column );
+                if( Ui.webEngineView != nullptr )
+                    Ui.webEngineView->setFocus( Qt::MouseFocusReason );
             } );
 
     setupDiagnosticsTable();
+    connect( controller_, &mrst::WorkspaceController::referenceNavigateRequested, this,
+             [this]( const QString& path, int line ) {
+                 openFile( path );
+                 if( QTextView* view = textViewOf( currentView() ); view &&
+                     QFileInfo( view->currentFilePath() ) == QFileInfo( path ) )
+                     view->goToPosition( line, 1 );
+             } );
+    connect( controller_, &mrst::WorkspaceController::referenceNavigationStatus, this,
+             [this]( const QString& message ) { showTransientStatus( message, 5000 ); } );
     setupOutlineTrees();
     setupWorkspaceSearchTab();
     setupMissingDependencyBar();
@@ -724,6 +739,7 @@ void MainWindow::initialisePreview()
 
     const mrst::PhaseSpan span( "preview.init" );
 
+    Ui.webEngineView->setFocusPolicy( Qt::StrongFocus );
     showPreviewStartPage();
 
     // 생성자의 applyCurrentTheme() 는 page() 가 없어 바탕색을 못 칠했다. 지금 칠한다.
@@ -908,7 +924,7 @@ void MainWindow::createMenus()
     findInFilesAction->setObjectName( QStringLiteral( "search.findInFiles" ) );
     findInFilesAction->setProperty( "mv.shortcutId", QStringLiteral( "search.findInFiles" ) );
     findInFilesAction->setShortcut( QKeySequence( Qt::CTRL | Qt::SHIFT | Qt::Key_F ) );
-    findInFilesAction->setShortcutContext( Qt::WindowShortcut );
+    findInFilesAction->setShortcutContext( Qt::ApplicationShortcut );
 
     auto* completionAction = editMenu->addAction( QString(), this, [this] {
         if( controller_ != nullptr )
@@ -917,6 +933,14 @@ void MainWindow::createMenus()
     completionAction->setObjectName( QStringLiteral( "editor.completion" ) );
     completionAction->setShortcut( QKeySequence( Qt::CTRL | Qt::Key_Space ) );
     completionAction->setShortcutContext( Qt::WindowShortcut );
+
+    auto* referenceAction = editMenu->addAction( QString(), this, [this] {
+        if( controller_ ) controller_->requestReferenceNavigation();
+    } );
+    referenceAction->setObjectName( QStringLiteral( "text.goToReference" ) );
+    referenceAction->setProperty( "mv.shortcutId", QStringLiteral( "text.goToReference" ) );
+    referenceAction->setShortcut( QKeySequence( Qt::Key_F12 ) );
+    referenceAction->setShortcutContext( Qt::WindowShortcut );
 
     auto* viewMenu = menuBar()->addMenu( QString() );
     viewMenu->setObjectName( QStringLiteral( "menu.view" ) );
@@ -1033,6 +1057,7 @@ void MainWindow::createMenus()
     // "재정의할 수 있다" 는 착각만 남긴다.
 
     retranslateMenus();
+    applyMenuIcons();
 }
 
 void MainWindow::changeEvent( QEvent* event )
@@ -1194,6 +1219,7 @@ void MainWindow::retranslateMenus()
     actionText( "edit.paste",         tr( "붙여넣기(&P)" ) );
     actionText( "search.findInFiles", tr( "파일에서 찾기" ) );
     actionText( "editor.completion",  tr( "자동 완성(&M)" ) );
+    actionText( "text.goToReference", tr( "참조 이동" ) );
 
     menuTitle ( "menu.view",          tr( "보기(&V)" ) );
     actionText( "view.themeToggle",   tr( "테마 전환" ) );
@@ -1723,7 +1749,7 @@ void MainWindow::addPreviewZoomControl( QToolBar* toolBar, QBaseView* view )
 // ═══════════════════════════════════════════════════════════
 // 파일 열기
 // ═══════════════════════════════════════════════════════════
-void MainWindow::openFile( const QString& filePath )
+void MainWindow::openFile( const QString& filePath, const bool focusEditor )
 {
     const QString normalizedPath = normalizeFilePath( filePath );
     if( normalizedPath.isEmpty() ) return;
@@ -1744,7 +1770,8 @@ void MainWindow::openFile( const QString& filePath )
             // 트리뷰·진단 표·개요에서 문서를 불러낸 경우 포커스는 아직 그 패널에
             // 있다. 문서를 앞에 냈으면 키보드도 문서에 있어야 한다. 미루는 이유는
             // addViewTab() 쪽과 같다.
-            QTimer::singleShot( 0, this, &MainWindow::focusActiveEditor );
+            if( focusEditor )
+                QTimer::singleShot( 0, this, &MainWindow::focusActiveEditor );
             return;
         }
     }
@@ -1813,12 +1840,12 @@ void MainWindow::openFile( const QString& filePath )
 
     if( asyncOpen )
     {
-        addViewTab( view );
+        addViewTab( view, focusEditor );
     }
     else
     {
         applyThemeToView( view );
-        addViewTab( view );
+        addViewTab( view, focusEditor );
     }
 
     // 여기까지 왔으면 열기가 시작됐다(비동기 경로는 아직 읽는 중이다). 실패
@@ -1896,6 +1923,8 @@ void MainWindow::applyCurrentTheme()
     // 패널 아이콘은 그려서 만든 것이라 팔레트를 따라가지 않는다. 테마가 바뀌면
     // 다시 그려야 어두운 테마에 검은 아이콘이 남는 일이 없다.
     applyExplorerIcons();
+
+    applyMenuIcons();
 
     for( int i = 0; i < m_tabWidget->count(); ++i )
     {
@@ -2253,7 +2282,7 @@ QBaseView* MainWindow::currentView() const
     return qobject_cast< QBaseView* >( m_tabWidget->currentWidget() );
 }
 
-int MainWindow::addViewTab( QBaseView* view )
+int MainWindow::addViewTab( QBaseView* view, const bool focusEditor )
 {
     if( !view || !m_tabWidget )
         return -1;
@@ -2276,7 +2305,8 @@ int MainWindow::addViewTab( QBaseView* view )
     //
     // 세션 복원도 이 자리를 지나가지만, 기동 끝에서 한 번 더 돌아 결과는
     // 달라지지 않는다.
-    QTimer::singleShot( 0, this, &MainWindow::focusActiveEditor );
+    if( focusEditor )
+        QTimer::singleShot( 0, this, &MainWindow::focusActiveEditor );
 
     connect( view, &QBaseView::sigTitleChanged, this, [this, view]( const QString& title ) {
         const int i = m_tabWidget ? m_tabWidget->indexOf( view ) : -1;
@@ -3394,6 +3424,10 @@ void MainWindow::updateTabDecoration( QBaseView* view )
         tabTitle.prepend( QStringLiteral( "● " ) );
     m_tabWidget->setTabText( index, tabTitle );
     m_tabWidget->setTabIcon( index, tabIconForView( view ) );
+    const QString filePath = view->currentFilePath();
+    m_tabWidget->setTabToolTip( index, filePath.isEmpty()
+                                         ? view->title()
+                                         : QDir::toNativeSeparators( QFileInfo( filePath ).absoluteFilePath() ) );
 }
 
 void MainWindow::scheduleDiagnosticsTableRefresh()
@@ -4076,6 +4110,11 @@ void MainWindow::updateRecentFilesMenu()
             } );
         } );
         action->setToolTip( QDir::toNativeSeparators( path ) );
+        action->setIcon( mrst::panelicons::menuIcon(
+            activate == &MainWindow::openRecentWorkspace ? mrst::panelicons::MenuIcon::Folder
+                                                    : mrst::panelicons::MenuIcon::File,
+            m_recentMenu->palette() ) );
+        action->setIconVisibleInMenu( true );
         action->setStatusTip( QDir::toNativeSeparators( path ) );
     };
 
@@ -4299,6 +4338,7 @@ void MainWindow::shutdownUi()
 
 void MainWindow::resetWorkspaceUi()
 {
+    ++workspaceSearchGeneration_;
     if( !quickOpenDialog_.isNull() )
         quickOpenDialog_->close();
 
@@ -4668,6 +4708,8 @@ void MainWindow::setupExplorerPanel()
     externalFiles_ = new mrst::ExternalFilesProxy( this );
     externalFiles_->setSourceModel( explorerProxy_ );
     tree->setModel( externalFiles_ );
+    mrst::installExplorerShortcuts( tree, [this] { onExplorerRename(); },
+                                   [this] { onExplorerDelete(); } );
     tree->setIndentation( 15 );
     for( int column = 1; column < explorerProxy_->columnCount(); ++column )
         tree->header()->hideSection( column );
@@ -4832,6 +4874,49 @@ void MainWindow::applyExplorerIcons()
     setSearchIcon( Ui.edtOutlineProjectFilter, magnifier );
 }
 
+void MainWindow::applyMenuIcons()
+{
+    using namespace mrst::panelicons;
+    const QPalette colors = menuBar()->palette();
+    const auto set = []( QAction* action, const QIcon& icon ) {
+        if( action )
+        {
+            action->setIcon( icon );
+            action->setIconVisibleInMenu( true );
+        }
+    };
+    const struct { const char* id; MenuIcon icon; } entries[] = {
+        { "file.open", MenuIcon::File }, { "file.openWorkspace", MenuIcon::Folder },
+        { "file.closeWorkspace", MenuIcon::Close }, { "file.save", MenuIcon::Save },
+        { "file.saveAs", MenuIcon::SaveAs }, { "tab.close", MenuIcon::Close },
+        { "app.quit", MenuIcon::Exit }, { "edit.copy", MenuIcon::Copy },
+        { "edit.paste", MenuIcon::Paste }, { "editor.completion", MenuIcon::Completion },
+        { "view.themeToggle", MenuIcon::Theme }, { "editor.foldAll", MenuIcon::Fold },
+        { "editor.unfoldAll", MenuIcon::Unfold }, { "preview.rebuild", MenuIcon::Refresh },
+        { "preview.fullScreen", MenuIcon::FullScreen }, { "tab.next", MenuIcon::Next },
+        { "tab.previous", MenuIcon::Previous }, { "app.settings", MenuIcon::Settings },
+        { "app.checkUpdate", MenuIcon::Update }, { "app.about", MenuIcon::Info },
+        { "text.goToReference", MenuIcon::Next }
+    };
+    for( const auto& entry : entries )
+        set( findChild<QAction*>( QLatin1String( entry.id ) ), menuIcon( entry.icon, colors ) );
+    set( findChild<QAction*>( QStringLiteral( "file.new" ) ), newFile( colors ) );
+    for( const char* id : { "file.quickOpen", "search.findInFiles" } )
+        set( findChild<QAction*>( QLatin1String( id ) ), filter( colors ) );
+    if( m_recentMenu ) set( m_recentMenu->menuAction(), menuIcon( MenuIcon::History, colors ) );
+    if( dockPanelsMenu_ ) set( dockPanelsMenu_->menuAction(), menuIcon( MenuIcon::Panels, colors ) );
+    const struct { ads::CDockWidget* dock; MenuIcon icon; } docks[] = {
+        { dockExplorer_, MenuIcon::Folder }, { dockOutlineDocument_, MenuIcon::Outline },
+        { dockOutlineProject_, MenuIcon::Outline }, { dockDiagnostics_, MenuIcon::Warning },
+        { dockLog_, MenuIcon::Log }
+    };
+    for( const auto& entry : docks )
+        if( entry.dock ) set( entry.dock->toggleViewAction(), menuIcon( entry.icon, colors ) );
+    if( dockSearch_ ) set( dockSearch_->toggleViewAction(), filter( colors ) );
+    // Recent entries are rebuilt independently of the main menu.
+    updateRecentFilesMenu();
+}
+
 void MainWindow::retranslateExplorerPanel()
 {
     if( Ui.edtExplorerFilter != nullptr )
@@ -4851,8 +4936,8 @@ void MainWindow::retranslateExplorerPanel()
           tr( "지원하지 않는 확장자까지 트리에 보여 줍니다." ) );
     label( Ui.btnExplorerNewFile, tr( "새 파일" ), tr( "새 파일 만들기" ) );
     label( Ui.btnExplorerNewFolder, tr( "새 폴더" ), tr( "새 폴더 만들기" ) );
-    label( Ui.btnExplorerRename, tr( "이름 바꾸기" ), tr( "고른 항목의 이름 바꾸기" ) );
-    label( Ui.btnExplorerDelete, tr( "삭제" ), tr( "고른 항목 삭제" ) );
+    label( Ui.btnExplorerRename, tr( "이름 바꾸기" ), tr( "고른 항목의 이름 바꾸기" ) + QStringLiteral( " (F2)" ) );
+    label( Ui.btnExplorerDelete, tr( "삭제" ), tr( "고른 항목 삭제" ) + QStringLiteral( " (Del)" ) );
 }
 
 QFileInfo MainWindow::explorerFileInfo( const QModelIndex& proxyIndex ) const
@@ -5132,6 +5217,8 @@ void MainWindow::onExplorerContextMenu( const QPoint& pos )
 
     const QFileInfo info = explorerFileInfo( index );
     QMenu           menu( tree );
+    using namespace mrst::panelicons;
+    const QPalette colors = menu.palette();
 
     // 빌드는 **실제** Sphinx 프로젝트의 루트에서만 연다. 가상 프로젝트는 산출물이
     // 임시 디렉터리라 사용자가 고른 자리에 놓을 것이 애초에 없다.
@@ -5141,6 +5228,7 @@ void MainWindow::onExplorerContextMenu( const QPoint& pos )
         if( const QString projectId = projectIdForDirectory( root ); !projectId.isEmpty() )
         {
             QAction* build = menu.addAction( tr( "빌드(&B)…" ) );
+            build->setIcon( menuIcon( MenuIcon::Build, colors ) );
             build->setEnabled( controller_ != nullptr && !controller_->isProjectBuildRunning() );
             connect( build, &QAction::triggered, this,
                     [ this, projectId, root ] { onExplorerBuild( projectId, root ); } );
@@ -5160,6 +5248,16 @@ void MainWindow::onExplorerContextMenu( const QPoint& pos )
     // 도구 줄에도 같은 토글이 있지만, 필터칸이 포커스를 쥐고 있으면 그 단추
     // 묶음이 접혀 있어 누를 수 없다. 여기에 하나 더 두어 길을 막지 않는다.
     QAction* showAll = menu.addAction( tr( "모든 파일 표시(&A)" ) );
+    newFile->setIcon( mrst::panelicons::newFile( colors ) );
+    newFolder->setIcon( mrst::panelicons::newFolder( colors ) );
+    rename->setIcon( mrst::panelicons::rename( colors ) );
+    remove->setIcon( mrst::panelicons::remove( colors ) );
+    reveal->setIcon( menuIcon( MenuIcon::Folder, colors ) );
+    showAll->setIcon( showAllFiles( colors ) );
+    // The actual shortcuts belong to the tree. Display them here as hints.
+    rename->setText( rename->text() + QStringLiteral( "\tF2" ) );
+    remove->setText( remove->text() + QStringLiteral( "\tDel" ) );
+    for( QAction* action : menu.actions() ) action->setIconVisibleInMenu( true );
     showAll->setCheckable( true );
     showAll->setChecked( treLeftFolderTreeModel_ != nullptr
                         && treLeftFolderTreeModel_->nameFilters().isEmpty() );
@@ -5749,11 +5847,7 @@ void MainWindow::showWorkspaceSearch()
         ? view->searchTextAtCursor() : QString{};
     if( !seed.isEmpty() )
         searchQueryEdit_->setText( seed );
-    dockSearch_->toggleView( true );
-    dockSearch_->raise();
-    dockSearch_->setAsCurrentTab();
-    searchQueryEdit_->setFocus( Qt::ShortcutFocusReason );
-    searchQueryEdit_->selectAll();
+    mrst::showWorkspaceSearchDock( dockSearch_, searchQueryEdit_ );
 }
 
 void MainWindow::setupWorkspaceSearchTab()
@@ -5807,6 +5901,8 @@ void MainWindow::setupWorkspaceSearchTab()
 
     searchTabPage_ = page;
     dockSearch_ = makeDock( "dock.search", tr( "파일에서 찾기" ), page );
+    page->setFocusProxy( searchQueryEdit_ );
+    dockSearch_->setFocusProxy( searchQueryEdit_ );
     if( ads::CDockAreaWidget* bottomArea = dockDiagnostics_->dockAreaWidget() )
         dockManager_->addDockWidgetTabToArea( dockSearch_, bottomArea );
     else
@@ -5816,6 +5912,7 @@ void MainWindow::setupWorkspaceSearchTab()
     // createMenus() 는 이미 지났으므로 보기 > 패널에 여기서 붙인다.
     if( dockPanelsMenu_ != nullptr )
         dockPanelsMenu_->addAction( dockSearch_->toggleViewAction() );
+    applyMenuIcons();
 
     connect( findButton, &QPushButton::clicked, this, &MainWindow::runWorkspaceSearch );
     connect( searchQueryEdit_, &QLineEdit::returnPressed, this, &MainWindow::runWorkspaceSearch );
@@ -5842,6 +5939,7 @@ mrst::SearchOptions searchOptionsFrom( const QCheckBox* caseBox, const QCheckBox
 
 void MainWindow::runWorkspaceSearch()
 {
+    const quint64 generation = ++workspaceSearchGeneration_;
     if( searchResultTree_ == nullptr )
         return;
 
@@ -5856,11 +5954,25 @@ void MainWindow::runWorkspaceSearch()
         return;
     }
 
-    const QVector< mrst::SearchMatch > matches =
-        mrst::findInFiles( workspaceRoot_, query,
-                          searchOptionsFrom( searchCaseBox_, searchWordBox_, searchRegexBox_ ) );
+    const QString searchRoot = workspaceRoot_;
+    const auto options = searchOptionsFrom( searchCaseBox_, searchWordBox_, searchRegexBox_ );
+    searchStatusLabel_->setText( tr( "검색 중…" ) );
+    QPointer<MainWindow> guard( this );
+    QThreadPool::globalInstance()->start( [guard, generation, searchRoot, query, options] {
+        const auto matches = mrst::findInFiles( searchRoot, query, options );
+        if( !guard ) return;
+        QMetaObject::invokeMethod( guard, [guard, generation, searchRoot, matches] {
+            if( !guard || guard->m_shuttingDown || generation != guard->workspaceSearchGeneration_
+                || searchRoot != guard->workspaceRoot_ ) return;
+            guard->showWorkspaceSearchResults( searchRoot, matches );
+        }, Qt::QueuedConnection );
+    } );
+}
 
-    const QDir root( workspaceRoot_ );
+void MainWindow::showWorkspaceSearchResults( const QString& searchRoot,
+                                            const QVector<mrst::SearchMatch>& matches )
+{
+    const QDir root( searchRoot );
     QHash< QString, QTreeWidgetItem* > fileItems;
     for( const mrst::SearchMatch& match : matches )
     {
@@ -5888,6 +6000,7 @@ void MainWindow::runWorkspaceSearch()
 
 void MainWindow::runWorkspaceReplacePreview()
 {
+    ++workspaceSearchGeneration_;
     if( searchResultTree_ == nullptr )
         return;
 

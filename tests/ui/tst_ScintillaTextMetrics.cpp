@@ -4,6 +4,8 @@
 #include <QByteArray>
 #include <QElapsedTimer>
 #include <QFontDatabase>
+#include <QClipboard>
+#include <QInputMethodEvent>
 #include <QStringList>
 #include <QTest>
 
@@ -40,10 +42,289 @@ class ScintillaTextMetricsTest : public QObject
     Q_OBJECT
 
 private slots:
+    void                                screenLineEnd_data();
+    void                                screenLineEnd();
+    void                                rectangularMultiCaret_data();
+    void                                rectangularMultiCaret();
     void                                positionsAgreeAcrossPaths();
     void                                fullWrapCost();
     void                                layoutCacheModeCost();
 };
+
+void ScintillaTextMetricsTest::rectangularMultiCaret_data()
+{
+    QTest::addColumn<int>( "wrapMode" );
+    QTest::addColumn<bool>( "upward" );
+    QTest::newRow( "down" ) << SC_WRAP_NONE << false;
+    QTest::newRow( "up" ) << SC_WRAP_NONE << true;
+    QTest::newRow( "wrap-down" ) << SC_WRAP_CHAR << false;
+    QTest::newRow( "wrap-up" ) << SC_WRAP_CHAR << true;
+}
+
+void ScintillaTextMetricsTest::rectangularMultiCaret()
+{
+    QFETCH( int, wrapMode );
+    QFETCH( bool, upward );
+    ScintillaEditBase editor;
+    editor.resize( 640, 400 );
+    editor.send( SCI_SETCODEPAGE, SC_CP_UTF8 );
+    editor.send( SCI_SETWRAPMODE, wrapMode );
+    editor.send( SCI_SETMULTIPLESELECTION, 1 );
+    editor.send( SCI_SETADDITIONALSELECTIONTYPING, 1 );
+    editor.send( SCI_SETMULTIPASTE, SC_MULTIPASTE_EACH );
+    editor.send( SCI_SETVIRTUALSPACEOPTIONS, SCVS_RECTANGULARSELECTION );
+    editor.show();
+    editor.setFocus();
+    QApplication::processEvents();
+    const auto contents = [&] {
+        QByteArray bytes( editor.send( SCI_GETLENGTH ) + 1, '\0' );
+        editor.send( SCI_GETTEXT, bytes.size(), reinterpret_cast<sptr_t>( bytes.data() ) );
+        bytes.chop( 1 );
+        return bytes;
+    };
+    const auto reset = [&]( const QByteArray& text, int column ) {
+        editor.sends( SCI_SETTEXT, 0, text.constData() );
+        editor.send( SCI_EMPTYUNDOBUFFER );
+        editor.send( SCI_GOTOPOS, editor.send( SCI_POSITIONFROMLINE, upward ? 2 : 0 ) + column );
+        QApplication::processEvents();
+        editor.send( SCI_CHOOSECARETX );
+    };
+    const auto extendRows = [&] {
+        for( int i = 0; i < 2; ++i )
+            QTest::keyClick( &editor, upward ? Qt::Key_Up : Qt::Key_Down, Qt::AltModifier | Qt::ShiftModifier );
+    };
+    const QByteArray original = "abcd\r\nabcd\r\nabcd";
+    reset( original, 1 );
+    extendRows();
+    QCOMPARE( editor.send( SCI_GETSELECTIONS ), sptr_t( 3 ) );
+    QVERIFY( editor.send( SCI_SELECTIONISRECTANGLE ) );
+    QTest::keyClicks( &editor, "XY" );
+    QCOMPARE( contents(), QByteArray( "aXYbcd\r\naXYbcd\r\naXYbcd" ) );
+    QCOMPARE( editor.send( SCI_GETSELECTIONS ), sptr_t( 3 ) );
+    QTest::keyClick( &editor, Qt::Key_Backspace );
+    QCOMPARE( contents(), QByteArray( "aXbcd\r\naXbcd\r\naXbcd" ) );
+    QTest::keyClick( &editor, Qt::Key_Delete );
+    QCOMPARE( contents(), QByteArray( "aXcd\r\naXcd\r\naXcd" ) );
+
+    // Both horizontal directions form rectangles and replace every row.
+    for( const bool leftward : { false, true } )
+    {
+        reset( original, leftward ? 3 : 1 );
+        extendRows();
+        for( int i = 0; i < 2; ++i )
+            QTest::keyClick( &editor, leftward ? Qt::Key_Left : Qt::Key_Right,
+                             Qt::AltModifier | Qt::ShiftModifier );
+        QCOMPARE( editor.send( SCI_GETSELECTIONS ), sptr_t( 3 ) );
+        for( int i = 0; i < 3; ++i )
+            QCOMPARE( editor.send( SCI_GETSELECTIONNEND, i ) - editor.send( SCI_GETSELECTIONNSTART, i ), sptr_t( 2 ) );
+        QTest::keyClicks( &editor, "Z" );
+        QCOMPARE( contents(), QByteArray( "aZd\r\naZd\r\naZd" ) );
+        editor.send( SCI_UNDO );
+        QCOMPARE( contents(), original );
+        editor.send( SCI_REDO );
+        QCOMPARE( contents(), QByteArray( "aZd\r\naZd\r\naZd" ) );
+    }
+
+    // Short and empty lines keep the selected column through virtual space.
+    reset( "abcd\r\n\r\nabcd", 3 );
+    extendRows();
+    const int padding = static_cast<int>( editor.send( SCI_GETSELECTIONNCARETVIRTUALSPACE, 1 ) );
+    QVERIFY( padding > 0 ); // Spaces align to the rendered X, also with proportional fonts.
+    QTest::keyClicks( &editor, "X" );
+    QCOMPARE( contents(), QByteArray( "abcXd\r\n" ) + QByteArray( padding, ' ' ) + "X\r\nabcXd" );
+    editor.send( SCI_UNDO );
+    QCOMPARE( contents(), QByteArray( "abcd\r\n\r\nabcd" ) );
+
+    // IME composition and commitment must reach all carets, including Korean.
+    reset( original, 1 );
+    extendRows();
+    QInputMethodEvent compose( QStringLiteral( "ㅎ" ), {} );
+    QApplication::sendEvent( &editor, &compose );
+    QInputMethodEvent commit;
+    commit.setCommitString( QStringLiteral( "한" ) );
+    QApplication::sendEvent( &editor, &commit );
+    QCOMPARE( contents(), QStringLiteral( "a한bcd\r\na한bcd\r\na한bcd" ).toUtf8() );
+    QTest::keyClick( &editor, Qt::Key_Backspace );
+    QCOMPARE( contents(), original );
+
+    reset( original, 1 );
+    extendRows();
+    const QString previousClipboard = QApplication::clipboard()->text();
+    QApplication::clipboard()->setText( QStringLiteral( "PQ" ) );
+    QTest::keyClick( &editor, Qt::Key_V, Qt::ControlModifier );
+    QApplication::clipboard()->setText( previousClipboard );
+    QCOMPARE( contents(), QByteArray( "aPQbcd\r\naPQbcd\r\naPQbcd" ) );
+
+    // A normal click returns to ordinary single-caret typing.
+    const QPoint clickAt( static_cast<int>( editor.send( SCI_POINTXFROMPOSITION, 0, 1 ) ),
+                          static_cast<int>( editor.send( SCI_POINTYFROMPOSITION, 0, 1 ) ) + 4 );
+    QTest::mouseClick( editor.viewport(), Qt::LeftButton, Qt::NoModifier, clickAt );
+    QCOMPARE( editor.send( SCI_GETSELECTIONS ), sptr_t( 1 ) );
+    QTest::keyClicks( &editor, "!" );
+    QCOMPARE( contents().count( '!' ), 1 );
+}
+
+void ScintillaTextMetricsTest::screenLineEnd_data()
+{
+    QTest::addColumn<int>("wrapMode");
+    QTest::addColumn<QString>("unit");
+    for( const int mode : { SC_WRAP_NONE, SC_WRAP_WORD, SC_WRAP_CHAR, SC_WRAP_WHITESPACE } )
+    {
+        for( const QString& unit : { QStringLiteral("runtime을  "), QStringLiteral("runtime을\t"),
+                                    QStringLiteral("한글문장끝"), QStringLiteral("abcdefghijk") } )
+        {
+            const QByteArray name = QByteArray::number(mode) + '-' + unit.toUtf8();
+            QTest::newRow(name.constData()) << mode << unit;
+        }
+    }
+}
+
+void ScintillaTextMetricsTest::screenLineEnd()
+{
+    QFETCH(int, wrapMode);
+    QFETCH(QString, unit);
+    ScintillaEditBase editor;
+    editor.resize(320, 700);
+    editor.send(SCI_SETCODEPAGE, SC_CP_UTF8);
+    editor.send(SCI_SETWRAPMODE, wrapMode);
+    editor.send(SCI_SETWRAPVISUALFLAGS, SC_WRAPVISUALFLAG_END);
+    editor.send(SCI_ASSIGNCMDKEY, SCK_END, SCI_LINEENDDISPLAY);
+    editor.send(SCI_ASSIGNCMDKEY, SCK_END | (SCMOD_SHIFT << 16), SCI_LINEENDDISPLAYEXTEND);
+    editor.send(SCI_SETCARETFORE, 0x00ff00);
+    editor.send(SCI_SETCARETWIDTH, 2);
+    editor.send(SCI_SETCARETPERIOD, 0);
+    const QByteArray line = unit.repeated(12).toUtf8();
+    const QByteArray text = line + "\r\nnext\r\n";
+    editor.sends(SCI_SETTEXT, 0, text.constData());
+    editor.show();
+    editor.setFocus();
+    QApplication::processEvents();
+    editor.send(SCI_SETFOCUS, 1);
+
+    // Discover actual rendered boundaries, including UTF-8 character widths.
+    std::vector<sptr_t> starts { 0 };
+    sptr_t lastY = editor.send(SCI_POINTYFROMPOSITION, 0, 0);
+    for( sptr_t pos = editor.send(SCI_POSITIONAFTER, 0); pos < line.size();
+         pos = editor.send(SCI_POSITIONAFTER, pos) )
+    {
+        const sptr_t y = editor.send(SCI_POINTYFROMPOSITION, 0, pos);
+        if( y != lastY )
+            starts.push_back(pos);
+        lastY = y;
+    }
+    QVERIFY(wrapMode == SC_WRAP_NONE || starts.size() > 1);
+    for( size_t row = 0; row < starts.size(); ++row )
+    {
+        const sptr_t start = starts[row];
+        const sptr_t end = row + 1 < starts.size() ? starts[row + 1] : line.size();
+        editor.send(SCI_GOTOPOS, start);
+        const sptr_t y = editor.send(SCI_POINTYFROMPOSITION, 0, start);
+        QTest::keyClick(&editor, Qt::Key_End);
+        QCOMPARE(editor.send(SCI_GETCURRENTPOS), end);
+        QCOMPARE(editor.send(SCI_GETANCHOR), end);
+        QCOMPARE(editor.send(SCI_POINTYFROMPOSITION, 0, end), y);
+        if( wrapMode != SC_WRAP_NONE )
+        {
+            const int x = static_cast<int>(editor.send(SCI_POINTXFROMPOSITION, 0, end));
+            const int height = static_cast<int>(editor.send(SCI_TEXTHEIGHT, 0));
+            const QImage frame = editor.viewport()->grab().toImage();
+            const qreal scale = frame.devicePixelRatio();
+            bool caretPainted = false;
+            for( int py = qMax(0, qFloor(y * scale));
+                 py < qCeil((y + height) * scale) && py < frame.height(); ++py )
+                for( int px = qMax(0, qFloor((x - 1) * scale));
+                     px <= qCeil((x + 2) * scale) && px < frame.width(); ++px )
+                    caretPainted |= frame.pixelColor(px, py) == QColor(0, 255, 0);
+            QVERIFY2(caretPainted, "Caret must be painted after the final character on the same screen row");
+        }
+        QTest::keyClick(&editor, Qt::Key_End);
+        QCOMPARE(editor.send(SCI_GETCURRENTPOS), end);
+        QCOMPARE(editor.send(SCI_POINTYFROMPOSITION, 0, end), y);
+
+        editor.send(SCI_GOTOPOS, start);
+        QTest::keyClick(&editor, Qt::Key_End, Qt::ShiftModifier);
+        QCOMPARE(editor.send(SCI_GETCURRENTPOS), end);
+        QCOMPARE(editor.send(SCI_GETANCHOR), start);
+        QCOMPARE(editor.send(SCI_POINTYFROMPOSITION, 0, end), y);
+        QByteArray selected(static_cast<qsizetype>(end - start + 1), '\0');
+        editor.send(SCI_GETSELTEXT, 0, reinterpret_cast<sptr_t>(selected.data()));
+        selected.chop(1);
+        QCOMPARE(selected, line.mid(start, end - start));
+        QTest::keyClick(&editor, Qt::Key_End, Qt::ShiftModifier);
+        QCOMPARE(editor.send(SCI_GETCURRENTPOS), end);
+        QCOMPARE(editor.send(SCI_GETANCHOR), start);
+
+        editor.send(SCI_SETSEL, line.size(), start);
+        QTest::keyClick(&editor, Qt::Key_End, Qt::ShiftModifier);
+        QCOMPARE(editor.send(SCI_GETCURRENTPOS), end);
+        QCOMPARE(editor.send(SCI_GETANCHOR), sptr_t(line.size()));
+
+        if( row + 1 < starts.size() )
+        {
+            editor.send(SCI_GOTOPOS, start);
+            QTest::keyClick(&editor, Qt::Key_End);
+            QTest::keyClick(&editor, Qt::Key_Right);
+            QCOMPARE(editor.send(SCI_GETCURRENTPOS), end);
+            QVERIFY(editor.send(SCI_POINTYFROMPOSITION, 0, end) > y);
+            QTest::keyClick(&editor, Qt::Key_Right);
+            QCOMPARE(editor.send(SCI_GETCURRENTPOS), editor.send(SCI_POSITIONAFTER, end));
+        }
+
+        editor.send(SCI_GOTOPOS, start);
+        QTest::keyClick(&editor, Qt::Key_End);
+        QTest::keyClick(&editor, Qt::Key_Left);
+        QCOMPARE(editor.send(SCI_GETCURRENTPOS), editor.send(SCI_POSITIONBEFORE, end));
+        editor.send(SCI_GOTOPOS, start);
+        QTest::keyClick(&editor, Qt::Key_End);
+        QTest::keyClicks(&editor, "X");
+        QCOMPARE(editor.send(SCI_GETCHARAT, end), sptr_t('X'));
+        editor.send(SCI_UNDO);
+    }
+    // Preserve the preferred X across wrapped rows, including their final
+    // whitespace. Cover repeated movement, both directions, and selection.
+    QApplication::processEvents(); // Settle the wrap layout after undoing insertion.
+    auto visualStarts = starts;
+    visualStarts.push_back(line.size() + 2);
+    visualStarts.push_back(text.size());
+    std::vector<sptr_t> rowYs;
+    for( const sptr_t start : visualStarts )
+    {
+        editor.send(SCI_GOTOPOS, start);
+        rowYs.push_back(editor.send(SCI_POINTYFROMPOSITION, 0, start));
+    }
+    for( int source = 0; source < static_cast<int>(visualStarts.size()); ++source )
+    {
+        for( const int direction : { -1, 1 } )
+        {
+            for( const auto modifier : { Qt::NoModifier, Qt::ShiftModifier } )
+            {
+                editor.send(SCI_GOTOPOS, visualStarts[source]);
+                QTest::keyClick(&editor, Qt::Key_End);
+                const sptr_t anchor = editor.send(SCI_GETCURRENTPOS);
+                const sptr_t preferredX = editor.send(SCI_POINTXFROMPOSITION, 0, anchor);
+                for( int target = source + direction;
+                     target >= 0 && target < static_cast<int>(visualStarts.size()); target += direction )
+                {
+                    const sptr_t expected = editor.send(SCI_POSITIONFROMPOINT, preferredX, rowYs[target]);
+                    QTest::keyClick(&editor, direction > 0 ? Qt::Key_Down : Qt::Key_Up, modifier);
+                    if( editor.send(SCI_GETCURRENTPOS) != expected )
+                        qWarning() << "Vertical move" << source << target << direction << modifier
+                                   << "anchor/x/y" << anchor << preferredX << rowYs[target]
+                                   << "actual y" << editor.send(SCI_POINTYFROMPOSITION, 0, editor.send(SCI_GETCURRENTPOS))
+                                   << "row starts" << visualStarts << "row ys" << rowYs;
+                    QCOMPARE(editor.send(SCI_GETCURRENTPOS), expected);
+                    QCOMPARE(editor.send(SCI_POINTYFROMPOSITION, 0, expected), rowYs[target]);
+                    QCOMPARE(editor.send(SCI_GETANCHOR), modifier == Qt::ShiftModifier ? anchor : expected);
+                }
+            }
+        }
+    }
+    editor.send(SCI_GOTOPOS, 0);
+    QTest::keyClick(&editor, Qt::Key_End, Qt::ControlModifier);
+    QCOMPARE(editor.send(SCI_GETCURRENTPOS), sptr_t(text.size()));
+    QTest::keyClick(&editor, Qt::Key_End);
+    QCOMPARE(editor.send(SCI_GETCURRENTPOS), sptr_t(text.size()));
+}
 
 namespace {
 

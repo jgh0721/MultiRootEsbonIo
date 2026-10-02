@@ -138,6 +138,10 @@ void FindReplaceWidget::setupUi()
     m_filterBtn->setPopupMode(QToolButton::InstantPopup);
     m_filterMenu = new QMenu(this);
     m_searchInSelectionAction = m_filterMenu->addAction(tr("선택 영역에서 검색"));
+    connect(m_filterMenu, &QMenu::aboutToShow, this, [this] {
+        m_searchInSelectionAction->setIcon(style()->standardIcon(QStyle::SP_FileDialogContentsView));
+        m_searchInSelectionAction->setIconVisibleInMenu(true);
+    });
     m_searchInSelectionAction->setCheckable(true);
     m_searchInSelectionAction->setEnabled(false); // 선택 없으면 비활성
     connect(m_searchInSelectionAction, &QAction::toggled, this, [this] {
@@ -154,6 +158,10 @@ void FindReplaceWidget::setupUi()
     m_menuBtn->setPopupMode(QToolButton::InstantPopup);
     m_optionsMenu = new QMenu(this);
     m_autoScrollAction = m_optionsMenu->addAction(tr("입력 결과로 스크롤"));
+    connect(m_optionsMenu, &QMenu::aboutToShow, this, [this] {
+        m_autoScrollAction->setIcon(style()->standardIcon(QStyle::SP_ArrowDown));
+        m_autoScrollAction->setIconVisibleInMenu(true);
+    });
     m_autoScrollAction->setCheckable(true);
     m_autoScrollAction->setChecked(true);
     connect(m_autoScrollAction, &QAction::toggled, this, [this] {

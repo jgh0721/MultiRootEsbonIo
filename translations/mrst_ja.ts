@@ -145,6 +145,14 @@
 <context>
     <name>MainWindow</name>
     <message>
+        <source>검색 중…</source>
+        <translation>検索中…</translation>
+    </message>
+    <message>
+        <source>참조 이동</source>
+        <translation>参照先へ移動</translation>
+    </message>
+    <message>
         <source>&quot;%1&quot; 파일 열기를 취소합니다.</source>
         <translation type="unfinished">「%1」を開く処理をキャンセルします。</translation>
     </message>
@@ -1249,6 +1257,22 @@ pyproject.toml と uv.lock を使用して現在の環境と同じ場所の隣�
 </context>
 <context>
     <name>QSettingsDialog</name>
+    <message>
+        <source>참조 이동</source>
+        <translation>参照先へ移動</translation>
+    </message>
+    <message>
+        <source>CSS 수정 (reStructuredText)</source>
+        <translation>CSS の調整 (reStructuredText)</translation>
+    </message>
+    <message>
+        <source>본문 너비 제한 해제</source>
+        <translation>本文の幅制限を解除</translation>
+    </message>
+    <message>
+        <source>sphinx_rtd_theme 등 테마의 본문 너비 제한을 해제하여 프리뷰 폭에 맞춥니다. 현재 프리뷰에 즉시 적용되며, 끄면 테마의 원래 너비로 돌아갑니다.</source>
+        <translation>sphinx_rtd_theme などのテーマによる本文の幅制限を解除し、プレビュー領域の幅に合わせます。現在のプレビューに即座に適用され、無効にするとテーマ本来の幅に戻ります。</translation>
+    </message>
     <message>
         <source> 단계</source>
         <extracomment>스핀박스 접미사. 앞의 공백을 지우지 말 것 — 숫자와 붙는다.</extracomment>
@@ -4109,6 +4133,22 @@ latexpdf · info はビルダーではなく make ターゲットなので、成
 </context>
 <context>
     <name>mrst::WorkspaceController</name>
+    <message>
+        <source>커서 위치에 이동할 참조가 없습니다.</source>
+        <translation>カーソル位置に移動できる参照がありません。</translation>
+    </message>
+    <message>
+        <source>URL을 열 수 없습니다: %1</source>
+        <translation>URL を開けません: %1</translation>
+    </message>
+    <message>
+        <source>참조 대상을 찾는 중: %1</source>
+        <translation>参照先を検索中: %1</translation>
+    </message>
+    <message>
+        <source>참조 대상을 찾을 수 없습니다: %1</source>
+        <translation>参照先が見つかりません: %1</translation>
+    </message>
     <message>
         <source>(프로젝트 없음)</source>
         <translation type="unfinished">（プロジェクトなし）</translation>

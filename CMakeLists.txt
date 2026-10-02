@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project("MultiRoot-reST-Editor" VERSION 0.9.0 LANGUAGES CXX)
+project("MultiRoot-reST-Editor" VERSION 0.9.2 LANGUAGES CXX)
 
 # 실행 파일 아이콘(resources/app.rc)을 컴파일하려면 RC 언어가 필요하다.
 if(WIN32)
@@ -549,6 +549,7 @@ if(MRST_BUILD_TESTS)
             Qt6::WebEngineCore Qt6::WebEngineWidgets
             qlementine
             ScintillaEditBaseQt
+            ads::qtadvanceddocking
     )
     if(WIN32)
         # 레이아웃 캐시 모드를 견줄 때 프로세스 작업 집합을 읽는다(GetProcessMemoryInfo).

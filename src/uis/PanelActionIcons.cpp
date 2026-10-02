@@ -225,6 +225,127 @@ QIcon newFile( const QPalette& palette )
     return build( drawNewFile, palette );
 }
 
+QIcon menuIcon( const MenuIcon kind, const QPalette& palette )
+{
+    return build( [kind]( QPainter& p, const QColor& color ) {
+        p.setPen( strokePen( color ) );
+        const auto line = [&p]( qreal x1, qreal y1, qreal x2, qreal y2 ) {
+            p.drawLine( QPointF( x1, y1 ), QPointF( x2, y2 ) );
+        };
+        switch( kind )
+        {
+        case MenuIcon::File:
+            p.drawPolygon( QPolygonF{ {3,1.5}, {9,1.5}, {13,5.5}, {13,14.5}, {3,14.5} } );
+            p.drawPolyline( QPolygonF{ {9,1.5}, {9,5.5}, {13,5.5} } );
+            line( 5, 9, 11, 9 ); line( 5, 12, 10, 12 );
+            break;
+        case MenuIcon::Folder:
+            p.drawPolygon( QPolygonF{ {1.5,3}, {6,3}, {8,5}, {14.5,5}, {14.5,13}, {1.5,13} } );
+            break;
+        case MenuIcon::Save:
+        case MenuIcon::SaveAs:
+            p.drawPolygon( QPolygonF{ {2,2}, {11,2}, {14,5}, {14,14}, {2,14} } );
+            p.drawRect( QRectF( 5, 2, 5, 4 ) );
+            p.drawRect( QRectF( 5, 9, 6, 5 ) );
+            if( kind == MenuIcon::SaveAs )
+            {
+                p.setPen( strokePen( color, 2 ) );
+                line( 9, 14, 14, 9 );
+            }
+            break;
+        case MenuIcon::Close:
+            line( 4, 4, 12, 12 ); line( 12, 4, 4, 12 );
+            break;
+        case MenuIcon::Exit:
+            p.drawPolyline( QPolygonF{ {7,2}, {2,2}, {2,14}, {7,14} } );
+            line( 6, 8, 14, 8 );
+            p.drawPolyline( QPolygonF{ {11,5}, {14,8}, {11,11} } );
+            break;
+        case MenuIcon::Copy:
+            p.drawRect( QRectF( 5, 5, 8, 9 ) );
+            p.drawPolyline( QPolygonF{ {10,3}, {10,2}, {2,2}, {2,11}, {3,11} } );
+            break;
+        case MenuIcon::Paste:
+            p.drawRect( QRectF( 3, 3, 10, 11 ) );
+            p.drawRect( QRectF( 6, 1, 4, 4 ) );
+            line( 6, 8, 10, 8 ); line( 6, 11, 10, 11 );
+            break;
+        case MenuIcon::History:
+            p.drawEllipse( QRectF( 2, 2, 12, 12 ) );
+            p.drawPolyline( QPolygonF{ {8,4}, {8,8}, {11,10} } );
+            break;
+        case MenuIcon::Completion:
+            p.drawPolyline( QPolygonF{ {5,4}, {1,8}, {5,12} } );
+            p.drawPolyline( QPolygonF{ {11,4}, {15,8}, {11,12} } );
+            line( 9, 3, 7, 13 );
+            break;
+        case MenuIcon::Theme:
+            p.drawEllipse( QRectF( 2, 2, 12, 12 ) );
+            p.setBrush( color );
+            p.drawChord( QRectF( 2, 2, 12, 12 ), 90 * 16, 180 * 16 );
+            break;
+        case MenuIcon::Panels:
+            p.drawRect( QRectF( 2, 2, 12, 12 ) );
+            line( 6, 2, 6, 14 ); line( 6, 10, 14, 10 );
+            break;
+        case MenuIcon::Fold:
+        case MenuIcon::Unfold:
+            p.drawRoundedRect( QRectF( 2, 4, 12, 8 ), 1, 1 );
+            line( 5, 8, 11, 8 );
+            if( kind == MenuIcon::Unfold ) line( 8, 5, 8, 11 );
+            break;
+        case MenuIcon::Refresh:
+            p.drawArc( QRectF( 3, 3, 10, 10 ), 45 * 16, 290 * 16 );
+            p.drawPolyline( QPolygonF{ {10,2}, {13,4}, {14,1} } );
+            break;
+        case MenuIcon::FullScreen:
+            p.drawPolyline( QPolygonF{ {2,6}, {2,2}, {6,2} } );
+            p.drawPolyline( QPolygonF{ {10,2}, {14,2}, {14,6} } );
+            p.drawPolyline( QPolygonF{ {2,10}, {2,14}, {6,14} } );
+            p.drawPolyline( QPolygonF{ {10,14}, {14,14}, {14,10} } );
+            break;
+        case MenuIcon::Next:
+        case MenuIcon::Previous:
+            if( kind == MenuIcon::Previous ) { p.translate( 16, 0 ); p.scale( -1, 1 ); }
+            line( 2, 8, 14, 8 );
+            p.drawPolyline( QPolygonF{ {9,3}, {14,8}, {9,13} } );
+            break;
+        case MenuIcon::Settings:
+            for( int x : { 3, 8, 13 } ) line( x, 2, x, 14 );
+            p.setBrush( color );
+            p.drawRect( QRectF( 1, 4, 4, 2 ) );
+            p.drawRect( QRectF( 6, 10, 4, 2 ) );
+            p.drawRect( QRectF( 11, 6, 4, 2 ) );
+            break;
+        case MenuIcon::Update:
+            line( 8, 1.5, 8, 10 );
+            p.drawPolyline( QPolygonF{ {4,7}, {8,11}, {12,7} } );
+            p.drawPolyline( QPolygonF{ {2,11}, {2,14}, {14,14}, {14,11} } );
+            break;
+        case MenuIcon::Info:
+            p.drawEllipse( QRectF( 2, 2, 12, 12 ) );
+            line( 8, 7, 8, 11 ); p.drawPoint( QPointF( 8, 4.5 ) );
+            break;
+        case MenuIcon::Outline:
+        case MenuIcon::Log:
+            for( int y : { 3, 8, 13 } )
+            {
+                p.drawPoint( QPointF( 2, y ) );
+                line( kind == MenuIcon::Outline && y == 8 ? 7 : 5, y, 14, y );
+            }
+            break;
+        case MenuIcon::Warning:
+            p.drawPolygon( QPolygonF{ {8,1.5}, {15,14}, {1,14} } );
+            line( 8, 6, 8, 9 ); p.drawPoint( QPointF( 8, 12 ) );
+            break;
+        case MenuIcon::Build:
+            p.drawPolygon( QPolygonF{ {3,2}, {7,2}, {13,8}, {10,11}, {4,5}, {1,5} } );
+            p.drawPolygon( QPolygonF{ {7,8}, {9,10}, {4,15}, {2,13} } );
+            break;
+        }
+    }, palette );
+}
+
 QIcon newFolder( const QPalette& palette )
 {
     return build( drawNewFolder, palette );

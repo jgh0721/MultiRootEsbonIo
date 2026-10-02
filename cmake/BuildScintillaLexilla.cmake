@@ -1,4 +1,4 @@
-﻿include_guard(GLOBAL)
+include_guard(GLOBAL)
 include(FetchContent)
 
 set(MV_ENABLE_SCINTILLA_DIRECT_BACKEND ON CACHE BOOL "Build the direct Scintilla/Lexilla backend" FORCE)
@@ -26,11 +26,13 @@ FetchContent_MakeAvailable(mv_scintilla_src mv_lexilla_src)
 set(MV_SCINTILLA_ROOT "${mv_scintilla_src_SOURCE_DIR}")
 set(MV_LEXILLA_ROOT   "${mv_lexilla_src_SOURCE_DIR}")
 
+include("${CMAKE_CURRENT_LIST_DIR}/ScintillaWrapEnd.cmake")
+
 file(GLOB MV_SCINTILLA_QT_SOURCES CONFIGURE_DEPENDS
     "${MV_SCINTILLA_ROOT}/qt/ScintillaEditBase/*.cpp"
 )
 file(GLOB MV_SCINTILLA_CORE_SOURCES CONFIGURE_DEPENDS
-    "${MV_SCINTILLA_ROOT}/src/*.cxx"
+    "${MV_SCINTILLA_CORE_ROOT}/*.cxx"
 )
 file(GLOB MV_LEXILLA_LEXLIB_SOURCES CONFIGURE_DEPENDS
     "${MV_LEXILLA_ROOT}/lexlib/*.cxx"
@@ -94,7 +96,7 @@ set_target_properties(ScintillaEditBaseQt PROPERTIES
 
 target_include_directories(ScintillaEditBaseQt BEFORE PUBLIC
     "${MV_SCINTILLA_ROOT}/include"
-    "${MV_SCINTILLA_ROOT}/src"
+    "${MV_SCINTILLA_CORE_ROOT}"
     "${MV_SCINTILLA_ROOT}/qt/ScintillaEditBase"
 )
 

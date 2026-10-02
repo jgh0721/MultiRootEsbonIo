@@ -7,6 +7,14 @@
 
 namespace mrst::panelicons {
 
+enum class MenuIcon
+{
+    File, Folder, Save, SaveAs, Close, Exit, Copy, Paste, History, Completion,
+    Theme, Panels, Fold, Unfold, Refresh, FullScreen, Next, Previous, Settings,
+    Update, Info, Outline, Warning, Log, Build
+};
+[[nodiscard]] QIcon menuIcon( MenuIcon kind, const QPalette& palette );
+
 /// 패널 도구 줄에 쓰는 단색 아이콘.
 ///
 /// 그려서 만든다. 저장소에 아이콘 자산이 하나도 없고(resources/ 에는 앱

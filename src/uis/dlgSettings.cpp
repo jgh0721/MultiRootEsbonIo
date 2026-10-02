@@ -8,6 +8,7 @@
 #include "core/solLanguageManager.hpp"
 #include "core/solThemeManager.hpp"
 #include "core/solPreviewFonts.hpp"
+#include "core/solPreviewCss.hpp"
 #include "core/solShadowBackupStore.hpp"
 #include "uis/PanelActionIcons.hpp"
 #include "uniqueLibs/solEncodingDetector.hpp"
@@ -378,6 +379,10 @@ QList< ShortcutItem > QSettingsDialog::DefaultShortcuts()
         {
             tr( "텍스트" ), QStringLiteral( "text.goToLine" ), tr( "줄 이동" ), QKeySequence( Qt::CTRL | Qt::Key_G ),
             QKeySequence( Qt::CTRL | Qt::Key_G )
+        },
+        {
+            tr( "텍스트" ), QStringLiteral( "text.goToReference" ), tr( "참조 이동" ),
+            QKeySequence( Qt::Key_F12 ), QKeySequence( Qt::Key_F12 )
         },
         {
             tr( "텍스트" ), QStringLiteral( "text.wordWrap" ), tr( "자동 줄넘김 전환" ), QKeySequence( Qt::ALT | Qt::Key_Z ),
@@ -1277,6 +1282,18 @@ QWidget* QSettingsDialog::createPreviewPage()
     auto* layout = new QVBoxLayout( page );
     createPreviewFontSettings( page, layout );
 
+    auto* cssGroup = new QGroupBox( tr( "CSS 수정 (reStructuredText)" ), page );
+    auto* cssLayout = new QVBoxLayout( cssGroup );
+    m_previewUnlimitedWidthCheck = new QCheckBox( tr( "본문 너비 제한 해제" ), cssGroup );
+    m_previewUnlimitedWidthCheck->setObjectName( QStringLiteral( "previewRstUnlimitedWidth" ) );
+    cssLayout->addWidget( m_previewUnlimitedWidthCheck );
+    auto* cssHint = new QLabel(
+        tr( "sphinx_rtd_theme 등 테마의 본문 너비 제한을 해제하여 프리뷰 폭에 맞춥니다. "
+            "현재 프리뷰에 즉시 적용되며, 끄면 테마의 원래 너비로 돌아갑니다." ), cssGroup );
+    cssHint->setWordWrap( true );
+    cssLayout->addWidget( cssHint );
+    layout->addWidget( cssGroup );
+
     auto* group       = new QGroupBox( tr( "외부 리소스" ), page );
     auto* groupLayout = new QVBoxLayout( group );
 
@@ -1455,6 +1472,10 @@ QWidget* QSettingsDialog::createPreviewPage()
         AppSettings().setValue( QStringLiteral( "preview/allowRemoteContent" ), checked );
         emit settingsApplied();
     } );
+    connect( m_previewUnlimitedWidthCheck, &QCheckBox::toggled, this, [this]( const bool checked ) {
+        AppSettings().setValue( QLatin1String( mrst::kPreviewRstUnlimitedWidth ), checked );
+        emit settingsApplied();
+    } );
     connect( m_previewMathRendererCombo, &QComboBox::currentIndexChanged, this, [this]( int ) {
         AppSettings().setValue( QStringLiteral( "preview/mathRenderer" ),
                                 m_previewMathRendererCombo->currentData().toString() );
@@ -1501,6 +1522,12 @@ void QSettingsDialog::loadPreviewSettings()
         return;
 
     const AppSettings settings;
+    if( m_previewUnlimitedWidthCheck != nullptr )
+    {
+        const QSignalBlocker blocker( m_previewUnlimitedWidthCheck );
+        m_previewUnlimitedWidthCheck->setChecked(
+            settings.value( QLatin1String( mrst::kPreviewRstUnlimitedWidth ), false ).toBool() );
+    }
     {
         const QSignalBlocker blocker( m_previewAllowRemoteCheck );
         m_previewAllowRemoteCheck->setChecked(
@@ -1569,6 +1596,9 @@ void QSettingsDialog::savePreviewSettings()
         return;
 
     AppSettings settings;
+    if( m_previewUnlimitedWidthCheck != nullptr )
+        settings.setValue( QLatin1String( mrst::kPreviewRstUnlimitedWidth ),
+                           m_previewUnlimitedWidthCheck->isChecked() );
     settings.setValue( QStringLiteral( "preview/allowRemoteContent" ),
                        m_previewAllowRemoteCheck->isChecked() );
     if( m_previewUnsavedCheck != nullptr )
