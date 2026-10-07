@@ -37,6 +37,9 @@ class TestProjectResolution : public QObject
     Q_OBJECT
 
 private slots:
+    void scansUnicodePaths_data();
+    void scansUnicodePaths();
+    void excludesUnicodeDirectoryNames();
     void resolvesFileInSameDirectory();
     /// Windows 에서 사용자가 대소문자가 다른 경로로 워크스페이스를 열 수 있다
     /// (예: Docs/Source vs docs/source). 그때도 같은 프로젝트로 해석돼야 한다.
@@ -50,6 +53,113 @@ private slots:
     /// 가상 프로젝트의 "다른 프로젝트와 동일" 테마가 이 판정 하나에 걸려 있다.
     void readsHtmlTheme();
 };
+
+void TestProjectResolution::scansUnicodePaths_data()
+{
+    QTest::addColumn< QString >( "name" );
+    QTest::addColumn< QString >( "location" );
+    QTest::addColumn< int >( "projectCount" );
+
+    const QStringList names{
+        QStringLiteral( "workspace" ), QStringLiteral( "한글 작업공간" ),
+        QStringLiteral( "漢字工作區" ), QStringLiteral( "日本語ワークスペース" ),
+        QStringLiteral( "한글_漢字_日本語_😀" ),
+    };
+    const QStringList locations{
+        QStringLiteral( "root" ), QStringLiteral( "ancestor" ), QStringLiteral( "child" ),
+    };
+    for( qsizetype index = 0; index < names.size(); ++index )
+    {
+        for( const QString& location : locations )
+        {
+            for( int count : { 1, 2 } )
+            {
+                const QByteArray row = QStringLiteral( "%1-%2-%3" )
+                    .arg( index ).arg( location ).arg( count ).toLatin1();
+                QTest::newRow( row.constData() ) << names.at( index ) << location << count;
+            }
+        }
+    }
+}
+
+void TestProjectResolution::scansUnicodePaths()
+{
+    QFETCH( QString, name );
+    QFETCH( QString, location );
+    QFETCH( int, projectCount );
+
+    QTemporaryDir temp;
+    QVERIFY( temp.isValid() );
+    const QString workspace = QDir( temp.path() ).filePath(
+        location == QStringLiteral( "root" ) ? name
+        : location == QStringLiteral( "ancestor" ) ? name + QStringLiteral( "/workspace" )
+        : QStringLiteral( "workspace" ) );
+    QStringList roots;
+    QStringList files;
+    // 두 프로젝트가 있어야 scan() 의 정렬 비교자가 실행된다.
+    for( int index = 0; index < projectCount; ++index )
+    {
+        const QString directory = QStringLiteral( "project-%1" ).arg( projectCount - index );
+        const QString root = QDir( workspace ).filePath(
+            location == QStringLiteral( "child" ) ? name + QLatin1Char( '/' ) + directory : directory );
+        writeProject( root, QStringLiteral( "index" ) );
+        const QString file = QDir( root ).filePath( QStringLiteral( "page.rst" ) );
+        writeFile( file, "T\n=\n" );
+        roots.append( root );
+        files.append( file );
+    }
+    // 기존 제외 디렉터리도 유니코드 경로 아래에서 계속 제외해야 한다.
+    writeProject( QDir( workspace ).filePath( QStringLiteral( "_BUILD/ignored" ) ),
+                  QStringLiteral( "index" ) );
+
+    std::vector< SphinxProject > projects;
+    try
+    {
+        projects = ProjectScanner( toPath( workspace ) ).scan();
+    }
+    catch( const std::exception& error )
+    {
+        QFAIL( error.what() );
+    }
+    QCOMPARE( projects.size(), static_cast< std::size_t >( projectCount ) );
+    for( qsizetype index = 0; index < files.size(); ++index )
+    {
+        const SphinxProject* resolved = resolveProjectForFile( toPath( files.at( index ) ), projects );
+        QVERIFY( resolved != nullptr );
+        QCOMPARE( QDir::fromNativeSeparators( toQString( resolved->rootPath ) ), roots.at( index ) );
+        QCOMPARE( QDir::fromNativeSeparators( toQString( resolved->confPath ) ),
+                  QDir( roots.at( index ) ).filePath( QStringLiteral( "conf.py" ) ) );
+        QCOMPARE( QString::fromStdWString( resolved->projectId ),
+                  location == QStringLiteral( "child" )
+                      ? name + QStringLiteral( ".project-%1" ).arg( projectCount - index )
+                      : QStringLiteral( "project-%1" ).arg( projectCount - index ) );
+    }
+    // 생성 순서와 관계없이 project-1, project-2 순으로 반환해야 한다.
+    QCOMPARE( QDir::fromNativeSeparators( toQString( projects.front().rootPath ) ), roots.constLast() );
+    QCOMPARE( QDir::fromNativeSeparators( toQString( projects.back().rootPath ) ), roots.constFirst() );
+}
+
+void TestProjectResolution::excludesUnicodeDirectoryNames()
+{
+    QTemporaryDir temp;
+    QVERIFY( temp.isValid() );
+    const QString workspace = QDir( temp.path() ).filePath( QStringLiteral( "한글_漢字_日本語_😀" ) );
+    writeProject( workspace, QStringLiteral( "index" ) );
+    const QString excluded = QStringLiteral( "日本語_제외_Ä" );
+    writeProject( QDir( workspace ).filePath( excluded.toLower() ), QStringLiteral( "index" ) );
+    writeProject( QDir( workspace ).filePath( QStringLiteral( "문서" ) ), QStringLiteral( "index" ) );
+    ScannerSettings settings;
+    settings.excludedDirs.push_back( excluded.toStdString() );
+
+    const auto projects = ProjectScanner( toPath( workspace ), settings ).scan();
+    QCOMPARE( projects.size(), std::size_t( 2 ) );
+    for( const auto& project : projects )
+        QVERIFY( toQString( project.rootPath.filename() ) != excluded.toLower() );
+    const auto* rootProject = resolveProjectForFile(
+        toPath( QDir( workspace ).filePath( QStringLiteral( "conf.py" ) ) ), projects );
+    QVERIFY( rootProject != nullptr );
+    QCOMPARE( QString::fromStdWString( rootProject->projectId ), QFileInfo( workspace ).fileName() );
+}
 
 void TestProjectResolution::resolvesFileInSameDirectory()
 {

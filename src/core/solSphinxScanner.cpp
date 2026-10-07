@@ -9,17 +9,11 @@
 #include <fstream>
 #include <optional>
 #include <regex>
-#include <set>
 #include <sstream>
 
 namespace mrst {
 namespace fs = std::filesystem;
 namespace {
-
-std::string lower(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-    return value;
-}
 
 std::string trim(std::string value) {
     const auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char ch) { return std::isspace(ch) != 0; });
@@ -81,9 +75,9 @@ bool SphinxProject::contains(const fs::path& filePath) const {
 
 ProjectScanner::ProjectScanner(fs::path workspaceRoot, ScannerSettings settings)
     : workspaceRoot_(fs::weakly_canonical(std::move(workspaceRoot))), settings_(std::move(settings)) {
-    excludedDirs_ = filekinds::excludedScanDirectoriesNarrow();
+    excludedDirs_ = filekinds::excludedScanDirectories();
     for (const std::string& extra : settings_.excludedDirs) {
-        excludedDirs_.insert(lower(extra));
+        excludedDirs_.insert(QString::fromStdString(extra).toCaseFolded());
     }
 }
 
@@ -118,7 +112,10 @@ std::vector<SphinxProject> ProjectScanner::scan() const {
     }
 
     std::sort(projects.begin(), projects.end(), [](const SphinxProject& left, const SphinxProject& right) {
-        return lower(left.rootPath.string()) < lower(right.rootPath.string());
+        // path::string() 은 Windows 로컬 코드 페이지로 변환하며, 표현할 수 없는
+        // 문자가 있으면 예외를 던진다. 정렬 때문에 스캔 전체가 버려지지 않도록
+        // 경로는 유니코드로 비교한다.
+        return QString::compare(toQString(left.rootPath), toQString(right.rootPath), Qt::CaseInsensitive) < 0;
     });
     return projects;
 }
@@ -136,7 +133,7 @@ SphinxProject ProjectScanner::projectFromConf(const fs::path& confPath) const {
 }
 
 bool ProjectScanner::isExcludedDirectory(const fs::path& path) const {
-    return excludedDirs_.contains(lower(path.filename().string()));
+    return excludedDirs_.contains(toQString(path.filename()).toCaseFolded());
 }
 
 std::string readRootDoc(const fs::path& confPath) {

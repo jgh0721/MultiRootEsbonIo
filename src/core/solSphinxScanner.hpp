@@ -1,9 +1,9 @@
 ﻿#pragma once
 
+#include <QSet>
 #include <QString>
 
 #include <filesystem>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -46,7 +46,7 @@ public:
 private:
     std::filesystem::path workspaceRoot_;
     ScannerSettings settings_;
-    std::set<std::string> excludedDirs_;   // 생성자에서 1회 구성 (소문자 정규화됨)
+    QSet<QString> excludedDirs_;   // 생성자에서 1회 구성 (유니코드 case folding)
 
     [[nodiscard]] bool isExcludedDirectory(const std::filesystem::path& path) const;
 };
