@@ -400,6 +400,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_SphinxBuilders.cpp
             tests/tst_WorkspaceSessionActive.cpp
             tests/tst_RecentItems.cpp
+            tests/tst_TextFileSession.cpp
             tests/tst_UpdateVersioning.cpp
             tests/tst_AuthenticodeVerifier.cpp
             tests/tst_ExternalChangeWatch.cpp
@@ -409,6 +410,9 @@ if(MRST_BUILD_TESTS)
             src/editor/RstContainerLexer.cpp
             src/editor/RstStructure.cpp
             src/editor/MarkdownStructure.cpp
+            src/editor/TextFileSession.cpp
+            uniqueLibs/solEncodingDetector.cpp
+            src/utils/FileLoadHelper.cpp
             src/core/solQuickOpenSearch.cpp
             src/core/solRstOfflineCompletions.cpp
             src/core/solRstPathCompletion.cpp

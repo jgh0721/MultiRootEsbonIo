@@ -5,6 +5,7 @@
 #include "uniqueLibs/solEncodingDetector.hpp"
 
 #include <QFile>
+#include <QSaveFile>
 
 bool TextFileSession::open(const QString& filePath,
                            OpenMode mode,
@@ -70,7 +71,9 @@ bool TextFileSession::saveText(const QString& filePath,
                                                      includeBom ? EncodingDetector::BomPolicy::Always
                                                                 : EncodingDetector::BomPolicy::Never);
 
-    QFile file(filePath);
+    QSaveFile file(filePath);
+    // 실패하면 원본을 보존해야 하므로 직접 쓰기 폴백을 허용하지 않는다.
+    file.setDirectWriteFallback(false);
     if (!file.open(QIODevice::WriteOnly))
         return false;
 
@@ -92,7 +95,7 @@ bool TextFileSession::saveText(const QString& filePath,
             progress(writtenBytes, totalBytes);
     }
 
-    if (!file.flush())
+    if (!file.commit())
         return false;
 
     m_filePath = filePath;
