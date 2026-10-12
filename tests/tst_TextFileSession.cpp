@@ -1,5 +1,6 @@
 ﻿#include "TestRunner.hpp"
 #include "editor/TextFileSession.hpp"
+#include "uniqueLibs/solEncodingDetector.hpp"
 
 #include <QFile>
 #include <QScopeGuard>
@@ -24,6 +25,12 @@ private slots:
     void originalStaysIntactUntilCommit();
     void failedCommitPreservesOriginal();
     void savesEmptyDocument();
+    void legacyCodecs_data();
+    void legacyCodecs();
+    void rejectsLossySave();
+    void rejectsUnknownCodec();
+    void validatesDecodeAndPreviewTail();
+    void offeredCodecsAreUsable();
 };
 
 void TestTextFileSession::originalStaysIntactUntilCommit()
@@ -89,6 +96,89 @@ void TestTextFileSession::savesEmptyDocument()
     QVERIFY(session.saveText(path, {}, "UTF-8", ScintillaDocument::CRLF, false));
     QVERIFY(QFile::exists(path));
     QCOMPARE(contents(path), QByteArray{});
+}
+
+void TestTextFileSession::legacyCodecs_data()
+{
+    QTest::addColumn<QString>("encoding");
+    QTest::addColumn<QString>("text");
+    QTest::addColumn<QByteArray>("bytes");
+    QTest::newRow("korean") << QString("EUC-KR") << QString::fromUtf8("가나다")
+        << QByteArray::fromHex("b0a1b3aab4d9");
+    QTest::newRow("japanese") << QString("Shift_JIS") << QString::fromUtf8("あいう")
+        << QByteArray::fromHex("82a082a282a4");
+    QTest::newRow("chinese") << QString("GB18030") << QString::fromUtf8("中文")
+        << QByteArray::fromHex("d6d0cec4");
+}
+
+void TestTextFileSession::legacyCodecs()
+{
+    QFETCH(QString, encoding);
+    QFETCH(QString, text);
+    QFETCH(QByteArray, bytes);
+    QVERIFY(EncodingDetector::availableEncodings().contains(encoding));
+    bool ok = false;
+    QCOMPARE(EncodingDetector::decode(bytes, encoding, &ok), text);
+    QVERIFY(ok);
+    QCOMPARE(EncodingDetector::encode(text, encoding, EncodingDetector::BomPolicy::Never, &ok), bytes);
+    QVERIFY(ok);
+
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath("legacy.txt");
+    TextFileSession session;
+    QVERIFY(session.saveText(path, text, encoding, ScintillaDocument::LF, false));
+    QCOMPARE(contents(path), bytes);
+    TextFileSession opened;
+    QVERIFY(opened.open(path, TextFileSession::OpenMode::Full));
+    QCOMPARE(opened.decodeWithEncoding(encoding, &ok), text);
+    QVERIFY(ok);
+}
+
+void TestTextFileSession::rejectsLossySave()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath("original.md");
+    TextFileSession session;
+    QVERIFY(session.saveText(path, "original", "UTF-8", ScintillaDocument::LF, false));
+    QString error;
+    QVERIFY(!session.saveText(path, QString::fromUtf8("한글🙂"), "ISO-8859-1",
+        ScintillaDocument::LF, false, {}, &error));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(contents(path), QByteArray("original"));
+    QCOMPARE(session.rawData(), QByteArray("original"));
+    QCOMPARE(session.detectedEncoding(), QString("UTF-8"));
+}
+
+void TestTextFileSession::rejectsUnknownCodec()
+{
+    bool ok = true;
+    QVERIFY(EncodingDetector::encode("text", "not-a-codec", EncodingDetector::BomPolicy::Never, &ok).isEmpty());
+    QVERIFY(!ok);
+    ok = true;
+    QVERIFY(EncodingDetector::decode("text", "not-a-codec", &ok).isEmpty());
+    QVERIFY(!ok);
+}
+
+void TestTextFileSession::validatesDecodeAndPreviewTail()
+{
+    bool ok = true;
+    QVERIFY(EncodingDetector::decode(QByteArray::fromHex("c080"), "UTF-8", &ok).isEmpty());
+    QVERIFY(!ok);
+    QVERIFY(EncodingDetector::decode(QByteArray::fromHex("41eab0"), "UTF-8", &ok).isEmpty());
+    QVERIFY(!ok);
+    QCOMPARE(EncodingDetector::decode(QByteArray::fromHex("41eab0"), "UTF-8", &ok, true), QString("A"));
+    QVERIFY(ok);
+}
+
+void TestTextFileSession::offeredCodecsAreUsable()
+{
+    for (const QString& encoding : EncodingDetector::availableEncodings()) {
+        bool ok = false;
+        EncodingDetector::encode({}, encoding, EncodingDetector::BomPolicy::Never, &ok);
+        QVERIFY2(ok, qPrintable(encoding));
+    }
 }
 
 MRST_REGISTER_TEST(TestTextFileSession);

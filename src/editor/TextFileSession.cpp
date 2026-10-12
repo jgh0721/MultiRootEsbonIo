@@ -51,9 +51,9 @@ bool TextFileSession::open(const QString& filePath,
     return true;
 }
 
-QString TextFileSession::decodeWithEncoding(const QString& encoding) const
+QString TextFileSession::decodeWithEncoding(const QString& encoding, bool* ok) const
 {
-    return EncodingDetector::decode(m_rawData, encoding);
+    return EncodingDetector::decode(m_rawData, encoding, ok, m_truncated);
 }
 
 bool TextFileSession::saveText(const QString& filePath,
@@ -61,15 +61,25 @@ bool TextFileSession::saveText(const QString& filePath,
                                const QString& encoding,
                                ScintillaDocument::LineEnding lineEnding,
                                bool includeBom,
-                               const ProgressCallback& progress)
+                               const ProgressCallback& progress,
+                               QString* errorMessage)
 {
+    if (errorMessage)
+        errorMessage->clear();
     if (filePath.isEmpty() || m_truncated)
         return false;
 
+    bool converted = false;
     const QByteArray data = EncodingDetector::encode(normalizeLineEndings(text, lineEnding),
                                                      encoding,
                                                      includeBom ? EncodingDetector::BomPolicy::Always
-                                                                : EncodingDetector::BomPolicy::Never);
+                                                                : EncodingDetector::BomPolicy::Never,
+                                                      &converted);
+    if (!converted) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("%1 인코딩으로 변환할 수 없습니다. 다른 인코딩을 선택해 주세요.").arg(encoding);
+        return false;
+    }
 
     QSaveFile file(filePath);
     // 실패하면 원본을 보존해야 하므로 직접 쓰기 폴백을 허용하지 않는다.

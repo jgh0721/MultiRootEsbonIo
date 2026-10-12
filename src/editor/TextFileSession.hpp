@@ -27,13 +27,14 @@ public:
               const ProgressCallback& progress = {},
               const CancelCallback& cancel = {},
               bool* wasCanceled = nullptr);
-    QString decodeWithEncoding(const QString& encoding) const;
+    QString decodeWithEncoding(const QString& encoding, bool* ok = nullptr) const;
     bool saveText(const QString& filePath,
                   const QString& text,
                   const QString& encoding,
                   ScintillaDocument::LineEnding lineEnding,
                   bool includeBom,
-                  const ProgressCallback& progress = {});
+                  const ProgressCallback& progress = {},
+                  QString* errorMessage = nullptr);
     void clear();
 
     static bool shouldPromptForLargeFile(qint64 fileSize);

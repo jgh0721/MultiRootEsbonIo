@@ -336,8 +336,9 @@ bool QTextView::openFile( const QString& filePath )
             if( !self || self->m_openRequestId.load() != requestId )
                 return;
 
-            result.text = result.session.decodeWithEncoding( detectedEncoding );
-            result.success = true;
+            result.text = result.session.decodeWithEncoding( detectedEncoding, &result.success );
+            if( !result.success )
+                result.errorMessage = QTextView::tr( "%1 인코딩으로 파일을 해석할 수 없습니다." ).arg( detectedEncoding );
         }
 
         if( !self )
@@ -525,9 +526,9 @@ bool QTextView::saveWithEncoding( const QString& filePath, const QString& encodi
                                                                                                                                                                    qBound( 150, scaled, 1000 ),
                                                                                                                                                                    1000 );
                                                                                                                                    }, Qt::QueuedConnection );
-                                                                                        } );
+                                                                                        }, &errorMessage );
 
-                                               if( !saved )
+                                               if( !saved && errorMessage.isEmpty() )
                                                    errorMessage = QTextView::tr( "파일을 저장하지 못했습니다. 제한 모드 여부와 대상 경로를 확인해 주세요." );
 
                                                if( !self )
@@ -682,8 +683,16 @@ void QTextView::reloadWithEncoding( const QString& encoding )
     if( !m_editor )
         return;
 
+    bool decoded = false;
+    QString text = m_fileSession.decodeWithEncoding( encoding, &decoded );
+    if( !decoded )
+    {
+        QMessageBox::warning( this, tr( "인코딩 변환 실패" ),
+                              tr( "%1 인코딩으로 파일을 해석할 수 없습니다." ).arg( encoding ) );
+        emit encodingChanged( m_encoding );
+        return;
+    }
     m_encoding = encoding;
-    QString text = m_fileSession.decodeWithEncoding( encoding );
     m_document.setLineEnding( toDocumentLineEnding( detectLineEnding( text ) ) );
     m_applyingFileContent = true;
     m_editor->setText( text );
@@ -759,20 +768,21 @@ bool QTextView::reloadFromDisk()
                 return;
 
             QString text;
+            bool decoded = false;
             if( opened )
             {
                 text = session.decodeWithEncoding( encodingOverridden ? overriddenEncoding
-                                                                      : session.detectedEncoding() );
+                                                                      : session.detectedEncoding(), &decoded );
             }
 
             QMetaObject::invokeMethod( self,
-                                      [self, requestId, opened, session = std::move( session ),
+                                      [self, requestId, opened, decoded, session = std::move( session ),
                                        text = std::move( text ), encodingOverridden,
                                        overriddenEncoding, caretPosition, topLine]() mutable {
                                           if( !self || self->m_openRequestId.load() != requestId )
                                               return;
 
-                                          if( !opened )
+                                          if( !opened || !decoded )
                                           {
                                               // 읽지 못했으면 지금 버퍼가 여전히 최선이다.
                                               self->endLoading();

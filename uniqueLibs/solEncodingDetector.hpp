@@ -19,12 +19,14 @@ public:
     /// 샘플 바이트만으로 인코딩 감지
     static QString detectFromSample(const QByteArray& sampleData);
 
-    /// 지정 인코딩으로 디코딩
-    static QString decode(const QByteArray& rawData, const QString& encoding);
+    /// 지정 인코딩으로 디코딩. 미지원·손실 변환은 빈 결과와 ok=false로 알린다.
+    static QString decode(const QByteArray& rawData, const QString& encoding,
+                          bool* ok = nullptr, bool allowIncomplete = false);
 
-    /// 지정 인코딩으로 인코딩
+    /// 지정 인코딩으로 인코딩. 성공한 빈 문서는 ok=true이며 결과는 비어 있다.
     static QByteArray encode(const QString& text, const QString& encoding);
-    static QByteArray encode(const QString& text, const QString& encoding, BomPolicy bomPolicy);
+    static QByteArray encode(const QString& text, const QString& encoding, BomPolicy bomPolicy,
+                             bool* ok = nullptr);
 
     /// 지원하는 인코딩 목록
     static QStringList availableEncodings();

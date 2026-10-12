@@ -2,6 +2,9 @@
 #include "solEncodingDetector.hpp"
 
 #include <QStringConverter>
+#include <QTextCodec>
+#include <limits>
+#include <algorithm>
 
 // ── BOM 감지 ──
 QString EncodingDetector::detectBOM(const QByteArray& data)
@@ -94,15 +97,30 @@ QString EncodingDetector::detectFromSample(const QByteArray& sampleData)
     return detect(sampleData);
 }
 
-QString EncodingDetector::decode(const QByteArray& rawData, const QString& encoding)
+QString EncodingDetector::decode(const QByteArray& rawData, const QString& encoding,
+                                 bool* ok, bool allowIncomplete)
 {
-    auto enc = QStringConverter::encodingForName(encoding.toUtf8().constData());
+    if (ok)
+        *ok = false;
+    QString decoded;
+    bool valid = false;
+    const auto enc = QStringConverter::encodingForName(encoding.toUtf8().constData());
     if (enc) {
-        QStringDecoder decoder(*enc);
-        return decoder(rawData);
+        const auto flags = allowIncomplete ? QStringConverter::Flags{}
+            : QStringConverter::Flags{QStringConverter::Flag::Stateless};
+        QStringDecoder decoder(*enc, flags);
+        decoded = decoder(rawData);
+        valid = !decoder.hasError();
+    } else if (const auto* codec = QTextCodec::codecForName(encoding.toUtf8())) {
+        if (rawData.size() > (std::numeric_limits<int>::max)())
+            return {};
+        QTextCodec::ConverterState state;
+        decoded = codec->toUnicode(rawData.constData(), static_cast<int>(rawData.size()), &state);
+        valid = state.invalidChars == 0 && (allowIncomplete || state.remainingChars == 0);
     }
-    // 폴백: UTF-8
-    return QString::fromUtf8(rawData);
+    if (ok)
+        *ok = valid;
+    return valid ? decoded : QString{};
 }
 
 QByteArray EncodingDetector::encode(const QString& text, const QString& encoding)
@@ -110,16 +128,32 @@ QByteArray EncodingDetector::encode(const QString& text, const QString& encoding
     return encode(text, encoding, BomPolicy::Never);
 }
 
-QByteArray EncodingDetector::encode(const QString& text, const QString& encoding, BomPolicy bomPolicy)
+QByteArray EncodingDetector::encode(const QString& text, const QString& encoding, BomPolicy bomPolicy,
+                                    bool* ok)
 {
-    auto enc = QStringConverter::encodingForName(encoding.toUtf8().constData());
+    if (ok)
+        *ok = false;
+    const auto enc = QStringConverter::encodingForName(encoding.toUtf8().constData());
     QByteArray encoded;
+    bool valid = false;
     if (enc) {
-        QStringEncoder encoder(*enc);
+        QStringEncoder encoder(*enc, QStringConverter::Flag::Stateless);
         encoded = encoder(text);
-    } else {
-        encoded = text.toUtf8();
+        valid = !encoder.hasError();
+        // Latin-1의 대체 문자 출력은 Qt 버전에 따라 hasError에 잡히지 않는다.
+        if (*enc == QStringConverter::Latin1)
+            valid = valid && std::all_of(text.cbegin(), text.cend(), [](QChar ch) {
+                return ch.unicode() <= 0xFF;
+            });
+    } else if (const auto* codec = QTextCodec::codecForName(encoding.toUtf8())) {
+        if (text.size() > (std::numeric_limits<int>::max)())
+            return {};
+        QTextCodec::ConverterState state(QTextCodec::IgnoreHeader);
+        encoded = codec->fromUnicode(text.constData(), static_cast<int>(text.size()), &state);
+        valid = state.invalidChars == 0 && codec->canEncode(text);
     }
+    if (!valid)
+        return {};
 
     const QByteArray bom = bomBytesForEncoding(encoding);
     if (!bom.isEmpty()) {
@@ -131,16 +165,23 @@ QByteArray EncodingDetector::encode(const QString& text, const QString& encoding
         }
     }
 
+    if (ok)
+        *ok = true;
     return encoded;
 }
 
 QStringList EncodingDetector::availableEncodings()
 {
-    return {
+    QStringList encodings{
         "UTF-8", "UTF-16LE", "UTF-16BE",
         "EUC-KR", "System",
         "ISO-8859-1", "Shift_JIS", "GB18030"
     };
+    encodings.removeIf([](const QString& name) {
+        return !QStringConverter::encodingForName(name.toUtf8().constData())
+            && !QTextCodec::codecForName(name.toUtf8());
+    });
+    return encodings;
 }
 
 bool EncodingDetector::hasBom(const QByteArray& rawData, const QString& encoding)
