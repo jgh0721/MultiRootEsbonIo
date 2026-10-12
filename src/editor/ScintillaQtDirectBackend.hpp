@@ -139,6 +139,7 @@ public:
 	int positionFromLine(int line) const;
 	int lineEndPosition(int line) const;
 	int lineFromPosition(int position) const;
+	/// 0-based UTF-16 열. LSP·QString 인덱스와 자동완성 교체에 사용한다.
 	int columnFromPosition(int position) const;
 	int positionFromLineColumn(int line, int column) const;
 	QByteArray textRangeUtf8(int startPos, int endPos) const;

@@ -222,6 +222,7 @@ add_executable(${PROJECT_NAME}
         src/editor/ScintillaSearchWord.hpp
         src/editor/DocumentLineEnding.hpp
         src/editor/ScintillaQtDirectBackend.hpp
+        src/editor/ScintillaTextPosition.hpp
         src/editor/QBaseEditor.cpp
         src/editor/QBaseEditor.hpp
         src/editor/RstContainerLexer.cpp
@@ -503,6 +504,7 @@ if(MRST_BUILD_TESTS)
             tests/ui/tst_PopupInteraction.cpp
             tests/ui/tst_ExternalFilesTree.cpp
             tests/ui/tst_SearchPrefill.cpp
+            tests/ui/tst_TextPositions.cpp
             tests/ui/tst_PreviewFonts.cpp
             src/core/solPreviewFonts.cpp
 

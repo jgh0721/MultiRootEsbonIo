@@ -1,5 +1,6 @@
 ﻿#include "stdafx.h"
 #include "ScintillaQtDirectBackend.hpp"
+#include "ScintillaTextPosition.hpp"
 
 #include "core/solThemeManager.hpp"
 #include "ScintillaEditorSettings.hpp"
@@ -140,30 +141,14 @@ void applyLineSpacingScale(ScintillaEditBase* editor, const QFont& font, const d
 
 sptr_t positionFromLineIndex(ScintillaEditBase* editor, const int line, const int index)
 {
-	if (!editor)
-		return 0;
-
-	const sptr_t lineCount = qMax<sptr_t>(1, editor->send(sciMessage(SCI_GETLINECOUNT)));
-	const sptr_t safeLine = qBound<sptr_t>(0, static_cast<sptr_t>(line), lineCount - 1);
-	const sptr_t linePosition = editor->send(sciMessage(SCI_POSITIONFROMLINE), safeLine);
-	const sptr_t safeIndex = qMax<sptr_t>(0, static_cast<sptr_t>(index));
-	const sptr_t documentPosition = editor->send(sciMessage(SCI_POSITIONRELATIVECODEUNITS), linePosition, safeIndex);
-	const sptr_t lineEnd = editor->send(sciMessage(SCI_GETLINEENDPOSITION), safeLine);
-	return qBound<sptr_t>(linePosition, documentPosition, lineEnd);
+    return editor ? mrst::sci::positionFromUtf16LineColumn(*editor, line, index) : 0;
 }
 
 void positionToLineIndex(ScintillaEditBase* editor, const sptr_t position, int& line, int& index)
 {
-	if (!editor) {
-		line = 0;
-		index = 0;
-		return;
-	}
-
-	const sptr_t safePosition = qBound<sptr_t>(0, position, editor->send(sciMessage(SCI_GETLENGTH)));
-	line = static_cast<int>(editor->send(sciMessage(SCI_LINEFROMPOSITION), safePosition));
-	const sptr_t linePosition = editor->send(sciMessage(SCI_POSITIONFROMLINE), line);
-	index = static_cast<int>(editor->send(sciMessage(SCI_COUNTCODEUNITS), linePosition, safePosition));
+    const auto result = editor ? mrst::sci::utf16LineColumn(*editor, position) : mrst::sci::Utf16LineColumn{};
+    line = result.line;
+    index = result.column;
 }
 
 } // namespace
@@ -1059,11 +1044,7 @@ int ScintillaQtDirectBackend::lineFromPosition(int position) const
 
 int ScintillaQtDirectBackend::columnFromPosition(int position) const
 {
-	if (!m_editor)
-		return 0;
-
-	const sptr_t safePosition = qBound(sptr_t(0), static_cast<sptr_t>(position), static_cast<sptr_t>(documentLength()));
-	return static_cast<int>(m_editor->send(sciMessage(SCI_GETCOLUMN), safePosition));
+    return m_editor ? mrst::sci::utf16LineColumn(*m_editor, position).column : 0;
 }
 
 int ScintillaQtDirectBackend::positionFromLineColumn(int line, int column) const

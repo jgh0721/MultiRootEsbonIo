@@ -31,9 +31,14 @@ int main( int argc, char** argv )
     QCoreApplication::setOrganizationName( QStringLiteral( "myHouse" ) );
     QCoreApplication::setApplicationName( QStringLiteral( "MultiRoot reST Editor UiTests" ) );
 
+    const QByteArray selectedClass = qgetenv("MRST_TEST_CLASS");
+    int executed = 0;
     int failures = 0;
     for( QObject* testObject : mrst::tests::registry() )
     {
+        if (!selectedClass.isEmpty() && selectedClass != testObject->metaObject()->className())
+            continue;
+        ++executed;
         const int result = QTest::qExec( testObject, argc, argv );
         // Windows 에서 QTest 의 기본 로거는 stdout 이 리다이렉트되면 출력을
         // OutputDebugString 으로 보낸다. ctest 로 돌리면 어느 클래스가 깨졌는지
@@ -43,5 +48,10 @@ int main( int argc, char** argv )
         failures += result;
     }
 
+    if (executed == 0)
+    {
+        std::fprintf(stderr, "No test class matched MRST_TEST_CLASS\n");
+        return 1;
+    }
     return failures;
 }
