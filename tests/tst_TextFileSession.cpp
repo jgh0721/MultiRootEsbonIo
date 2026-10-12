@@ -31,6 +31,9 @@ private slots:
     void rejectsUnknownCodec();
     void validatesDecodeAndPreviewTail();
     void offeredCodecsAreUsable();
+    void utf8SampleBoundary();
+    void utf32BomRoundTrip_data();
+    void utf32BomRoundTrip();
 };
 
 void TestTextFileSession::originalStaysIntactUntilCommit()
@@ -179,6 +182,65 @@ void TestTextFileSession::offeredCodecsAreUsable()
         EncodingDetector::encode({}, encoding, EncodingDetector::BomPolicy::Never, &ok);
         QVERIFY2(ok, qPrintable(encoding));
     }
+}
+
+void TestTextFileSession::utf8SampleBoundary()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString text(87382, QChar(0xAC00));
+    const QByteArray bytes = text.toUtf8();
+    QCOMPARE(bytes.size(), qsizetype(262146));
+    QFile file(directory.filePath("sample.rst"));
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QCOMPARE(file.write(bytes), bytes.size());
+    file.close();
+    TextFileSession session;
+    QVERIFY(session.open(file.fileName(), TextFileSession::OpenMode::Full));
+    QCOMPARE(session.detectedEncoding(), QString("UTF-8"));
+    bool ok = false;
+    QCOMPARE(session.decodeWithEncoding(session.detectedEncoding(), &ok), text);
+    QVERIFY(ok);
+    QCOMPARE(EncodingDetector::detectFromSample(bytes.left(262144), true), QString("UTF-8"));
+    QVERIFY(EncodingDetector::detectFromSample(QByteArray::fromHex("eda080"), true) != "UTF-8");
+    QVERIFY(EncodingDetector::detectFromSample(QByteArray::fromHex("c080"), true) != "UTF-8");
+    QVERIFY(EncodingDetector::detectFromSample(QByteArray::fromHex("f4908080"), true) != "UTF-8");
+    QVERIFY(EncodingDetector::detectFromSample(QByteArray::fromHex("41eab0")) != "UTF-8");
+}
+
+void TestTextFileSession::utf32BomRoundTrip_data()
+{
+    QTest::addColumn<QString>("encoding");
+    QTest::addColumn<QByteArray>("bom");
+    QTest::newRow("little-endian") << QString("UTF-32LE") << QByteArray::fromHex("fffe0000");
+    QTest::newRow("big-endian") << QString("UTF-32BE") << QByteArray::fromHex("0000feff");
+}
+
+void TestTextFileSession::utf32BomRoundTrip()
+{
+    QFETCH(QString, encoding);
+    QFETCH(QByteArray, bom);
+    const QString text = QString::fromUtf8("한글🙂");
+    bool ok = false;
+    const auto bytes = EncodingDetector::encode(text, encoding, EncodingDetector::BomPolicy::Always, &ok);
+    QVERIFY(ok);
+    QVERIFY(bytes.startsWith(bom));
+    QCOMPARE(EncodingDetector::detect(bytes), encoding);
+    QVERIFY(EncodingDetector::hasBom(bytes, encoding));
+    QVERIFY(EncodingDetector::supportsBom(encoding));
+    QCOMPARE(EncodingDetector::decode(bytes, encoding, &ok), text);
+    QVERIFY(ok);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    TextFileSession session;
+    const auto file = directory.filePath("unicode.rst");
+    QVERIFY(session.saveText(file, text, encoding, ScintillaDocument::LF, true));
+    TextFileSession opened;
+    QVERIFY(opened.open(file, TextFileSession::OpenMode::Full));
+    QCOMPARE(opened.detectedEncoding(), encoding);
+    QVERIFY(opened.hasBom());
+    QCOMPARE(opened.decodeWithEncoding(encoding, &ok), text);
+    QVERIFY(ok);
 }
 
 MRST_REGISTER_TEST(TestTextFileSession);

@@ -2,6 +2,8 @@
 
 #include "core/solRestOutlineService.hpp"
 #include "editor/RstStructure.hpp"
+#include "editor/RstContainerLexer.hpp"
+#include "editor/MarkdownStructure.hpp"
 
 #include <QDir>
 #include <QFile>
@@ -48,6 +50,9 @@ private slots:
     void collectsProjectDocumentsRootDocFirst();
     void collectsProjectDocumentsSkipsBuildDirs();
     void collectsProjectDocumentsReportsTruncation();
+    void lineEndingParity_data();
+    void lineEndingParity();
+    void mixedLineIndexPreservesOffsets();
 };
 
 void TestRstOutline::emptyTextHasNoSymbols()
@@ -203,6 +208,70 @@ void TestRstOutline::collectsProjectDocumentsReportsTruncation()
     // 자른 사실이 밖으로 드러나야 한다. 조용히 자르면 "전부 보여 준 것" 처럼 읽힌다.
     QCOMPARE( documents.size(), 4 );
     QCOMPARE( total, 10 );
+}
+
+void TestRstOutline::lineEndingParity_data()
+{
+    QTest::addColumn<QString>("ending");
+    QTest::newRow("LF") << QString("\n");
+    QTest::newRow("CRLF") << QString("\r\n");
+    QTest::newRow("CR") << QString("\r");
+}
+
+void TestRstOutline::lineEndingParity()
+{
+    QFETCH(QString, ending);
+    const QString rstBase = "Title\n=====\n\nBody **bold**\n\nSub\n---\nMore";
+    QString rst = rstBase;
+    rst.replace("\n", ending);
+    const auto outline = parseRstOutline(rst);
+    QCOMPARE(outline.size(), 1);
+    QCOMPARE(outline.first().name, QString("Title"));
+    QCOMPARE(outline.first().children.size(), 1);
+    QCOMPARE(outline.first().children.first().line, 6);
+    const auto bytes = rst.toUtf8();
+    const std::string raw(bytes.constData(), bytes.size());
+    const auto folds = mrst::rst::computeFoldLevels(raw);
+    const auto expected = mrst::rst::computeFoldLevels(rstBase.toStdString());
+    QCOMPARE(folds.size(), expected.size());
+    for (std::size_t i = 0; i < folds.size(); ++i) {
+        QCOMPARE(folds[i].level, expected[i].level);
+        QCOMPARE(folds[i].header, expected[i].header);
+    }
+    const auto styles = mrst::rst::RstContainerLexer{}.styleBytes(raw);
+    const auto bold = raw.find("**bold**");
+    QCOMPARE(static_cast<int>(styles.at(bold)), mrst::rst::STYLE_STRONG);
+
+    const QString mdBase = "# Title\n\nBody\n\n## Sub\nMore";
+    QString md = mdBase;
+    md.replace("\n", ending);
+    const auto mdOutline = parseMarkdownOutline(md);
+    QCOMPARE(mdOutline.size(), 1);
+    QCOMPARE(mdOutline.first().children.first().line, 5);
+    const auto mdFolds = mrst::md::computeMarkdownFoldLevels(md.toStdString());
+    const auto mdExpected = mrst::md::computeMarkdownFoldLevels(mdBase.toStdString());
+    QCOMPARE(mdFolds.size(), mdExpected.size());
+    for (std::size_t i = 0; i < mdFolds.size(); ++i) {
+        QCOMPARE(mdFolds[i].level, mdExpected[i].level);
+        QCOMPARE(mdFolds[i].header, mdExpected[i].header);
+    }
+}
+
+void TestRstOutline::mixedLineIndexPreservesOffsets()
+{
+    const std::string text = "a\rb\r\nc\nd\r";
+    mrst::rst::LineIndex lines(text);
+    QCOMPARE(lines.size(), std::size_t(5));
+    const std::size_t offsets[] = {0, 2, 5, 7, 9};
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        QCOMPARE(lines.byteStart(i), offsets[i]);
+        QCOMPARE(lines.lineAt(offsets[i]), i);
+    }
+    QCOMPARE(lines.line(0), std::string_view("a"));
+    QCOMPARE(lines.line(1), std::string_view("b"));
+    QCOMPARE(lines.line(2), std::string_view("c"));
+    QCOMPARE(lines.line(3), std::string_view("d"));
+    QVERIFY(lines.line(4).empty());
 }
 
 MRST_REGISTER_TEST( TestRstOutline );

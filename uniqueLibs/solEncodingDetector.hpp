@@ -17,7 +17,7 @@ public:
     static QString detect(const QByteArray& rawData);
 
     /// 샘플 바이트만으로 인코딩 감지
-    static QString detectFromSample(const QByteArray& sampleData);
+    static QString detectFromSample(const QByteArray& sampleData, bool mayBeIncomplete = false);
 
     /// 지정 인코딩으로 디코딩. 미지원·손실 변환은 빈 결과와 ok=false로 알린다.
     static QString decode(const QByteArray& rawData, const QString& encoding,
@@ -38,7 +38,7 @@ public:
 private:
     static QByteArray bomBytesForEncoding(const QString& encoding);
     static QString detectBOM(const QByteArray& data);
-    static QString detectHeuristic(const QByteArray& data);
-    static bool    isValidUtf8(const QByteArray& data);
+    static QString detectHeuristic(const QByteArray& data, bool mayBeIncomplete = false);
+    static bool    isValidUtf8(const QByteArray& data, bool mayBeIncomplete = false);
 };
 

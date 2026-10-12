@@ -28,7 +28,7 @@ bool TextFileSession::open(const QString& filePath,
 
     const qint64 sampleBytes = qMin(m_fileSize, DetectionSampleLimit);
     m_detectionSample = file.peek(sampleBytes);
-    m_detectedEncoding = EncodingDetector::detectFromSample(m_detectionSample);
+    m_detectedEncoding = EncodingDetector::detectFromSample(m_detectionSample, sampleBytes < m_fileSize);
     m_hasBom = EncodingDetector::hasBom(m_detectionSample, m_detectedEncoding);
 
     const qint64 bytesToRead = (mode == OpenMode::Full)

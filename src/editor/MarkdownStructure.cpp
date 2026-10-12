@@ -17,26 +17,26 @@ constexpr int kTabWidth = 4;
 
 /// 줄 끝의 CR 을 떼고 줄 단위로 나눈다.
 ///
-/// 편집기에서 오는 것은 생 UTF-8 이고 이 저장소의 문서는 CRLF 와 LF 가 섞여
+/// 편집기에서 오는 생 UTF-8의 LF·CRLF·독립 CR을 논리적 줄 경계로 처리한다.
+/// 이 저장소의 문서는 CRLF 와 LF 가 섞여
 /// 있다. CR 을 남기면 "정확히 세 글자 --- 인가" 같은 판정이 전부 어긋난다.
 [[nodiscard]] std::vector< std::string > splitLines( const std::string& text )
 {
     std::vector< std::string > lines;
     std::string current;
-    for( const char ch : text )
+    for( std::size_t i = 0; i < text.size(); ++i )
     {
-        if( ch == '\n' )
+        const char ch = text[ i ];
+        if( ch == '\r' || ch == '\n' )
         {
-            if( !current.empty() && current.back() == '\r' )
-                current.pop_back();
             lines.push_back( current );
             current.clear();
+            if( ch == '\r' && i + 1 < text.size() && text[ i + 1 ] == '\n' )
+                ++i;
             continue;
         }
         current.push_back( ch );
     }
-    if( !current.empty() && current.back() == '\r' )
-        current.pop_back();
     if( !current.empty() || lines.empty() )
         lines.push_back( current );
     return lines;

@@ -353,8 +353,12 @@ void LineIndex::reset( std::string_view text )
     starts_.push_back( 0 );
     for( std::size_t i = 0; i < text.size(); ++i )
     {
-        if( text[ i ] == '\n' )
+        if( text[ i ] == '\r' || text[ i ] == '\n' )
+        {
+            if( text[ i ] == '\r' && i + 1 < text.size() && text[ i + 1 ] == '\n' )
+                ++i;
             starts_.push_back( static_cast< std::uint32_t >( i + 1 ) );
+        }
     }
     // 본문이 개행으로 끝나면 마지막 원소가 빈 줄을 가리킨다. 그것도 한 줄로 센다
     // — Scintilla 의 줄 수와 맞아야 접기 깊이 주입이 어긋나지 않는다.
@@ -365,8 +369,10 @@ std::string_view LineIndex::line( const std::size_t index ) const noexcept
     if( index >= starts_.size() )
         return {};
     const std::size_t begin = starts_[ index ];
-    const std::size_t end = ( index + 1 < starts_.size() ) ? ( starts_[ index + 1 ] - 1 ) : text_.size();
+    const std::size_t end = ( index + 1 < starts_.size() ) ? starts_[ index + 1 ] : text_.size();
     std::string_view raw = text_.substr( begin, end - begin );
+    if( !raw.empty() && raw.back() == '\n' )
+        raw.remove_suffix( 1 );
     if( !raw.empty() && raw.back() == '\r' )
         raw.remove_suffix( 1 );
     return raw;

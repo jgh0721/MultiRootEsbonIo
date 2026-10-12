@@ -15,12 +15,6 @@ QString EncodingDetector::detectBOM(const QByteArray& data)
         static_cast<uint8_t>(data[2]) == 0xBF)
         return QStringLiteral("UTF-8");
 
-    if (data.size() >= 2) {
-        uint8_t b0 = data[0], b1 = data[1];
-        if (b0 == 0xFF && b1 == 0xFE) return QStringLiteral("UTF-16LE");
-        if (b0 == 0xFE && b1 == 0xFF) return QStringLiteral("UTF-16BE");
-    }
-
     if (data.size() >= 4) {
         uint8_t b0 = data[0], b1 = data[1], b2 = data[2], b3 = data[3];
         if (b0 == 0xFF && b1 == 0xFE && b2 == 0x00 && b3 == 0x00)
@@ -29,36 +23,49 @@ QString EncodingDetector::detectBOM(const QByteArray& data)
             return QStringLiteral("UTF-32BE");
     }
 
+    if (data.size() >= 2) {
+        uint8_t b0 = data[0], b1 = data[1];
+        if (b0 == 0xFF && b1 == 0xFE) return QStringLiteral("UTF-16LE");
+        if (b0 == 0xFE && b1 == 0xFF) return QStringLiteral("UTF-16BE");
+    }
+
+
     return {};
 }
 
 // ── UTF-8 유효성 검사 ──
-bool EncodingDetector::isValidUtf8(const QByteArray& data)
+bool EncodingDetector::isValidUtf8(const QByteArray& data, bool mayBeIncomplete)
 {
-    int remaining = 0;
-    for (uint8_t byte : data) {
-        if (remaining > 0) {
-            if ((byte & 0xC0) != 0x80) return false;
-            --remaining;
-        } else if ((byte & 0x80) == 0) {
-            continue; // ASCII
-        } else if ((byte & 0xE0) == 0xC0) {
-            remaining = 1;
-        } else if ((byte & 0xF0) == 0xE0) {
-            remaining = 2;
-        } else if ((byte & 0xF8) == 0xF0) {
-            remaining = 3;
-        } else {
-            return false;
+    for (qsizetype i = 0; i < data.size(); ) {
+        const auto first = static_cast<uint8_t>(data[i]);
+        if (first < 0x80) {
+            ++i;
+            continue;
         }
+        const int width = first >= 0xC2 && first <= 0xDF ? 2
+            : first >= 0xE0 && first <= 0xEF ? 3
+            : first >= 0xF0 && first <= 0xF4 ? 4 : 0;
+        if (width == 0)
+            return false;
+        for (int j = 1; j < width; ++j) {
+            if (i + j >= data.size())
+                return mayBeIncomplete;
+            const auto next = static_cast<uint8_t>(data[i + j]);
+            if ((next & 0xC0) != 0x80)
+                return false;
+            if (j == 1 && ((first == 0xE0 && next < 0xA0) || (first == 0xED && next >= 0xA0)
+                || (first == 0xF0 && next < 0x90) || (first == 0xF4 && next >= 0x90)))
+                return false;
+        }
+        i += width;
     }
-    return remaining == 0;
+    return true;
 }
 
 // ── 휴리스틱 감지 ──
-QString EncodingDetector::detectHeuristic(const QByteArray& data)
+QString EncodingDetector::detectHeuristic(const QByteArray& data, bool mayBeIncomplete)
 {
-    if (isValidUtf8(data)) {
+    if (isValidUtf8(data, mayBeIncomplete)) {
         // 비-ASCII 바이트가 있으면 UTF-8, 없으면 ASCII (UTF-8 호환)
         for (uint8_t b : data) {
             if (b & 0x80) return QStringLiteral("UTF-8");
@@ -92,9 +99,10 @@ QString EncodingDetector::detect(const QByteArray& rawData)
     return bom.isEmpty() ? detectHeuristic(rawData) : bom;
 }
 
-QString EncodingDetector::detectFromSample(const QByteArray& sampleData)
+QString EncodingDetector::detectFromSample(const QByteArray& sampleData, bool mayBeIncomplete)
 {
-    return detect(sampleData);
+    const auto bom = detectBOM(sampleData);
+    return bom.isEmpty() ? detectHeuristic(sampleData, mayBeIncomplete) : bom;
 }
 
 QString EncodingDetector::decode(const QByteArray& rawData, const QString& encoding,
@@ -173,7 +181,7 @@ QByteArray EncodingDetector::encode(const QString& text, const QString& encoding
 QStringList EncodingDetector::availableEncodings()
 {
     QStringList encodings{
-        "UTF-8", "UTF-16LE", "UTF-16BE",
+        "UTF-8", "UTF-16LE", "UTF-16BE", "UTF-32LE", "UTF-32BE",
         "EUC-KR", "System",
         "ISO-8859-1", "Shift_JIS", "GB18030"
     };
@@ -201,6 +209,10 @@ bool EncodingDetector::hasBom(const QByteArray& rawData, const QString& encoding
         return bomEncoding == QStringLiteral("UTF-16LE");
     if (normalized == QStringLiteral("UTF-16BE"))
         return bomEncoding == QStringLiteral("UTF-16BE");
+    if (normalized == QStringLiteral("UTF-32") || normalized == QStringLiteral("UTF-32LE"))
+        return bomEncoding == QStringLiteral("UTF-32LE");
+    if (normalized == QStringLiteral("UTF-32BE"))
+        return bomEncoding == QStringLiteral("UTF-32BE");
 
     return false;
 }
@@ -219,6 +231,10 @@ QByteArray EncodingDetector::bomBytesForEncoding(const QString& encoding)
         return QByteArray::fromHex("FFFE");
     if (normalized == QStringLiteral("UTF-16BE"))
         return QByteArray::fromHex("FEFF");
+    if (normalized == QStringLiteral("UTF-32") || normalized == QStringLiteral("UTF-32LE"))
+        return QByteArray::fromHex("FFFE0000");
+    if (normalized == QStringLiteral("UTF-32BE"))
+        return QByteArray::fromHex("0000FEFF");
     return {};
 }
 
