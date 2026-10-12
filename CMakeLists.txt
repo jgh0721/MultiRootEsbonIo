@@ -401,6 +401,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_WorkspaceSessionActive.cpp
             tests/tst_RecentItems.cpp
             tests/tst_TextFileSession.cpp
+            tests/tst_ShadowBackupOrdering.cpp
             tests/tst_UpdateVersioning.cpp
             tests/tst_AuthenticodeVerifier.cpp
             tests/tst_ExternalChangeWatch.cpp
@@ -450,6 +451,7 @@ if(MRST_BUILD_TESTS)
     # (아래 qt_add_translations 가 mrst_tests 에도 같은 리소스를 붙인다).
     target_compile_definitions(mrst_tests PRIVATE
             MRST_I18N_TS_DIR="${CMAKE_SOURCE_DIR}/translations"
+            MRST_TEST_BACKUP_DIRECTORY="${CMAKE_CURRENT_BINARY_DIR}/test-hot-exit"
             # 매니페스트 product 는 이미 배포된 클라이언트와의 와이어 계약이다.
             # 테스트가 자기만의 리터럴을 들고 있으면 그 계약이 바뀌어도 초록불이
             # 남으므로, CMake 가 실제 값을 넣어 준다. (이 타깃은 생성 헤더를

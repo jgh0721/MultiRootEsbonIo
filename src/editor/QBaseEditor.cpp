@@ -1155,6 +1155,8 @@ bool QTextView::writeHotExitBackupNow( bool synchronous )
         : 0;
     snapshot.savedAtUtc = QDateTime::currentDateTimeUtc();
 
+    if( !TextShadowBackupStore::reserveSnapshotWrite( snapshot ) )
+        return false;
     m_hotExitDirty = false;
     if( synchronous )
         return TextShadowBackupStore::saveSnapshot( snapshot );
