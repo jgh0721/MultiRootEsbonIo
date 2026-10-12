@@ -787,6 +787,8 @@ void WorkspaceController::requestPreviewBuild( const bool immediate, const bool 
     if( shuttingDown_ )
         return;
 
+    // 조기 반환과 직접 렌더링 경로도 이전 요청을 대체한다.
+    previewRequests_.invalidate();
     QTextView* view = activeView_;
     DocumentContext* context = contextFor( view );
     if( view == nullptr || context == nullptr || context->path.isEmpty() )
@@ -795,7 +797,9 @@ void WorkspaceController::requestPreviewBuild( const bool immediate, const bool 
     // 라우팅은 아래 두 가드보다 **앞에서** 갈라야 한다. 내장 렌더러 경로는 파이썬도
     // Sphinx 프로젝트도 필요 없는데, 아래는 그 둘이 없으면 조용히 반환한다. 뒤에 두면
     // 런타임 준비 전이나 프로젝트 밖의 .md 는 영영 프리뷰가 뜨지 않는다.
-    if( routeFor( *context ) == PreviewRoute::MarkdownJs )
+    const PreviewRoute route = routeFor( *context );
+    previewRequests_.begin( context->path, context->projectId, route == PreviewRoute::Sphinx );
+    if( route == PreviewRoute::MarkdownJs )
     {
         renderMarkdownJs( *context, immediate, forceRebuild );
         return;
@@ -873,15 +877,15 @@ void WorkspaceController::tryServeFromLastBuild( const PreviewBuildRequest& requ
     // 판정은 문서 수십 개 + breathe 라면 doxygen XML 수백 개를 stat 한다.
     // GUI 스레드에서 하면 그 자체가 멈춤이 된다.
     QPointer< WorkspaceController > guard( this );
-    const quint64 generation = ++previewGateGeneration_;
-    QThreadPool::globalInstance()->start( [guard, inputsFile, request, immediate, generation] {
+    const auto ticket = previewRequests_.ticket();
+    QThreadPool::globalInstance()->start( [guard, inputsFile, request, immediate, ticket] {
         const bool changed = previewInputsChanged( inputsFile );
 
-        QMetaObject::invokeMethod( guard, [guard, request, immediate, changed, generation] {
+        QMetaObject::invokeMethod( guard, [guard, request, immediate, changed, ticket] {
             if( guard.isNull() || guard->shuttingDown_ )
                 return;
             // 판정이 도는 사이 사용자가 다른 문서로 옮겨 갔으면 버린다.
-            if( generation != guard->previewGateGeneration_ )
+            if( !guard->previewRequests_.accepts( ticket ) )
                 return;
             guard->onPreviewGateDecided( request, immediate, changed );
         }, Qt::QueuedConnection );
@@ -920,6 +924,9 @@ void WorkspaceController::onPreviewGateDecided( const PreviewBuildRequest& reque
 
 void WorkspaceController::onPreviewFinished( const PreviewBuildResult& result )
 {
+    if( shuttingDown_ || !previewRequests_.acceptsSphinxResult( result.sourceFile, result.projectId ) )
+        return;
+
     // 취소된 결과로는 화면을 건드리지 않는다. 다만 뒤이어 다른 빌드가 도는 것이
     // 아니라면 표시가 남으므로, 큐가 비었을 때만 걷는다.
     if( result.cancelled || previewView_ == nullptr )
@@ -1176,6 +1183,7 @@ QString WorkspaceController::textForPreview( const DocumentContext& context ) co
 void WorkspaceController::renderMarkdownJs( DocumentContext& context, const bool immediate,
                                             const bool force )
 {
+    previewRequests_.begin( context.path, context.projectId, false );
     // 탭을 옮겼는데 프리뷰가 따라오지 않은 상태를 알아채는 기준이다. 채우지 않으면
     // setActiveDocument() 의 previewStale 판정이 매번 참이 되어 다시 요청한다.
     previewRequestedPath_ = context.path;
@@ -1673,7 +1681,7 @@ void WorkspaceController::setWorkspaceRoot( const QString& root )
     previewLoadInFlight_ = false;
     pendingFullLoadPath_.clear();
     pendingFullLoadUrl_.clear();
-    ++previewGateGeneration_;
+    previewRequests_.invalidate();
     ++hotSwapToken_;
     if( previewSyncRetry_ != nullptr )
         previewSyncRetry_->stop();
@@ -1829,6 +1837,7 @@ void WorkspaceController::endShutdown()
 void WorkspaceController::shutdown()
 {
     shuttingDown_ = true;
+    previewRequests_.invalidate();
     if( previewController_ != nullptr )
         previewController_->cancelImmediately();
     // uv sync / 패키지 설치도 함께 끊는다. Environment/ 는 앱 설치 폴더 아래라
@@ -2000,6 +2009,7 @@ void WorkspaceController::detachDocument( QTextView* view )
     documents_.remove( view );
     if( activeView_ == view )
     {
+        previewRequests_.invalidate();
         activeView_ = nullptr;
         activeProjectId_.clear();
     }
@@ -2037,6 +2047,8 @@ void WorkspaceController::setActiveDocument( QTextView* view )
     }
 
     QTextView* previousView = activeView_;
+    if( previousView != view )
+        previewRequests_.invalidate();
     activeView_ = view;
     completions_->setActiveEditor( view );
     if( view == nullptr )

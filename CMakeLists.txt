@@ -157,6 +157,7 @@ add_executable(${PROJECT_NAME}
         src/core/solSphinxPreviewController.hpp
         src/core/solPreviewProgress.cpp
         src/core/solPreviewProgress.hpp
+        src/core/solPreviewRequestState.hpp
         src/core/solPreviewBridge.cpp
         src/core/solPreviewBridge.hpp
         src/core/solMarkdownAssets.hpp
@@ -396,6 +397,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_FileKinds.cpp
             tests/tst_FileTreeFilter.cpp
             tests/tst_PreviewProgress.cpp
+            tests/tst_PreviewRequestState.cpp
             tests/tst_PythonEnvironment.cpp
             tests/tst_DiagnosticsStore.cpp
             tests/tst_SphinxBuilders.cpp

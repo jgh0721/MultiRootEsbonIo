@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "solRestOutlineService.hpp"
+#include "solPreviewRequestState.hpp"
 #include "solSphinxDiagnostics.hpp"
 #include "solSphinxScanner.hpp"
 
@@ -440,9 +441,8 @@ private:
     /// 설정 preview/stubDoxygenWhileTyping. 타이핑 중에는 doxygen 지시어를
     /// 자리표시자로 두어, 재파싱이 수십 초인 문서도 편집이 반영되게 한다.
     bool                                previewStubDoxygenWhileTyping_ = true;
-    /// 늦게 도착한 이전 문서의 게이트 판정을 버리기 위한 세대 번호
-    /// (outlineGeneration_ 과 같은 관용구).
-    quint64                             previewGateGeneration_ = 0;
+    /// 렌더러 전환·직접 빌드·문서 해제도 이전 캐시 판정과 빌드 결과를 무효화한다.
+    PreviewRequestState                 previewRequests_;
     QUrl                                previewUrl_;
     bool                                previewLoadedOk_ = false;
     /// load() 를 부르고 아직 loadFinished 를 못 받았는가.
