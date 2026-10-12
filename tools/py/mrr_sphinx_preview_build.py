@@ -802,10 +802,23 @@ def _save_source_map(out_dir: Path, sources: list[str]) -> None:
         pass
 
 
-def _collect_input_files(app, conf_dir: Path) -> set[str]:
+def _template_directories(app, conf_dir: Path) -> dict[str, list[str]]:
+    """프로젝트와 상속 테마의 템플릿 파일 목록. 빈/없는 폴더도 기록한다."""
+    roots = {Path(conf_dir) / entry for entry in getattr(app.config, "templates_path", ())}
+    templates = getattr(getattr(app, "builder", None), "templates", None)
+    roots.update(Path(entry) for entry in getattr(templates, "pathchain", ()))
+    result = {}
+    for root in sorted({entry.resolve() for entry in roots}):
+        result[str(root)] = sorted(
+            entry.relative_to(root).as_posix() for entry in root.rglob("*") if entry.is_file()
+        )
+    return result
+
+
+def _collect_input_files(app, conf_dir: Path, template_dirs=None) -> set[str]:
     """이번 빌드의 결과를 좌우하는 입력 파일 전부.
 
-    셋을 합친다.
+    문서·설정·확장 의존 파일과 템플릿을 합친다.
 
     1. conf.py — 확장/테마/설정이 전부 여기서 나온다.
     2. 소스 문서와 그 의존 파일 — ``env.doc2path`` 와 ``env.dependencies``.
@@ -815,9 +828,19 @@ def _collect_input_files(app, conf_dir: Path) -> set[str]:
        environment.pickle 로 영속화한다(breathe/file_state_cache.py).
        실제로 읽힌 것만 들어 있으므로 XML 전량이 아니다.
 
+    4. 프로젝트·상속 테마의 템플릿과 실제 로드된 외부 템플릿.
+
     breathe 가 없는 프로젝트에서는 3번이 그냥 비어 있다.
     """
     paths: set[str] = set()
+    directories = _template_directories(app, conf_dir) if template_dirs is None else template_dirs
+    for root, files in directories.items():
+        paths.update(str((Path(root) / entry).resolve()) for entry in files)
+    templates = getattr(getattr(app, "builder", None), "templates", None)
+    for template in (getattr(getattr(templates, "environment", None), "cache", None) or {}).values():
+        filename = getattr(template, "filename", None)
+        if filename:
+            paths.add(str(Path(filename).resolve()))
 
     conf_py = conf_dir / "conf.py"
     if conf_py.is_file():
@@ -862,8 +885,12 @@ def _save_inputs(inputs_file: Path, app, conf_dir: Path, source_dir: Path) -> No
     경로는 앱이 정해서 넘긴다(`--inputs-file`). 이름 규칙을 파이썬과 C++ 양쪽에
     두면 한쪽만 고쳐졌을 때 조용히 어긋나기 때문이다.
     """
+    template_dirs = _template_directories(app, conf_dir)
+    templates = getattr(getattr(app, "builder", None), "templates", None)
+    custom_bridge = getattr(app.config, "template_bridge", None)
+    templates_complete = not custom_bridge or hasattr(templates, "pathchain")
     entries = []
-    for path in sorted(_collect_input_files(app, conf_dir)):
+    for path in sorted(_collect_input_files(app, conf_dir, template_dirs)):
         try:
             stat = os.stat(path)
         except OSError:
@@ -890,7 +917,9 @@ def _save_inputs(inputs_file: Path, app, conf_dir: Path, source_dir: Path) -> No
         return
 
     _save_json(inputs_file, {
-        "schema": 1,
+        "schema": 2,
+        "templatesComplete": templates_complete,
+        "templateDirs": [{"p": root, "files": files} for root, files in template_dirs.items()],
         "sourceDir": str(source_dir.resolve()),
         "sourceSuffixes": sorted(suffixes),
         "sourceCount": source_count,

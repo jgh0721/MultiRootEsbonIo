@@ -157,6 +157,8 @@ add_executable(${PROJECT_NAME}
         src/core/solSphinxPreviewController.hpp
         src/core/solPreviewProgress.cpp
         src/core/solPreviewProgress.hpp
+        src/core/solPreviewInputs.cpp
+        src/core/solPreviewInputs.hpp
         src/core/solPreviewRequestState.hpp
         src/core/solPreviewBridge.cpp
         src/core/solPreviewBridge.hpp
@@ -398,6 +400,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_FileTreeFilter.cpp
             tests/tst_PreviewProgress.cpp
             tests/tst_PreviewRequestState.cpp
+            tests/tst_PreviewInputs.cpp
             tests/tst_PythonEnvironment.cpp
             tests/tst_DiagnosticsStore.cpp
             tests/tst_SphinxBuilders.cpp
@@ -424,6 +427,7 @@ if(MRST_BUILD_TESTS)
             src/core/solRstSubstitutionIndex.cpp
             src/core/solSphinxBuilders.cpp
             src/core/solPreviewProgress.cpp
+            src/core/solPreviewInputs.cpp
             src/core/solPythonEnvHealth.cpp
             src/core/solPythonEnvHealth.hpp
             src/uis/FileTreeFilterProxy.cpp

@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include "solPreviewInputs.hpp"
+
 #include "solSphinxDiagnostics.hpp"
 #include "solSphinxScanner.hpp"
 
@@ -111,7 +113,6 @@ struct PreviewBuildResult
 ///
 /// **GUI 스레드에서 부르지 말 것.** 문서 수십 개에 breathe 프로젝트라면 doxygen
 /// XML 수백 개까지 stat 한다.
-[[nodiscard]] bool previewInputsChanged( const QString& inputsFile );
 
 /// Sphinx HTML 프리뷰 빌드를 관리한다.
 ///
