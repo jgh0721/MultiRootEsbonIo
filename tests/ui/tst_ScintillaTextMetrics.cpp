@@ -53,7 +53,137 @@ private slots:
     void                                layoutCacheModeCost();
     void                                textMaskPreservesEditing();
     void                                textMaskCacheAndClipping();
+    void                                textMaskCompositionAndScroll_data();
+    void                                textMaskCompositionAndScroll();
+    void                                textMaskCacheEviction();
 };
+
+void ScintillaTextMetricsTest::textMaskCompositionAndScroll_data()
+{
+    QTest::addColumn<bool>("dark");
+    QTest::addColumn<bool>("buffered");
+    for (bool dark : {false, true})
+        for (bool buffered : {false, true})
+            QTest::newRow(qPrintable(QString("%1-%2").arg(dark ? "dark" : "light")
+                .arg(buffered ? "buffered" : "direct"))) << dark << buffered;
+}
+
+void ScintillaTextMetricsTest::textMaskCompositionAndScroll()
+{
+    using namespace mrst::scintilla;
+    QFETCH(bool, dark);
+    QFETCH(bool, buffered);
+    const auto restore = qScopeGuard([] { setTextMask(false, 1.2, 1.1); });
+    ScintillaEditBase editor;
+    editor.setAttribute(Qt::WA_DontShowOnScreen);
+    editor.resize(650, 300);
+    editor.send(SCI_SETCODEPAGE, SC_CP_UTF8);
+    editor.send(SCI_SETBUFFEREDDRAW, buffered);
+    editor.send(SCI_SETCARETSTYLE, CARETSTYLE_INVISIBLE);
+    editor.send(SCI_SETCARETPERIOD, 0);
+    editor.send(SCI_SETWRAPMODE, SC_WRAP_NONE);
+    editor.sends(SCI_STYLESETFONT, STYLE_DEFAULT, "Consolas");
+    editor.send(SCI_STYLESETSIZE, STYLE_DEFAULT, 13);
+    editor.send(SCI_STYLESETFORE, STYLE_DEFAULT, dark ? 0xdddddd : 0x202020);
+    editor.send(SCI_STYLESETBACK, STYLE_DEFAULT, dark ? 0x202020 : 0xffffff);
+    editor.send(SCI_STYLECLEARALL);
+    editor.send(SCI_STYLESETITALIC, 1, 1);
+    editor.send(SCI_STYLESETBOLD, 2, 1);
+    editor.send(SCI_STYLESETFORE, 1, 0x2090c0);
+    editor.send(SCI_STYLESETFORE, 2, 0x90c040);
+    editor.send(SCI_STYLESETBACK, 2, dark ? 0x303040 : 0xe0e0f0);
+    const QByteArray line = QString::fromUtf8(".. note:: **Bold** *italic* ``code`` 한글 é 😀 0123456789\n").toUtf8();
+    const QByteArray document = line.repeated(160);
+    editor.sends(SCI_SETTEXT, 0, document.constData());
+    editor.send(SCI_STARTSTYLING, 0);
+    for (int i = 0; i < 160; ++i)
+        editor.send(SCI_SETSTYLING, line.size(), i % 3);
+    editor.send(SCI_SETSEL, 10, 26);
+    editor.show();
+    QApplication::processEvents();
+    setTextMask(true, 1.2, 1.1);
+    const QImage first = editor.viewport()->grab().toImage();
+    for (int i = 0; i < 80; ++i) {
+        editor.send(SCI_SETFIRSTVISIBLELINE, (i * 7) % 130);
+        editor.viewport()->repaint(QRect(0, 0, 200, 80));
+        QVERIFY(!editor.viewport()->grab().isNull());
+    }
+    editor.send(SCI_SETFIRSTVISIBLELINE, 0);
+    QCOMPARE(editor.viewport()->grab().toImage(), first);
+    QCOMPARE(editor.send(SCI_GETSELECTIONSTART), sptr_t(10));
+    QCOMPARE(editor.send(SCI_GETSELECTIONEND), sptr_t(26));
+    editor.send(SCI_SETSEL, 0, 0);
+    const auto content = [&] {
+        QByteArray bytes(editor.send(SCI_GETLENGTH) + 1, '\0');
+        editor.send(SCI_GETTEXT, bytes.size(), reinterpret_cast<sptr_t>(bytes.data()));
+        bytes.chop(1);
+        return bytes;
+    };
+    const auto caretRect = [&] {
+        QInputMethodQueryEvent query(Qt::ImCursorRectangle);
+        QApplication::sendEvent(&editor, &query);
+        return query.value(Qt::ImCursorRectangle).toRectF();
+    };
+    for (const auto& preedit : {QString::fromUtf8("ㅎ"), QString::fromUtf8("하"), QString::fromUtf8("한")}) {
+        QInputMethodEvent composition(preedit, {{QInputMethodEvent::Cursor, int(preedit.size()), 1, {}}});
+        QApplication::sendEvent(&editor, &composition);
+        QCOMPARE(content(), preedit.toUtf8() + document);
+        setTextMask(false, 1.2, 1.1);
+        const auto plain = editor.viewport()->grab().toImage();
+        const auto rectangle = caretRect();
+        const auto position = editor.send(SCI_GETCURRENTPOS);
+        setTextMask(true, 1.2, 1.1);
+        QVERIFY(editor.viewport()->grab().toImage() != plain);
+        QCOMPARE(caretRect(), rectangle);
+        QCOMPARE(editor.send(SCI_GETCURRENTPOS), position);
+        setTextMask(false, 1.2, 1.1);
+        QCOMPARE(editor.viewport()->grab().toImage(), plain);
+    }
+    setTextMask(true, 1.2, 1.1);
+    QInputMethodEvent cancel;
+    QApplication::sendEvent(&editor, &cancel);
+    QCOMPARE(content(), document);
+    QInputMethodEvent composition(QString::fromUtf8("한"), {});
+    QApplication::sendEvent(&editor, &composition);
+    QInputMethodEvent commit;
+    commit.setCommitString(QString::fromUtf8("한"));
+    QApplication::sendEvent(&editor, &commit);
+    QCOMPARE(content(), QString::fromUtf8("한").toUtf8() + document);
+    editor.send(SCI_UNDO);
+    QCOMPARE(content(), document);
+}
+
+void ScintillaTextMetricsTest::textMaskCacheEviction()
+{
+    using namespace mrst::scintilla;
+    const auto restore = qScopeGuard([] { setTextMask(false, 1.2, 1.1); });
+    setTextMask(false, 1.2, 1.1);
+    setTextMask(true, 1.2, 1.1);
+    const auto paint = [](int id) {
+        QImage image(1100, 100, QImage::Format_ARGB32_Premultiplied);
+        image.fill(QColor(24, 24, 24));
+        QPainter painter(&image);
+        QFont font("Consolas", 20);
+        font.setBold(id % 2);
+        painter.setFont(font);
+        painter.setPen(QColor::fromHsv(id % 360, 120, 230));
+        drawTextWithMask(painter, QPointF(5, 55), QString("%1 ABCDEFGHIJKLMNOPQRSTUVWXYZ 한글 0123456789").arg(id));
+        return image;
+    };
+    const auto original = paint(0);
+    const auto originalKey = textMaskState().cache.keys().first();
+    // Exceed the cache budget many times with distinct colours, fonts and text.
+    for (int i = 1; i <= 240; ++i) {
+        QVERIFY(!paint(i).isNull());
+        QVERIFY(textMaskState().cache.totalCost() <= 4096);
+    }
+    QVERIFY(!textMaskState().cache.contains(originalKey));
+    QCOMPARE(paint(0), original);
+    setTextMask(true, 1.8, 1.4);
+    QVERIFY(paint(0) != original);
+    setTextMask(true, 1.2, 1.1);
+    QCOMPARE(paint(0), original);
+}
 
 void ScintillaTextMetricsTest::textMaskPreservesEditing()
 {
