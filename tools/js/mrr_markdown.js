@@ -64,6 +64,9 @@
     var mermaidState = "idle";
     var mermaidPromise = null;
     var diagramTimer = 0;
+    var diagramGeneration = 0;
+    var diagramQueue = Promise.resolve();
+    var diagramTheme = null;
     /// 조판 대상을 모을 때 중복을 거르는 회차 번호. Set 대신 쓴다 — 요소 수만큼
     /// 해시를 만들지 않고 property 비교 한 번으로 끝난다.
     var mathTargetPass = 0;
@@ -168,8 +171,18 @@
             var element = document.createElement("link");
             element.rel = "stylesheet";
             element.href = url;
-            element.onload = function () { resolve(); };
-            element.onerror = function () { resolve(); };
+            var settled = false;
+            var timer = window.setTimeout(finish, HEAVY_TIMEOUT_MS);
+            function finish() {
+                if (settled) { return; }
+                settled = true;
+                window.clearTimeout(timer);
+                element.onload = null;
+                element.onerror = null;
+                resolve();
+            }
+            element.onload = finish;
+            element.onerror = finish;
             document.head.appendChild(element);
         });
     }
@@ -464,7 +477,11 @@
     // ── 다이어그램 ────────────────────────────────────────
 
     function ensureMermaid() {
-        if (mermaidState === "ready" || mermaidState === "failed") {
+        if (mermaidState === "ready") {
+            configureMermaid();
+            return Promise.resolve();
+        }
+        if (mermaidState === "failed") {
             return Promise.resolve();
         }
         if (mermaidPromise) {
@@ -481,10 +498,7 @@
             function () { return typeof window.mermaid !== "undefined"; },
             HEAVY_TIMEOUT_MS
         ).then(function () {
-            window.mermaid.initialize({
-                startOnLoad: false,
-                theme: renderOptions.dark ? "dark" : "default"
-            });
+            configureMermaid();
             mermaidState = "ready";
         }).catch(function (error) {
             mermaidState = "failed";
@@ -497,26 +511,60 @@
     ///
     /// 도형 하나가 수십~수백 ms 라 렌더마다(8Hz) 다시 그리면 프리뷰가 멎는다.
     /// 그리고 나서 문서 높이가 달라지므로 좌표 캐시를 버려야 한다.
+    function configureMermaid() {
+        window.mermaid.initialize({
+            startOnLoad: false,
+            theme: renderOptions.dark ? "dark" : "default"
+        });
+    }
+
+    function prepareDiagramTheme(root) {
+        var theme = renderOptions.dark ? "dark" : "default";
+        if (diagramTheme !== null && diagramTheme !== theme) {
+            var blocks = root.querySelectorAll("pre.mermaid");
+            for (var i = 0; i < blocks.length; i += 1) {
+                blocks[i].removeAttribute("data-mrr-keep");
+                blocks[i].removeAttribute("data-processed");
+            }
+        }
+        diagramTheme = theme;
+    }
+
     function scheduleDiagrams() {
+        diagramGeneration += 1;
+        var generation = diagramGeneration;
         if (diagramTimer) {
             window.clearTimeout(diagramTimer);
         }
+        // Capture source before an older asynchronous Mermaid job can replace it.
+        var blocks = pendingDiagrams();
+        var sources = snapshotHtml(blocks);
         diagramTimer = window.setTimeout(function () {
             diagramTimer = 0;
-            var blocks = pendingDiagrams();
-            if (!blocks.length) {
-                return;
-            }
-            var sources = snapshotHtml(blocks);
-            ensureMermaid().then(function () {
-                if (mermaidState !== "ready") {
-                    return null;
-                }
-                return window.mermaid.run({ nodes: blocks });
-            }).then(function () {
-                stampRendered(blocks, sources);
-                invalidatePreviewCache();
-            }, invalidatePreviewCache);
+            if (!blocks.length) { return; }
+            diagramQueue = diagramQueue.catch(function () {}).then(function () {
+                if (generation !== diagramGeneration) { return; }
+                return ensureMermaid().then(function () {
+                    if (mermaidState !== "ready" || generation !== diagramGeneration) {
+                        return;
+                    }
+                    var connected = [];
+                    var original = [];
+                    for (var i = 0; i < blocks.length; i += 1) {
+                        if (!blocks[i].isConnected) { continue; }
+                        blocks[i].innerHTML = sources[i];
+                        blocks[i].removeAttribute("data-processed");
+                        connected.push(blocks[i]);
+                        original.push(sources[i]);
+                    }
+                    return window.mermaid.run({ nodes: connected }).then(function () {
+                        if (generation === diagramGeneration) {
+                            stampRendered(connected, original);
+                        }
+                        invalidatePreviewCache();
+                    });
+                });
+            }).catch(invalidatePreviewCache);
         }, DIAGRAM_IDLE_MS);
     }
 
@@ -628,6 +676,7 @@
         }
 
         var root = rootElement();
+        prepareDiagramTheme(root);
         var html = md.render(source, { mrrLineCount: source.split("\n").length });
         var session = applyHtml(root, html);
 
