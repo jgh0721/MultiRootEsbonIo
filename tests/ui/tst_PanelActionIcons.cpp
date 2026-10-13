@@ -2,6 +2,7 @@
 
 #include "uis/PanelActionIcons.hpp"
 
+#include <oclero/qlementine/style/Theme.hpp>
 #include <QImage>
 #include <QPainter>
 #include <QPalette>
@@ -14,8 +15,8 @@ namespace {
 QPalette paletteWith( const QColor& buttonText, const QColor& disabledText )
 {
     QPalette palette;
-    palette.setColor( QPalette::Active, QPalette::ButtonText, buttonText );
-    palette.setColor( QPalette::Disabled, QPalette::ButtonText, disabledText );
+    palette.setColor( QPalette::Active, QPalette::WindowText, buttonText );
+    palette.setColor( QPalette::Disabled, QPalette::WindowText, disabledText );
     return palette;
 }
 
@@ -120,6 +121,7 @@ private slots:
     void followsDarkPalette();
     void disabledDiffersFromNormal_data();
     void disabledDiffersFromNormal();
+    void actualThemeContrast();
     void writeContactSheet();
 };
 
@@ -162,7 +164,7 @@ void TestPanelActionIcons::followsLightPalette_data()
 void TestPanelActionIcons::followsLightPalette()
 {
     QFETCH( int, index );
-    const QColor wanted = lightPalette().color( QPalette::Active, QPalette::ButtonText );
+    const QColor wanted = lightPalette().color( QPalette::Active, QPalette::WindowText );
     const QColor drawn = strokeColor( allIcons().at( index ).make( lightPalette() ).pixmap( 32, 32 ) );
 
     QVERIFY( drawn.isValid() );
@@ -178,7 +180,7 @@ void TestPanelActionIcons::followsDarkPalette_data()
 void TestPanelActionIcons::followsDarkPalette()
 {
     QFETCH( int, index );
-    const QColor wanted = darkPalette().color( QPalette::Active, QPalette::ButtonText );
+    const QColor wanted = darkPalette().color( QPalette::Active, QPalette::WindowText );
     const QColor drawn = strokeColor( allIcons().at( index ).make( darkPalette() ).pixmap( 32, 32 ) );
 
     QVERIFY( drawn.isValid() );
@@ -202,7 +204,23 @@ void TestPanelActionIcons::disabledDiffersFromNormal()
         strokeColor( icon.pixmap( QSize( 32, 32 ), QIcon::Disabled, QIcon::Off ) );
     QVERIFY( disabled.isValid() );
     QVERIFY( colorsClose( disabled,
-                         darkPalette().color( QPalette::Disabled, QPalette::ButtonText ) ) );
+                         darkPalette().color( QPalette::Disabled, QPalette::WindowText ) ) );
+}
+
+void TestPanelActionIcons::actualThemeContrast()
+{
+    for (const auto* name : {"light", "dark"}) {
+        const auto theme = oclero::qlementine::Theme::fromJsonPath(
+            QFINDTESTDATA("../../resources/themes") + QString("/%1.json").arg(name));
+        QVERIFY(theme.has_value());
+        const auto foreground = theme->palette.color(QPalette::Active, QPalette::WindowText);
+        const auto background = theme->backgroundColorMain1;
+        for (const auto& entry : allIcons()) {
+            const auto drawn = strokeColor(entry.make(theme->palette).pixmap(32, 32));
+            QVERIFY2(colorsClose(drawn, foreground), entry.name);
+            QVERIFY2(qAbs(qGray(drawn.rgb()) - qGray(background.rgb())) > 100, entry.name);
+        }
+    }
 }
 
 void TestPanelActionIcons::writeContactSheet()

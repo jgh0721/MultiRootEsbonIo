@@ -48,11 +48,12 @@ QPixmap render( const Draw& draw, const QColor& color, const int size )
 ///
 /// Qt 가 Normal 하나로 Disabled 를 유추해 주기는 하지만, 그 결과는 회색으로
 /// 눌러 칠한 것이라 다크 테마에서 배경과 붙어 사라진다. 테마가 이미 알고 있는
-/// 색(Disabled/ButtonText)을 쓰는 편이 두 테마 모두에서 맞다.
+/// 색(Disabled/WindowText)을 쓰는 편이 두 테마 모두에서 맞다.
 QIcon build( const Draw& draw, const QPalette& palette )
 {
-    const QColor normal = palette.color( QPalette::Active, QPalette::ButtonText );
-    const QColor disabled = palette.color( QPalette::Disabled, QPalette::ButtonText );
+    // Menu and flat toolbar icons use text on a surface, not text on a filled button.
+    const QColor normal = palette.color( QPalette::Active, QPalette::WindowText );
+    const QColor disabled = palette.color( QPalette::Disabled, QPalette::WindowText );
 
     QIcon icon;
     for( const int size : kSizes )
