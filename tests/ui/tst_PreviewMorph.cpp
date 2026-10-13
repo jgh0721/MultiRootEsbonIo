@@ -1,9 +1,14 @@
 ﻿#include "TestRunner.hpp"
 
+#include <QDir>
 #include <QEventLoop>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QFile>
 #include <QSignalSpy>
 #include <QTest>
+#include <QTemporaryDir>
+#include <QUrl>
 #include <QWebEnginePage>
 
 using namespace mrst;
@@ -83,18 +88,20 @@ private slots:
     void                    diagramsRedrawOnlyWhatIsNew();
     void                    diagramsSkippedWhenNothingIsNew();
     void                    diagramClassRestoredWhenRendererThrows();
+    void                    hotSwapPreservesLinkTargets_data();
+    void                    hotSwapPreservesLinkTargets();
 
 private:
-    QVariant                run( const QString& script );
+    QVariant                run( const QString& script, QWebEnginePage* page = nullptr );
 
     QWebEnginePage*         page_ = nullptr;
 };
 
-QVariant TestPreviewMorph::run( const QString& script )
+QVariant TestPreviewMorph::run( const QString& script, QWebEnginePage* page )
 {
     QVariant   result;
     QEventLoop loop;
-    page_->runJavaScript( script, [ &result, &loop ]( const QVariant& value ) {
+    ( page != nullptr ? page : page_ )->runJavaScript( script, [ &result, &loop ]( const QVariant& value ) {
         result = value;
         loop.quit();
     } );
@@ -461,6 +468,113 @@ void TestPreviewMorph::diagramClassRestoredWhenRendererThrows()
                                  .toList();
     QVERIFY2( out.value( 0 ).toBool(), "숨겼던 도형이 클래스를 잃었다" );
     QVERIFY2( out.value( 1 ).toBool(), "숨기지 않은 도형이 클래스를 잃었다" );
+}
+
+void TestPreviewMorph::hotSwapPreservesLinkTargets_data()
+{
+    QTest::addColumn< bool >( "allowMorph" );
+    QTest::newRow( "morph" ) << true;
+    QTest::newRow( "replace-body" ) << false;
+}
+
+void TestPreviewMorph::hotSwapPreservesLinkTargets()
+{
+    QFETCH( bool, allowMorph );
+
+    QTemporaryDir output;
+    QVERIFY( output.isValid() );
+    const QDir directory( output.path() );
+    QVERIFY( directory.mkpath( QStringLiteral( "하위 문서" ) ) );
+    const QString htmlPath = directory.filePath( QStringLiteral( "하위 문서/chapter.html" ) );
+    const QString html = QStringLiteral(
+        "<html><head><title>Preview</title></head><body>"
+        "<a id=\"toc\" href=\"#target\">Contents</a>"
+        "<a id=\"footnote\" href=\"#note\">Footnote</a>"
+        "<a id=\"permalink\" href=\"#target\">Permalink</a>"
+        "<a id=\"backref\" href=\"#note\">Back reference</a>"
+        "<a id=\"other\" href=\"../other.html#section\">Other document</a>"
+        "<img id=\"image\" src=\"../picture.svg\">"
+        "<h2 id=\"target\">Original</h2><p id=\"note\">Note</p>"
+        "</body></html>" );
+    QFile file( htmlPath );
+    QVERIFY( file.open( QIODevice::WriteOnly ) );
+    const QByteArray bytes = html.toUtf8();
+    QCOMPARE( file.write( bytes ), qint64( bytes.size() ) );
+    file.close();
+    QFile image( directory.filePath( QStringLiteral( "picture.svg" ) ) );
+    QVERIFY( image.open( QIODevice::WriteOnly ) );
+    QVERIFY( image.write( "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"/>" ) > 0 );
+    image.close();
+
+    QWebEnginePage page;
+    QUrl loadedUrl = QUrl::fromLocalFile( htmlPath );
+    loadedUrl.setQuery( QStringLiteral( "b=7" ) );
+    loadedUrl.setFragment( QStringLiteral( "before" ) );
+    QSignalSpy loaded( &page, &QWebEnginePage::loadFinished );
+    page.load( loadedUrl );
+    QVERIFY( !loaded.isEmpty() || loaded.wait( 15000 ) );
+    QVERIFY( loaded.constLast().constFirst().toBool() );
+
+    // C++ 신호의 수신 함수를 잡아 실제 hotSwap 을 실행한다. morph 훅만 부르면
+    // <base> 갱신을 거치지 않아 내부 링크가 폴더로 이동하는 회귀를 놓친다.
+    run( QStringLiteral( R"JS(
+        window.qt = { webChannelTransport: {} };
+        window.QWebChannel = function (transport, connected) {
+            var idle = { connect: function () {} };
+            connected({ objects: { bridge: {
+                scrollToLineRequested: idle, rebindRequested: idle,
+                scrollFeedbackSuppressed: idle, markdownSourceChanged: idle,
+                hotSwapRequested: { connect: function (fn) { window.__swap = fn; } },
+                ready: function () {}, previewScrolled: function () {},
+                hotSwapResult: function (token, ok, message) { window.__swapOk = ok; }
+            } } });
+        };
+        window.__sameDocument = true;
+    )JS" ), &page );
+    QFile source( QStringLiteral( MRST_PREVIEW_JS ) );
+    QVERIFY( source.open( QIODevice::ReadOnly ) );
+    run( QString::fromUtf8( source.readAll() ), &page );
+    QCOMPARE( run( QStringLiteral( "typeof window.__swap" ), &page ).toString(),
+              QStringLiteral( "function" ) );
+
+    QSignalSpy started( &page, &QWebEnginePage::loadStarted );
+    for( int update = 1; update <= 2; ++update )
+    {
+        // 현재 로드의 b= 쿼리를 유지한다. 다음 빌드 번호를 넣으면 #target 을
+        // 눌렀을 때 다른 URL 로 취급되어 핫스왑한 문서를 다시 읽게 된다.
+        const QUrl baseUrl = page.url().adjusted( QUrl::RemoveFragment );
+        const QString title = QStringLiteral( "Updated %1" ).arg( update );
+        const QJsonArray arguments{ QString( html ).replace( QStringLiteral( "Original" ), title ), baseUrl.toString(),
+                                    allowMorph, update };
+        run( QStringLiteral( "window.__swap.apply(null, %1);" )
+                 .arg( QString::fromUtf8( QJsonDocument( arguments ).toJson( QJsonDocument::Compact ) ) ),
+             &page );
+        QVERIFY( run( QStringLiteral( "window.__swapOk" ), &page ).toBool() );
+        QCOMPARE( run( QStringLiteral( "document.getElementById('target').textContent" ), &page ).toString(),
+                  title );
+        QCOMPARE( QUrl( run( QStringLiteral( "document.baseURI" ), &page ).toString() ), baseUrl );
+        QCOMPARE( QUrl( run( QStringLiteral( "document.getElementById('other').href" ), &page ).toString() ),
+                  baseUrl.resolved( QUrl( QStringLiteral( "../other.html#section" ) ) ) );
+        QCOMPARE( QUrl( run( QStringLiteral( "document.getElementById('image').src" ), &page ).toString() ),
+                  baseUrl.resolved( QUrl( QStringLiteral( "../picture.svg" ) ) ) );
+
+        for( const QString& link : { QStringLiteral( "toc" ), QStringLiteral( "footnote" ),
+                                    QStringLiteral( "permalink" ), QStringLiteral( "backref" ) } )
+        {
+            const QString fragment = ( link == QLatin1String( "toc" ) || link == QLatin1String( "permalink" ) )
+                                         ? QStringLiteral( "target" ) : QStringLiteral( "note" );
+            QUrl destination = baseUrl;
+            destination.setFragment( fragment );
+            QCOMPARE( QUrl( run( QStringLiteral( "document.getElementById('%1').href" ).arg( link ),
+                                &page ).toString() ), destination );
+            run( QStringLiteral( "document.getElementById('%1').click();" ).arg( link ), &page );
+            QTRY_COMPARE_WITH_TIMEOUT( page.url(), destination, 5000 );
+            QVERIFY( run( QStringLiteral( "window.__sameDocument === true" ), &page ).toBool() );
+            QCOMPARE( run( QStringLiteral( "document.getElementById('target').textContent" ), &page ).toString(),
+                      title );
+        }
+    }
+    QVERIFY2( started.isEmpty(), "내부 링크가 핫스왑한 문서를 다시 로드했다" );
 }
 
 MRST_REGISTER_TEST( TestPreviewMorph );

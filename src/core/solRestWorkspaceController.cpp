@@ -1097,9 +1097,11 @@ void WorkspaceController::showPreviewHtml( const QString& htmlPath, const QStrin
     }
 
     emit logMessage( tr( "프리뷰 부분 교체(핫스왑)" ) );
-    // 상대 경로(_static, 이미지)가 출력 디렉터리를 가리키게 해야 한다.
-    const QString baseUrl = QUrl::fromLocalFile( QFileInfo( htmlPath ).absolutePath()
-                                                 + QLatin1Char( '/' ) ).toString();
+    // <base> 는 폴더가 아니라 현재 HTML URL 이어야 한다. 폴더를 넣으면
+    // #section 링크가 file:///.../html/#section 으로 풀려 디렉터리 목록이 열린다.
+    // 현재 b= 쿼리도 보존해야 내부 링크가 전체 리로드 없이 이동한다. 상대 경로
+    // (_static, 이미지, 다른 문서)는 HTML 파일의 디렉터리를 기준으로 풀린다.
+    const QString baseUrl = previewUrl_.adjusted( QUrl::RemoveFragment ).toString();
     pendingFullLoadPath_ = htmlPath;
     pendingFullLoadUrl_ = url;
     // 본문을 갈아 끼울 것인가, 제자리에서 고칠 것인가. 기본은 고치는 쪽이고

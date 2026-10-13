@@ -749,8 +749,8 @@
         }
     }
 
-    /// 출력 디렉터리가 빌드마다 바뀌므로 상대 경로(_static/, 이미지)가 새
-    /// 디렉터리를 가리키도록 <base> 를 갱신한다.
+    /// 현재 HTML 파일 URL(쿼리 포함)을 기준으로 상대 경로와 내부 링크를 푼다.
+    /// 디렉터리 URL 을 넣으면 #fragment 도 그 디렉터리로 이동하므로 안 된다.
     function updatePreviewBase(baseUrl) {
         if (!baseUrl) {
             return;
