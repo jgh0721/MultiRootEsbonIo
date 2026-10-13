@@ -3,7 +3,7 @@
     if (window.__mrrPreviewFonts) return;
 
     const protectedSelector = "svg,math,mjx-container,.MathJax,.MathJax_Display,.katex,.math," +
-        ".mermaid,.graphviz,.fa,.fas,.far,.fab,.material-icons,.material-symbols-outlined," +
+        ".mermaid,.graphviz,.headerlink,.fa,.fas,.far,.fab,.material-icons,.material-symbols-outlined," +
         "[class*='icon'],[class*='Icon']";
     const headings = "h1,h2,h3,h4,h5,h6";
     const code = "pre,code,kbd,samp";

@@ -5,6 +5,8 @@
 #include "editor/DocumentLineEnding.hpp"
 
 #include <QEventLoop>
+#include <QDir>
+#include <QFileInfo>
 #include <QPointer>
 #include <QScopeGuard>
 #include <QSignalSpy>
@@ -66,7 +68,59 @@ private slots:
     void newDocumentLineEndings();
     void contentWidthOverride();
     void strokePreservesSpecialContentAndRestores();
+    void realDocuments_data();
+    void realDocuments();
 };
+
+void TestPreviewFonts::realDocuments_data()
+{
+    QTest::addColumn<QString>("theme");
+    for (const auto* name : {"alabaster", "sphinx_rtd_theme", "markdown"})
+        QTest::newRow(name) << QString::fromLatin1(name);
+}
+
+void TestPreviewFonts::realDocuments()
+{
+    const auto directory = qEnvironmentVariable("MRST_RENDERING_DOCUMENTS");
+    if (directory.isEmpty())
+        QSKIP("Run tools/font-rendering-probe/prepare_documents.py and set MRST_RENDERING_DOCUMENTS");
+    QFETCH(QString, theme);
+    const auto path = QDir(directory).absoluteFilePath(theme + "/index.html");
+    QVERIFY2(QFileInfo::exists(path), qPrintable(path));
+    QWebEnginePage page;
+    QSignalSpy loaded(&page, &QWebEnginePage::loadFinished);
+    page.load(QUrl::fromLocalFile(path));
+    QVERIFY(loaded.wait(15000));
+    QVERIFY(loaded.last().first().toBool());
+    QTRY_VERIFY_WITH_TIMEOUT(run(page, "Boolean(document.documentElement.dataset.renderReady || document.documentElement.dataset.renderError)").toBool(), 30000);
+    const auto error = run(page, "document.documentElement.dataset.renderError || ''").toString();
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+    QVERIFY(run(page, "Boolean(document.querySelector('.katex .katex-html') && document.querySelector('mjx-container mjx-math') && document.querySelector('.mermaid svg'))").toBool());
+    const QString special = R"JS(JSON.stringify(Array.from(document.querySelectorAll('.katex,.katex *,mjx-container,mjx-container *,.mermaid,.mermaid *,#font-icon,#vector')).map(e=>{
+        const s=getComputedStyle(e);return [s.fontFamily,s.fontSize,s.webkitTextStrokeWidth];
+    })))JS";
+    const QString ordinary = "JSON.stringify(['sample','sample strong','sample em','sample code'].map(s=>{const c=getComputedStyle(document.querySelector('#'+s));return [c.fontFamily,c.fontSize,c.webkitTextStrokeWidth];}))";
+    const QString permalink = "JSON.stringify(Array.from(document.querySelectorAll('.headerlink')).flatMap(e=>['','::before','::after'].map(p=>{const s=getComputedStyle(e,p);return [s.fontFamily,s.webkitTextStrokeWidth,s.content];})))";
+    const auto linksBefore = run(page, permalink).toString();
+    const auto before = run(page, special).toString();
+    const auto textBefore = run(page, ordinary).toString();
+    auto options = customOptions();
+    options["enabled"] = false;
+    options["strokeEnabled"] = true;
+    options["strokeWidth"] = 0.3;
+    for (bool fonts : {false, true}) {
+        options["enabled"] = fonts;
+        run(page, mrst::previewFontScript(options));
+        QCOMPARE(run(page, "getComputedStyle(document.getElementById('sample')).webkitTextStrokeWidth").toString(), QString("0.3px"));
+        QCOMPARE(run(page, special).toString(), before);
+        QCOMPARE(run(page, permalink).toString(), linksBefore);
+    }
+    options["enabled"] = false;
+    options["strokeEnabled"] = false;
+    run(page, mrst::previewFontScript(options));
+    QCOMPARE(run(page, special).toString(), before);
+    QCOMPARE(run(page, ordinary).toString(), textBefore);
+}
 
 void TestPreviewFonts::overridesAndRestores()
 {
@@ -236,12 +290,14 @@ void TestPreviewFonts::strokePreservesSpecialContentAndRestores()
     QVERIFY(loaded.wait(10000));
     run(page, R"JS(document.getElementById('inline').style.setProperty('-webkit-text-stroke-width','0.07px','important');
         document.querySelector('.math').style.webkitTextStrokeWidth='0.03px';
-        dynamic.innerHTML='<svg id="diagram"><text>SVG</text></svg><span class="katex" id="formula">KaTeX</span>';)JS");
+        dynamic.innerHTML='<svg id="diagram"><text>SVG</text></svg><span class="katex" id="formula">KaTeX</span><a class="headerlink" id="permalink">¶</a><style>.headerlink::before{content:"\\f0c1";font-family:FontAwesome}</style>';)JS");
     const QString inspect = QStringLiteral(R"JS(JSON.stringify(['p','inline','heading','token','math','icon','diagram','formula'].map(id=>{
         const e=document.getElementById(id), s=getComputedStyle(e), r=e.getBoundingClientRect();
         return [s.webkitTextStrokeWidth,s.fontFamily,r.x,r.y,r.width,r.height];})))JS");
     const QString geometry = QStringLiteral(R"JS(JSON.stringify(['p','inline','heading','token','math','icon','diagram','formula'].map(id=>{
         const r=document.getElementById(id).getBoundingClientRect();return [r.x,r.y,r.width,r.height];})))JS");
+    const QString linkStyle = "JSON.stringify([getComputedStyle(permalink),getComputedStyle(permalink,'::before')].map(s=>[s.fontFamily,s.webkitTextStrokeWidth]))";
+    const auto originalLink = run(page, linkStyle).toString();
     const QString original = run(page, inspect).toString();
     const QString originalGeometry = run(page, geometry).toString();
     auto options = customOptions();
@@ -256,6 +312,7 @@ void TestPreviewFonts::strokePreservesSpecialContentAndRestores()
     for (const auto* id : {"icon", "diagram", "formula"})
         QCOMPARE(run(page, QString("getComputedStyle(document.getElementById('%1')).webkitTextStrokeWidth").arg(id)).toString(), QString("0px"));
     QCOMPARE(run(page, geometry).toString(), originalGeometry);
+    QCOMPARE(run(page, linkStyle).toString(), originalLink);
     run(page, "dynamic.insertAdjacentHTML('beforeend','<p id=added>New <span class=katex id=addedMath>math</span></p>')");
     QTRY_COMPARE(run(page, "getComputedStyle(added).webkitTextStrokeWidth").toString(), QString("0.15px"));
     QTRY_COMPARE(run(page, "getComputedStyle(addedMath).webkitTextStrokeWidth").toString(), QString("0px"));
@@ -265,6 +322,7 @@ void TestPreviewFonts::strokePreservesSpecialContentAndRestores()
     options["strokeEnabled"] = false;
     run(page, mrst::previewFontScript(options));
     QCOMPARE(run(page, inspect).toString(), original);
+    QCOMPARE(run(page, linkStyle).toString(), originalLink);
     QCOMPARE(run(page, "document.querySelectorAll('#mrr-preview-stroke').length").toInt(), 0);
 
     // Use the application's injection path for both formats and navigation.

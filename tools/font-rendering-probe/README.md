@@ -45,3 +45,30 @@ run_probe.py의 --cases 옵션으로 일부 조건만 실행할 수 있다. 이 
 프리뷰에서 Range rect는 배치 검사에 사용한다. 실제 마우스 드래그 선택·IME 상호작용은 이 도구의 검사 범위가 아니다.
 
 [실측 결과와 적용 판단](../../docs/FONT-RENDERING-EXPERIMENT.md)을 참조한다.
+
+## 실제 문서 통합 시험
+
+앱의 UI 시험에 실제 Sphinx 테마와 수식·다이어그램을 추가하려면 다음과 같이 실행한다.
+Python 환경에 Sphinx와 sphinx-rtd-theme가 필요하다. 최초 준비 시 인터넷 연결이 필요하며,
+KaTeX 0.18.4, MathJax 3.2.2, Mermaid 11.12.1과 폰트를 지정한 출력 폴더에 내려받는다.
+다운로드 파일의 URL과 SHA-256은 출력 폴더의 assets.json에 기록한다.
+시험 실행은 생성된 로컬 파일을 사용한다.
+
+```powershell
+& './cmake-build-relwithdebinfo-msvc2022/Environment/.venv/Scripts/python.exe' tools/font-rendering-probe/prepare_documents.py --output _build/rendering-followup/documents
+$env:MRST_RENDERING_DOCUMENTS=(Resolve-Path _build/rendering-followup/documents).Path
+$env:MRST_TEST_CLASS='TestPreviewFonts'
+$env:QTWEBENGINE_CHROMIUM_FLAGS='--no-sandbox'
+& './_build/RelWithDebInfo/RelWithDebInfo/mrst_ui_tests.exe' -o '_build/rendering-followup/preview.txt,txt'
+```
+
+Qt DLL 및 플랫폼 플러그인 경로는 기존 UI 시험 환경과 동일하게 설정한다.
+MRST_RENDERING_DOCUMENTS가 없으면 외부 자료가 필요한 세 행만 건너뛴다.
+Alabaster, Read the Docs 테마, Markdown에서 실제 렌더러의 생성 결과를 확인한 뒤
+본문 획 보정, 글꼴 변경 병행, 특수 콘텐츠 및 제목 링크 아이콘 보존, 설정 해제 시 복원을 검사한다.
+Chromium 감마·대비의 시각적 비교는 위의 별도 렌더링 프로브를 사용한다.
+
+편집기의 textMaskCompositionAndScroll 시험은 밝은/어두운 배경과 버퍼 사용 여부를
+조합해 한글 조합 이벤트, 취소·확정·실행 취소, 선택 범위, 캐럿 위치, 반복 스크롤을 확인한다.
+OS의 실제 IME 후보 창 동작은 자동 조합 이벤트 시험의 검증 범위에 포함되지 않는다.
+textMaskCacheEviction 시험은 캐시 용량과 교체 후 픽셀 재현성을 검사한다.
