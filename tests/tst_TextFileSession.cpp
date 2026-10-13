@@ -34,6 +34,10 @@ private slots:
     void utf8SampleBoundary();
     void utf32BomRoundTrip_data();
     void utf32BomRoundTrip();
+    void readsSavedTextWithSelectedEncoding_data();
+    void readsSavedTextWithSelectedEncoding();
+    void savedTextUsesCurrentDiskContents();
+    void savedTextReportsReadAndDecodeErrors();
 };
 
 void TestTextFileSession::originalStaysIntactUntilCommit()
@@ -241,6 +245,79 @@ void TestTextFileSession::utf32BomRoundTrip()
     QVERIFY(opened.hasBom());
     QCOMPARE(opened.decodeWithEncoding(encoding, &ok), text);
     QVERIFY(ok);
+}
+
+void TestTextFileSession::readsSavedTextWithSelectedEncoding_data()
+{
+    QTest::addColumn<QString>("encoding");
+    QTest::addColumn<QByteArray>("bytes");
+    QTest::newRow("utf8") << QString("UTF-8") << QByteArray::fromHex("2320eab0800d0a");
+    QTest::newRow("utf8-bom") << QString("UTF-8") << QByteArray::fromHex("efbbbf2320eab0800d0a");
+    QTest::newRow("cp949") << QString("CP949") << QByteArray::fromHex("2320b0a10d0a");
+    QTest::newRow("euc-kr") << QString("EUC-KR") << QByteArray::fromHex("2320b0a10d0a");
+    QTest::newRow("utf16-le-bom") << QString("UTF-16LE") << QByteArray::fromHex("fffe2300200000ac0d000a00");
+    QTest::newRow("utf16-be-bom") << QString("UTF-16BE") << QByteArray::fromHex("feff00230020ac00000d000a");
+    QTest::newRow("utf16-le-no-bom") << QString("UTF-16LE") << QByteArray::fromHex("2300200000ac0d000a00");
+    QTest::newRow("auto-bom") << QString{} << QByteArray::fromHex("fffe2300200000ac0d000a00");
+}
+
+void TestTextFileSession::readsSavedTextWithSelectedEncoding()
+{
+    QFETCH(QString, encoding);
+    QFETCH(QByteArray, bytes);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath("document.md");
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QCOMPARE(file.write(bytes), bytes.size());
+    file.close();
+    bool decoded = false;
+    QCOMPARE(TextFileSession::readSavedText(path, encoding, &decoded), QString::fromUtf8("# 가\r\n"));
+    QVERIFY(decoded);
+    QCOMPARE(contents(path), bytes);
+}
+
+void TestTextFileSession::savedTextUsesCurrentDiskContents()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath("document.md");
+    TextFileSession editor;
+    QVERIFY(editor.saveText(path, "old", "UTF-8", ScintillaDocument::LF, false));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    QCOMPARE(file.write("new"), qint64(3));
+    file.close();
+    bool decoded = false;
+    QCOMPARE(TextFileSession::readSavedText(path, "UTF-8", &decoded), QString("new"));
+    QVERIFY(decoded);
+    QCOMPARE(editor.decodeWithEncoding("UTF-8"), QString("old"));
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    file.close();
+    QCOMPARE(TextFileSession::readSavedText(path, "UTF-8", &decoded), QString{});
+    QVERIFY(decoded); // an empty saved document is not a read failure
+}
+
+void TestTextFileSession::savedTextReportsReadAndDecodeErrors()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath("document.md");
+    bool decoded = true;
+    QVERIFY(TextFileSession::readSavedText(path, "UTF-8", &decoded).isEmpty());
+    QVERIFY(!decoded);
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QCOMPARE(file.write(QByteArray::fromHex("eab0")), qint64(2));
+    file.close();
+    decoded = true;
+    QVERIFY(TextFileSession::readSavedText(path, "UTF-8", &decoded).isEmpty());
+    QVERIFY(!decoded);
+    decoded = true;
+    QVERIFY(TextFileSession::readSavedText(path, "unknown-codec", &decoded).isEmpty());
+    QVERIFY(!decoded);
+    QCOMPARE(contents(path), QByteArray::fromHex("eab0"));
 }
 
 MRST_REGISTER_TEST(TestTextFileSession);

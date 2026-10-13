@@ -1173,10 +1173,10 @@ QString WorkspaceController::textForPreview( const DocumentContext& context ) co
 
     // 설정을 끈 사용자는 "저장된 상태를 보고 싶다" 는 뜻이다. 재파싱 비용이라는
     // 원래 근거(Sphinx)는 여기서 사라지지만 그 의도는 남는다.
-    QFile file( context.path );
-    if( !file.open( QIODevice::ReadOnly ) )
-        return context.view->text();
-    return QString::fromUtf8( file.readAll() );
+    bool decoded = false;
+    const QString savedText = TextFileSession::readSavedText(
+        context.path, context.view->currentEncoding(), &decoded );
+    return decoded ? savedText : context.view->text();
 }
 
 void WorkspaceController::renderMarkdownJs( DocumentContext& context, const bool immediate,

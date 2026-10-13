@@ -51,6 +51,16 @@ bool TextFileSession::open(const QString& filePath,
     return true;
 }
 
+QString TextFileSession::readSavedText(const QString& filePath, const QString& encoding, bool* ok)
+{
+    if (ok)
+        *ok = false;
+    TextFileSession saved;
+    if (!saved.open(filePath, OpenMode::Full))
+        return {};
+    return saved.decodeWithEncoding(encoding.trimmed().isEmpty() ? saved.detectedEncoding() : encoding, ok);
+}
+
 QString TextFileSession::decodeWithEncoding(const QString& encoding, bool* ok) const
 {
     return EncodingDetector::decode(m_rawData, encoding, ok, m_truncated);

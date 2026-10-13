@@ -38,6 +38,9 @@ public:
     void clear();
 
     static bool shouldPromptForLargeFile(qint64 fileSize);
+    /// Read the current saved file without changing the open editor session.
+    /// An explicit encoding takes precedence over heuristic detection.
+    static QString readSavedText(const QString& filePath, const QString& encoding, bool* ok = nullptr);
 
     QString filePath() const { return m_filePath; }
     qint64 fileSize() const { return m_fileSize; }
