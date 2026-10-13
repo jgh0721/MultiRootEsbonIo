@@ -9,6 +9,8 @@
     const code = "pre,code,kbd,samp";
     const style = document.createElement("style");
     style.id = "mrr-preview-fonts";
+    const strokeStyle = document.createElement("style");
+    strokeStyle.id = "mrr-preview-stroke";
     let options = null;
     let pending = false;
     let saved = new Map();
@@ -34,21 +36,54 @@
         }));
         saved.clear();
         style.remove();
+        strokeStyle.remove();
+    }
+
+    function observe() {
+        observer.observe(document.documentElement, {childList: true, subtree: true, attributes: true,
+            attributeFilter: ["style", "class"]});
     }
 
     function update() {
         pending = false;
         observer.disconnect();
         restore();
-        if (!document.body || !options || !options.enabled || options.mode === "document") return;
+        if (!document.body || !options) return;
+        const excluded = protectedSelector + "," + protectedSelector.split(",").map(s => s + " *").join(",");
+        const eligible = ":not(:is(" + excluded + "))";
+        const stroke = Number(options.strokeWidth);
+        const strokeEnabled = options.strokeEnabled && Number.isFinite(stroke) && stroke > 0 && stroke <= 0.5;
+        if (strokeEnabled) {
+            // Stroke width inherits: preserve protected roots before styling ancestors.
+            document.querySelectorAll(protectedSelector).forEach(element => {
+                if (element.parentElement && element.parentElement.closest(protectedSelector)) return;
+                patch(element, "-webkit-text-stroke-width", getComputedStyle(element).webkitTextStrokeWidth);
+            });
+            document.querySelectorAll("body[style],body [style]").forEach(element => {
+                if (!element.closest(protectedSelector) &&
+                    element.style.getPropertyPriority("-webkit-text-stroke-width") === "important")
+                    patch(element, "-webkit-text-stroke-width", stroke + "px");
+            });
+            strokeStyle.textContent = "@layer mrr-preview-stroke {body" + eligible + ",body *" + eligible +
+                "{-webkit-text-stroke-width:" + stroke + "px !important;}}";
+        }
+        const installStroke = () => {
+            if (strokeEnabled) {
+                const host = document.head || document.documentElement;
+                host.insertBefore(strokeStyle, host.firstChild);
+            }
+        };
+        if (!options.enabled || options.mode === "document") {
+            installStroke();
+            if (strokeEnabled) observe();
+            return;
+        }
 
         const family = JSON.stringify(options.bodyFamily || "serif");
         const codeFamily = JSON.stringify(options.codeFamily || "monospace");
         const size = options.bodySize + "px";
         const codeSize = options.codeSize + "px";
         const line = String(options.lineHeight);
-        const excluded = protectedSelector + "," + protectedSelector.split(",").map(s => s + " *").join(",");
-        const eligible = ":not(:is(" + excluded + "))";
         const ordinary = eligible + ":not(:is(" + code + ",pre *,code *,kbd *,samp *," +
             headings + ",h1 *,h2 *,h3 *,h4 *,h5 *,h6 *))";
         // Preserve inherited document fonts on headings and specialised renderers.
@@ -96,8 +131,8 @@
         // First layer wins among !important declarations, including layered themes.
         const host = document.head || document.documentElement;
         host.insertBefore(style, host.firstChild);
-        observer.observe(document.documentElement, {childList: true, subtree: true, attributes: true,
-            attributeFilter: ["style", "class"]});
+        installStroke();
+        observe();
     }
 
     const observer = new MutationObserver(() => {

@@ -1,4 +1,4 @@
-// == 이 파일은 Scintilla 상류 소스의 사본이다 ==============================
+﻿// == 이 파일은 Scintilla 상류 소스의 사본이다 ==============================
 //
 // 기준점: missdeer/scintilla rel-5-6-6 (82f7656) 의
 //         qt/ScintillaEditBase/PlatQt.cpp
@@ -49,6 +49,7 @@
 
 // ↓ 우리가 더한 것
 #include "PlatQtMetrics.hpp"
+#include "PlatQtTextRendering.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -692,7 +693,7 @@ void SurfaceImpl::DrawTextNoClip(PRectangle rc,
 	GetPainter()->setBackground(QColorFromColourRGBA(back));
 	GetPainter()->setBackgroundMode(Qt::OpaqueMode);
 	QString su = UnicodeFromText(codec, text);
-	GetPainter()->drawText(QPointF(rc.left, ybase), su);
+	mrst::scintilla::drawTextWithMask(*GetPainter(), QPointF(rc.left, ybase), su);
 }
 
 void SurfaceImpl::DrawTextClipped(PRectangle rc,
@@ -718,7 +719,7 @@ void SurfaceImpl::DrawTextTransparent(PRectangle rc,
 
 	GetPainter()->setBackgroundMode(Qt::TransparentMode);
 	QString su = UnicodeFromText(codec, text);
-	GetPainter()->drawText(QPointF(rc.left, ybase), su);
+	mrst::scintilla::drawTextWithMask(*GetPainter(), QPointF(rc.left, ybase), su);
 }
 
 void SurfaceImpl::SetClip(PRectangle rc)
@@ -1049,7 +1050,7 @@ void SurfaceImpl::DrawTextNoClipUTF8(PRectangle rc,
 	GetPainter()->setBackground(QColorFromColourRGBA(back));
 	GetPainter()->setBackgroundMode(Qt::OpaqueMode);
 	QString su = QString::fromUtf8(text.data(), static_cast<int>(text.length()));
-	GetPainter()->drawText(QPointF(rc.left, ybase), su);
+	mrst::scintilla::drawTextWithMask(*GetPainter(), QPointF(rc.left, ybase), su);
 }
 
 void SurfaceImpl::DrawTextClippedUTF8(PRectangle rc,
@@ -1075,7 +1076,7 @@ void SurfaceImpl::DrawTextTransparentUTF8(PRectangle rc,
 
 	GetPainter()->setBackgroundMode(Qt::TransparentMode);
 	QString su = QString::fromUtf8(text.data(), static_cast<int>(text.length()));
-	GetPainter()->drawText(QPointF(rc.left, ybase), su);
+	mrst::scintilla::drawTextWithMask(*GetPainter(), QPointF(rc.left, ybase), su);
 }
 
 void SurfaceImpl::MeasureWidthsUTF8(const Font *font,

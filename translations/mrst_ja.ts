@@ -2230,6 +2230,50 @@ Markdown の本文を描く変換器はプログラムに内蔵されている�
         <source>새 문서 기본 줄바꿈:</source>
         <translation>新規文書の既定の改行:</translation>
     </message>
+    <message>
+        <source>감마·농도 마스크 보정</source>
+        <translation>ガンマ・濃度マスク補正</translation>
+    </message>
+    <message>
+        <source>보정 사용</source>
+        <translation>補正を使用</translation>
+    </message>
+    <message>
+        <source>감마:</source>
+        <translation>ガンマ:</translation>
+    </message>
+    <message>
+        <source>농도 배율:</source>
+        <translation>濃度倍率:</translation>
+    </message>
+    <message>
+        <source>적용을 누르면 열린 편집기에 반영됩니다. 값을 높이면 획이 진해집니다. 기존 글꼴 엔진을 사용하며, 보정 중에는 그레이스케일 안티앨리어싱으로 표시합니다.</source>
+        <translation>適用を押すと開いているエディターに反映されます。値を上げると文字の線が濃くなります。既存のフォントエンジンを使用し、補正中はグレースケールのアンチエイリアスで表示します。</translation>
+    </message>
+    <message>
+        <source>글꼴 렌더링 보정 (RST·Markdown 공통)</source>
+        <translation>フォント描画の補正（RST・Markdown共通）</translation>
+    </message>
+    <message>
+        <source>감마·대비 보정 사용 (재시작 후 적용)</source>
+        <translation>ガンマ・コントラスト補正を使用（再起動後に適用）</translation>
+    </message>
+    <message>
+        <source>대비:</source>
+        <translation>コントラスト:</translation>
+    </message>
+    <message>
+        <source>CSS 획 두께 보정 사용</source>
+        <translation>CSSの線の太さの補正を使用</translation>
+    </message>
+    <message>
+        <source>추가 획 두께:</source>
+        <translation>追加する線の太さ:</translation>
+    </message>
+    <message>
+        <source>감마·대비는 저장 후 프로그램을 다시 시작하면 적용됩니다. CSS 획 두께는 적용을 누르면 현재 프리뷰에 반영되며, 수식·다이어그램·아이콘은 제외합니다. 문서 글꼴 유지 모드에서도 사용할 수 있습니다.</source>
+        <translation>ガンマ・コントラストは保存してアプリを再起動すると適用されます。CSSの線の太さは適用を押すと現在のプレビューに反映されます。数式・図・アイコンは対象外です。文書のフォントを維持するモードでも使用できます。</translation>
+    </message>
 </context>
 <context>
     <name>QSphinxBuildDialog</name>

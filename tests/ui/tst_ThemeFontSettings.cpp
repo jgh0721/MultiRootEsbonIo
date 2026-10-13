@@ -1,10 +1,12 @@
 ﻿#include "TestRunner.hpp"
 
 #include "core/solThemeManager.hpp"
+#include "core/solTextRenderingSettings.hpp"
 
 #include <QApplication>
 #include <QScopeGuard>
 #include <QTest>
+#include <QTemporaryDir>
 
 #include <array>
 
@@ -17,6 +19,7 @@ private slots:
     void                                rolesRoundTripIndependently();
     void                                pointSizeIsClamped();
     void                                applicationUsesUiFont();
+    void                                renderingSettingsAndStartupFlags();
 };
 
 void ThemeFontSettingsTest::rolesRoundTripIndependently()
@@ -97,5 +100,53 @@ void ThemeFontSettingsTest::applicationUsesUiFont()
 }
 
 MRST_REGISTER_TEST( ThemeFontSettingsTest );
+
+void ThemeFontSettingsTest::renderingSettingsAndStartupFlags()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath("rendering.ini");
+    QSettings settings(path, QSettings::IniFormat);
+    auto rendering = mrst::TextRenderingSettings::load(settings);
+    QVERIFY(!rendering.editorEnabled);
+    QVERIFY(!rendering.previewEnabled);
+    QVERIFY(!rendering.strokeEnabled);
+    QCOMPARE(rendering.chromiumFlags("--lang=ko --text-gamma=1.7"),
+             QByteArray("--lang=ko --text-gamma=1.7 --no-sandbox"));
+    settings.setValue("textView/mask/enabled", true);
+    settings.setValue("textView/mask/gamma", 1.35);
+    settings.setValue("textView/mask/strength", 1.25);
+    settings.setValue("preview/rendering/enabled", true);
+    settings.setValue("preview/rendering/gamma", 2.1);
+    settings.setValue("preview/rendering/contrast", 0.4);
+    settings.setValue("preview/rendering/strokeEnabled", true);
+    settings.setValue("preview/rendering/strokeWidth", 0.2);
+    settings.sync();
+    rendering = mrst::TextRenderingSettings::load(QSettings(path, QSettings::IniFormat));
+    QVERIFY(rendering.editorEnabled && rendering.previewEnabled && rendering.strokeEnabled);
+    QCOMPARE(rendering.editorGamma, 1.35);
+    QCOMPARE(rendering.editorStrength, 1.25);
+    QCOMPARE(rendering.strokeWidth, 0.2);
+    const auto flags = rendering.chromiumFlags(
+        "--lang=ko --text-gamma=1.0 --text-contrast 0.1 --no-sandbox --disk-cache-dir=\"C:/cache dir\"");
+    QVERIFY(flags.contains("--disk-cache-dir=\"C:/cache dir\""));
+    const auto tokens = QProcess::splitCommand(QString::fromUtf8(flags));
+    QCOMPARE(tokens.count("--no-sandbox"), 1);
+    QVERIFY(tokens.contains("--text-gamma=2.10"));
+    QVERIFY(tokens.contains("--text-contrast=0.40"));
+    QVERIFY(!tokens.contains("--text-gamma=1.0"));
+    QVERIFY(!tokens.contains("0.1"));
+    settings.setValue("textView/mask/gamma", "nan");
+    settings.setValue("textView/mask/strength", -4);
+    settings.setValue("preview/rendering/gamma", "invalid");
+    settings.setValue("preview/rendering/contrast", 30);
+    settings.setValue("preview/rendering/strokeWidth", "inf");
+    rendering = mrst::TextRenderingSettings::load(settings);
+    QCOMPARE(rendering.editorGamma, 1.2);
+    QCOMPARE(rendering.editorStrength, 1.1);
+    QCOMPARE(rendering.previewGamma, 2.2);
+    QCOMPARE(rendering.previewContrast, 0.5);
+    QCOMPARE(rendering.strokeWidth, 0.15);
+}
 
 #include "tst_ThemeFontSettings.moc"

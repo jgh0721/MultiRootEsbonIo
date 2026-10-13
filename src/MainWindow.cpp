@@ -2055,6 +2055,7 @@ void MainWindow::applySettingsToAllViews()
             textView->setWhitespaceVisible( s.value( "textView/showWhitespace", false ).toBool() );
             textView->setCodeFoldingEnabled( s.value( "textView/showCodeFolding", true ).toBool() );
             textView->setBraceHighlightEnabled( s.value( "textView/braceHighlight", true ).toBool() );
+            textView->reloadTextMaskSettings();
             const int fontRendering = s.value( "textView/fontRendering", 2 ).toInt();
             textView->setFontRenderingMode( static_cast< ScintillaEditorSettings::FontRenderingMode >(
                 qBound( 0, fontRendering, 3 ) ) );

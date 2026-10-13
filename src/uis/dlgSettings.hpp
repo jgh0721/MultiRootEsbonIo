@@ -131,6 +131,9 @@ private:
     QFontComboBox*                      m_textFontCombo = nullptr;
     QSpinBox*                           m_textFontSizeSpin = nullptr;
     QComboBox*                          m_textFontRenderCombo = nullptr;
+    QCheckBox*                          m_textMaskCheck = nullptr;
+    QDoubleSpinBox*                     m_textMaskGammaSpin = nullptr;
+    QDoubleSpinBox*                     m_textMaskStrengthSpin = nullptr;
     QDoubleSpinBox*                     m_textLineSpacingSpin = nullptr;
     QFontComboBox*                      m_textRulerFontCombo = nullptr;
     QSpinBox*                           m_textRulerFontSizeSpin = nullptr;
@@ -157,6 +160,11 @@ private:
     QSpinBox*                           m_textExternalChangePollSpin = nullptr;
 
     /// 프리뷰 페이지
+    QCheckBox*                          m_previewRenderingCheck = nullptr;
+    QDoubleSpinBox*                     m_previewGammaSpin = nullptr;
+    QDoubleSpinBox*                     m_previewContrastSpin = nullptr;
+    QCheckBox*                          m_previewStrokeCheck = nullptr;
+    QDoubleSpinBox*                     m_previewStrokeSpin = nullptr;
     QCheckBox*                          m_previewAllowRemoteCheck = nullptr;
     QCheckBox*                          m_previewUnlimitedWidthCheck = nullptr;
     QCheckBox*                          m_previewUnsavedCheck = nullptr;

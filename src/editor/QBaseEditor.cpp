@@ -1,4 +1,6 @@
 ﻿#include "stdafx.h"
+#include "core/solTextRenderingSettings.hpp"
+#include "thirdparty/scintilla-qt/PlatQtTextRendering.hpp"
 #include "QBaseEditor.hpp"
 #include "DocumentLineEnding.hpp"
 
@@ -1803,6 +1805,13 @@ void QTextView::setFontRenderingMode( ScintillaEditorSettings::FontRenderingMode
     mrst::SettingsWriter::instance().setValue( QLatin1String( "textView/fontRendering" ), static_cast< int >( mode ) );
 }
 
+void QTextView::reloadTextMaskSettings()
+{
+    const auto settings = mrst::TextRenderingSettings::load(AppSettings());
+    mrst::scintilla::setTextMask(settings.editorEnabled, settings.editorGamma, settings.editorStrength);
+    if (m_editor) m_editor->scrollArea()->viewport()->update();
+}
+
 bool QTextView::isRulerVisible() const
 {
     return m_ruler && m_ruler->isVisible();
@@ -2204,6 +2213,8 @@ void QTextView::loadPersistedEditorPreferences()
 void QTextView::applyPersistedEditorPreferences( ScintillaEditorSettings& settings ) const
 {
     AppSettings persisted;
+    const auto rendering = mrst::TextRenderingSettings::load(persisted);
+    mrst::scintilla::setTextMask(rendering.editorEnabled, rendering.editorGamma, rendering.editorStrength);
     settings.tabWidth = qBound( 1, persisted.value( "textView/tabWidth", 4 ).toInt(), 16 );
     settings.useTabs = persisted.value( "textView/useTabs", true ).toBool();
     settings.showIndentationGuides = persisted.value( "textView/showIndentationGuides", true ).toBool();

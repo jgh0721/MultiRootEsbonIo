@@ -145,6 +145,7 @@ public:
     // ── 폰트 렌더링 ──
     ScintillaEditorSettings::FontRenderingMode fontRenderingMode() const;
     void setFontRenderingMode( ScintillaEditorSettings::FontRenderingMode mode );
+    void reloadTextMaskSettings();
 
     // ── 눈금자 ──
     bool isRulerVisible() const;

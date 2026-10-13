@@ -1,4 +1,5 @@
 ﻿#include "stdafx.h"
+#include "core/solTextRenderingSettings.hpp"
 #include "dlgSettings.hpp"
 
 #include "core/solAppSettings.hpp"
@@ -986,6 +987,29 @@ QWidget* QSettingsDialog::createEditorPage()
     m_textFontRenderCombo->addItem( tr( "LCD 최적화 (ClearType)" ), 3 );
     layout->addRow( tr( "글꼴 렌더링:" ), m_textFontRenderCombo );
 
+    auto* maskGroup = new QGroupBox( tr( "감마·농도 마스크 보정" ), page );
+    auto* maskLayout = new QFormLayout( maskGroup );
+    m_textMaskCheck = new QCheckBox( tr( "보정 사용" ), maskGroup );
+    m_textMaskCheck->setObjectName( "editorTextMaskEnabled" );
+    m_textMaskGammaSpin = new QDoubleSpinBox( maskGroup );
+    m_textMaskGammaSpin->setObjectName( "editorTextMaskGamma" );
+    m_textMaskGammaSpin->setRange( 0.5, 3.0 );
+    m_textMaskGammaSpin->setSingleStep( 0.05 );
+    m_textMaskStrengthSpin = new QDoubleSpinBox( maskGroup );
+    m_textMaskStrengthSpin->setObjectName( "editorTextMaskStrength" );
+    m_textMaskStrengthSpin->setRange( 0.5, 2.0 );
+    m_textMaskStrengthSpin->setSingleStep( 0.05 );
+    maskLayout->addRow( m_textMaskCheck );
+    maskLayout->addRow( tr( "감마:" ), m_textMaskGammaSpin );
+    maskLayout->addRow( tr( "농도 배율:" ), m_textMaskStrengthSpin );
+    auto* maskHint = new QLabel( tr( "적용을 누르면 열린 편집기에 반영됩니다. 값을 높이면 획이 진해집니다. "
+        "기존 글꼴 엔진을 사용하며, 보정 중에는 그레이스케일 안티앨리어싱으로 표시합니다." ), maskGroup );
+    maskHint->setWordWrap( true );
+    maskLayout->addRow( maskHint );
+    connect( m_textMaskCheck, &QCheckBox::toggled, m_textMaskGammaSpin, &QWidget::setEnabled );
+    connect( m_textMaskCheck, &QCheckBox::toggled, m_textMaskStrengthSpin, &QWidget::setEnabled );
+    layout->addRow( maskGroup );
+
     // 행간
     m_textLineSpacingSpin = new QDoubleSpinBox( page );
     m_textLineSpacingSpin->setRange( 1.0, 3.0 );
@@ -1282,6 +1306,40 @@ QWidget* QSettingsDialog::createPreviewPage()
     auto* layout = new QVBoxLayout( page );
     createPreviewFontSettings( page, layout );
 
+    auto* renderingGroup = new QGroupBox( tr( "글꼴 렌더링 보정 (RST·Markdown 공통)" ), page );
+    auto* renderingLayout = new QFormLayout( renderingGroup );
+    m_previewRenderingCheck = new QCheckBox( tr( "감마·대비 보정 사용 (재시작 후 적용)" ), renderingGroup );
+    m_previewRenderingCheck->setObjectName( "previewRenderingEnabled" );
+    m_previewGammaSpin = new QDoubleSpinBox( renderingGroup );
+    m_previewGammaSpin->setObjectName( "previewRenderingGamma" );
+    m_previewGammaSpin->setRange( 0.5, 3.0 );
+    m_previewGammaSpin->setSingleStep( 0.05 );
+    m_previewContrastSpin = new QDoubleSpinBox( renderingGroup );
+    m_previewContrastSpin->setObjectName( "previewRenderingContrast" );
+    m_previewContrastSpin->setRange( 0.0, 1.0 );
+    m_previewContrastSpin->setSingleStep( 0.05 );
+    renderingLayout->addRow( m_previewRenderingCheck );
+    renderingLayout->addRow( tr( "감마:" ), m_previewGammaSpin );
+    renderingLayout->addRow( tr( "대비:" ), m_previewContrastSpin );
+    m_previewStrokeCheck = new QCheckBox( tr( "CSS 획 두께 보정 사용" ), renderingGroup );
+    m_previewStrokeCheck->setObjectName( "previewStrokeEnabled" );
+    m_previewStrokeSpin = new QDoubleSpinBox( renderingGroup );
+    m_previewStrokeSpin->setObjectName( "previewStrokeWidth" );
+    m_previewStrokeSpin->setRange( 0.0, 0.5 );
+    m_previewStrokeSpin->setSingleStep( 0.05 );
+    m_previewStrokeSpin->setSuffix( " px" );
+    renderingLayout->addRow( m_previewStrokeCheck );
+    renderingLayout->addRow( tr( "추가 획 두께:" ), m_previewStrokeSpin );
+    auto* renderingHint = new QLabel( tr( "감마·대비는 저장 후 프로그램을 다시 시작하면 적용됩니다. "
+        "CSS 획 두께는 적용을 누르면 현재 프리뷰에 반영되며, 수식·다이어그램·아이콘은 제외합니다. "
+        "문서 글꼴 유지 모드에서도 사용할 수 있습니다." ), renderingGroup );
+    renderingHint->setWordWrap( true );
+    renderingLayout->addRow( renderingHint );
+    connect( m_previewRenderingCheck, &QCheckBox::toggled, m_previewGammaSpin, &QWidget::setEnabled );
+    connect( m_previewRenderingCheck, &QCheckBox::toggled, m_previewContrastSpin, &QWidget::setEnabled );
+    connect( m_previewStrokeCheck, &QCheckBox::toggled, m_previewStrokeSpin, &QWidget::setEnabled );
+    layout->addWidget( renderingGroup );
+
     auto* cssGroup = new QGroupBox( tr( "CSS 수정 (reStructuredText)" ), page );
     auto* cssLayout = new QVBoxLayout( cssGroup );
     m_previewUnlimitedWidthCheck = new QCheckBox( tr( "본문 너비 제한 해제" ), cssGroup );
@@ -1522,6 +1580,15 @@ void QSettingsDialog::loadPreviewSettings()
         return;
 
     const AppSettings settings;
+    const auto rendering = mrst::TextRenderingSettings::load( settings );
+    m_previewRenderingCheck->setChecked( rendering.previewEnabled );
+    m_previewGammaSpin->setValue( rendering.previewGamma );
+    m_previewContrastSpin->setValue( rendering.previewContrast );
+    m_previewGammaSpin->setEnabled( rendering.previewEnabled );
+    m_previewContrastSpin->setEnabled( rendering.previewEnabled );
+    m_previewStrokeCheck->setChecked( rendering.strokeEnabled );
+    m_previewStrokeSpin->setValue( rendering.strokeWidth );
+    m_previewStrokeSpin->setEnabled( rendering.strokeEnabled );
     if( m_previewUnlimitedWidthCheck != nullptr )
     {
         const QSignalBlocker blocker( m_previewUnlimitedWidthCheck );
@@ -1596,6 +1663,11 @@ void QSettingsDialog::savePreviewSettings()
         return;
 
     AppSettings settings;
+    settings.setValue( "preview/rendering/enabled", m_previewRenderingCheck->isChecked() );
+    settings.setValue( "preview/rendering/gamma", m_previewGammaSpin->value() );
+    settings.setValue( "preview/rendering/contrast", m_previewContrastSpin->value() );
+    settings.setValue( "preview/rendering/strokeEnabled", m_previewStrokeCheck->isChecked() );
+    settings.setValue( "preview/rendering/strokeWidth", m_previewStrokeSpin->value() );
     if( m_previewUnlimitedWidthCheck != nullptr )
         settings.setValue( QLatin1String( mrst::kPreviewRstUnlimitedWidth ),
                            m_previewUnlimitedWidthCheck->isChecked() );
@@ -1834,6 +1906,12 @@ void QSettingsDialog::saveShortcuts()
 void QSettingsDialog::loadTextViewerSettings()
 {
     AppSettings s;
+    const auto rendering = mrst::TextRenderingSettings::load( s );
+    m_textMaskCheck->setChecked( rendering.editorEnabled );
+    m_textMaskGammaSpin->setValue( rendering.editorGamma );
+    m_textMaskStrengthSpin->setValue( rendering.editorStrength );
+    m_textMaskGammaSpin->setEnabled( rendering.editorEnabled );
+    m_textMaskStrengthSpin->setEnabled( rendering.editorEnabled );
 
     // 텍스트
     m_textFontCombo->setCurrentFont( QFont( s.value( "textView/fontFamily", "Consolas" ).toString() ) );
@@ -1884,6 +1962,9 @@ void QSettingsDialog::loadTextViewerSettings()
 void QSettingsDialog::saveTextViewerSettings()
 {
     AppSettings s;
+    s.setValue( "textView/mask/enabled", m_textMaskCheck->isChecked() );
+    s.setValue( "textView/mask/gamma", m_textMaskGammaSpin->value() );
+    s.setValue( "textView/mask/strength", m_textMaskStrengthSpin->value() );
 
 
     // 텍스트

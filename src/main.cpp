@@ -2,6 +2,7 @@
 #include "main.hpp"
 
 #include "core/solAppSettings.hpp"
+#include "core/solTextRenderingSettings.hpp"
 #include "core/solLanguageManager.hpp"
 #include "core/solQlementineTheme.hpp"
 #include "core/solThemeManager.hpp"
@@ -35,8 +36,6 @@ int main( int argc, char* argv[] )
     // 프로세스가 남는" 구간은 여기서만 관측된다.
     std::atexit( [] { mrst::traceP( "atexit" ); } );
 
-    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--no-sandbox");
-
     int exitCode = 0;
 
     // QApplication 을 스코프로 감싸는 이유는 계측 하나뿐이다. ~QApplication 이
@@ -68,6 +67,10 @@ int main( int argc, char* argv[] )
         // AppSettings 가 QApplication::applicationDirPath() 를 쓰므로 QApplication
         // 생성 뒤여야 한다. 번역기 자체는 싱글톤이 값으로 들고 있다 — 아래
         // do{}while(false) 블록 안에 스택 객체로 두면 블록을 벗어나는 순간 파괴된다.
+        // Must precede the first WebEngine page/profile: Chromium reads these once.
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS",
+            mrst::TextRenderingSettings::load(AppSettings()).chromiumFlags(qgetenv("QTWEBENGINE_CHROMIUM_FLAGS")));
+
         LanguageManager::installAtStartup();
 
         do

@@ -2237,6 +2237,50 @@ The converter that draws Markdown body text is built into the program, so it alw
         <source>새 문서 기본 줄바꿈:</source>
         <translation>Default line ending for new documents:</translation>
     </message>
+    <message>
+        <source>감마·농도 마스크 보정</source>
+        <translation>Gamma and strength mask correction</translation>
+    </message>
+    <message>
+        <source>보정 사용</source>
+        <translation>Enable correction</translation>
+    </message>
+    <message>
+        <source>감마:</source>
+        <translation>Gamma:</translation>
+    </message>
+    <message>
+        <source>농도 배율:</source>
+        <translation>Strength multiplier:</translation>
+    </message>
+    <message>
+        <source>적용을 누르면 열린 편집기에 반영됩니다. 값을 높이면 획이 진해집니다. 기존 글꼴 엔진을 사용하며, 보정 중에는 그레이스케일 안티앨리어싱으로 표시합니다.</source>
+        <translation>Click Apply to update open editors. Higher values darken strokes. The existing font engine is retained; correction uses grayscale antialiasing.</translation>
+    </message>
+    <message>
+        <source>글꼴 렌더링 보정 (RST·Markdown 공통)</source>
+        <translation>Font rendering correction (RST and Markdown)</translation>
+    </message>
+    <message>
+        <source>감마·대비 보정 사용 (재시작 후 적용)</source>
+        <translation>Enable gamma and contrast correction (restart required)</translation>
+    </message>
+    <message>
+        <source>대비:</source>
+        <translation>Contrast:</translation>
+    </message>
+    <message>
+        <source>CSS 획 두께 보정 사용</source>
+        <translation>Enable CSS stroke width correction</translation>
+    </message>
+    <message>
+        <source>추가 획 두께:</source>
+        <translation>Additional stroke width:</translation>
+    </message>
+    <message>
+        <source>감마·대비는 저장 후 프로그램을 다시 시작하면 적용됩니다. CSS 획 두께는 적용을 누르면 현재 프리뷰에 반영되며, 수식·다이어그램·아이콘은 제외합니다. 문서 글꼴 유지 모드에서도 사용할 수 있습니다.</source>
+        <translation>Gamma and contrast take effect after saving and restarting the application. Click Apply to update CSS stroke width in the current preview, excluding math, diagrams, and icons. This also works when preserving document fonts.</translation>
+    </message>
 </context>
 <context>
     <name>QSphinxBuildDialog</name>

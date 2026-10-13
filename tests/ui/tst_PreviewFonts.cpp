@@ -65,6 +65,7 @@ private slots:
     void navigationAndIndependentSettings();
     void newDocumentLineEndings();
     void contentWidthOverride();
+    void strokePreservesSpecialContentAndRestores();
 };
 
 void TestPreviewFonts::overridesAndRestores()
@@ -225,6 +226,66 @@ void TestPreviewFonts::newDocumentLineEndings()
     QCOMPARE( mrst::detectDocumentLineEnding( "a\nb" ), ScintillaDocument::LF );
     settings.setValue( key, "invalid" );
     QCOMPARE( mrst::defaultDocumentLineEnding(), ScintillaDocument::CRLF );
+}
+
+void TestPreviewFonts::strokePreservesSpecialContentAndRestores()
+{
+    QWebEnginePage page;
+    QSignalSpy loaded(&page, &QWebEnginePage::loadFinished);
+    page.setHtml(QString::fromUtf8(html));
+    QVERIFY(loaded.wait(10000));
+    run(page, R"JS(document.getElementById('inline').style.setProperty('-webkit-text-stroke-width','0.07px','important');
+        document.querySelector('.math').style.webkitTextStrokeWidth='0.03px';
+        dynamic.innerHTML='<svg id="diagram"><text>SVG</text></svg><span class="katex" id="formula">KaTeX</span>';)JS");
+    const QString inspect = QStringLiteral(R"JS(JSON.stringify(['p','inline','heading','token','math','icon','diagram','formula'].map(id=>{
+        const e=document.getElementById(id), s=getComputedStyle(e), r=e.getBoundingClientRect();
+        return [s.webkitTextStrokeWidth,s.fontFamily,r.x,r.y,r.width,r.height];})))JS");
+    const QString geometry = QStringLiteral(R"JS(JSON.stringify(['p','inline','heading','token','math','icon','diagram','formula'].map(id=>{
+        const r=document.getElementById(id).getBoundingClientRect();return [r.x,r.y,r.width,r.height];})))JS");
+    const QString original = run(page, inspect).toString();
+    const QString originalGeometry = run(page, geometry).toString();
+    auto options = customOptions();
+    options["enabled"] = false; // Independent of font-family override.
+    options["mode"] = "document";
+    options["strokeEnabled"] = true;
+    options["strokeWidth"] = 0.15;
+    run(page, mrst::previewFontScript(options));
+    QCOMPARE(run(page, "getComputedStyle(p).webkitTextStrokeWidth").toString(), QString("0.15px"));
+    QCOMPARE(run(page, "getComputedStyle(document.getElementById('inline')).webkitTextStrokeWidth").toString(), QString("0.15px"));
+    QCOMPARE(run(page, "getComputedStyle(document.getElementById('math')).webkitTextStrokeWidth").toString(), QString("0.03px"));
+    for (const auto* id : {"icon", "diagram", "formula"})
+        QCOMPARE(run(page, QString("getComputedStyle(document.getElementById('%1')).webkitTextStrokeWidth").arg(id)).toString(), QString("0px"));
+    QCOMPARE(run(page, geometry).toString(), originalGeometry);
+    run(page, "dynamic.insertAdjacentHTML('beforeend','<p id=added>New <span class=katex id=addedMath>math</span></p>')");
+    QTRY_COMPARE(run(page, "getComputedStyle(added).webkitTextStrokeWidth").toString(), QString("0.15px"));
+    QTRY_COMPARE(run(page, "getComputedStyle(addedMath).webkitTextStrokeWidth").toString(), QString("0px"));
+    options["strokeWidth"] = 0.3;
+    run(page, mrst::previewFontScript(options));
+    QCOMPARE(run(page, "getComputedStyle(p).webkitTextStrokeWidth").toString(), QString("0.3px"));
+    options["strokeEnabled"] = false;
+    run(page, mrst::previewFontScript(options));
+    QCOMPARE(run(page, inspect).toString(), original);
+    QCOMPARE(run(page, "document.querySelectorAll('#mrr-preview-stroke').length").toInt(), 0);
+
+    // Use the application's injection path for both formats and navigation.
+    AppSettings settings;
+    const QString enabledKey = "preview/rendering/strokeEnabled";
+    const QString widthKey = "preview/rendering/strokeWidth";
+    const QVariant wasEnabled = settings.value(enabledKey), wasWidth = settings.value(widthKey);
+    const auto restore = qScopeGuard([&] {
+        if (wasEnabled.isValid()) settings.setValue(enabledKey, wasEnabled); else settings.remove(enabledKey);
+        if (wasWidth.isValid()) settings.setValue(widthKey, wasWidth); else settings.remove(widthKey);
+    });
+    settings.setValue(enabledKey, true);
+    settings.setValue(widthKey, 0.2);
+    for (const bool markdown : {false, true}) {
+        mrst::applyPreviewFonts(&page, markdown);
+        page.setHtml(QString::fromUtf8(html));
+        QVERIFY(loaded.wait(10000));
+        QCOMPARE(run(page, "getComputedStyle(p).webkitTextStrokeWidth").toString(), QString("0.2px"));
+        run(page, "document.body.innerHTML=document.body.innerHTML");
+        QTRY_COMPARE(run(page, "getComputedStyle(document.getElementById('math')).webkitTextStrokeWidth").toString(), QString("0px"));
+    }
 }
 
 MRST_REGISTER_TEST( TestPreviewFonts );

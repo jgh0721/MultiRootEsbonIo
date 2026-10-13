@@ -1,5 +1,6 @@
 ﻿#include "solPreviewFonts.hpp"
 #include "solAppSettings.hpp"
+#include "solTextRenderingSettings.hpp"
 #include "solThemeManager.hpp"
 
 #include <QFile>
@@ -21,6 +22,7 @@ QString previewFontSettingsPrefix( const bool markdown )
 QJsonObject previewFontOptions( const bool markdown, const QWebEngineSettings* webSettings )
 {
     const AppSettings settings;
+    const auto rendering = TextRenderingSettings::load(settings);
     const QString prefix = previewFontSettingsPrefix( markdown );
     QString mode = settings.value( prefix + "mode", "document" ).toString();
     if( mode != "user" && mode != "web" )
@@ -34,6 +36,8 @@ QJsonObject previewFontOptions( const bool markdown, const QWebEngineSettings* w
         lineHeight = 1.7;
     const bool web = mode == "web" && webSettings != nullptr;
     return {
+        { "strokeEnabled", rendering.strokeEnabled },
+        { "strokeWidth", rendering.strokeWidth },
         { "enabled", settings.value( prefix + "enabled", false ).toBool() },
         { "mode", mode },
         { "bodyFamily", web ? webSettings->fontFamily( QWebEngineSettings::StandardFont ) : body.family() },
