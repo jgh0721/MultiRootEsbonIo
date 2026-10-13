@@ -37,6 +37,24 @@ void ExternalFilesProxy::setSourceModel( QAbstractItemModel* source )
     for( const auto& connection : connections_ )
         disconnect( connection );
     connections_.clear();
+    // Remove the synthetic branch before Identity begins removing its ancestor.
+    // Otherwise its persistent indexes can outlive the invalidated workspace root.
+    if (source) {
+        connections_ << connect(source, &QAbstractItemModel::rowsAboutToBeRemoved,
+            this, [this](const QModelIndex& parent, int first, int last) {
+                for (QModelIndex ancestor = root_; ancestor.isValid(); ancestor = ancestor.parent()) {
+                    if (ancestor.parent() != parent || ancestor.row() < first || ancestor.row() > last)
+                        continue;
+                    if (!files_.isEmpty()) {
+                        const int row = sourceModel()->rowCount(root_);
+                        beginRemoveRows(mapFromSource(root_), row, row);
+                        files_.clear();
+                        endRemoveRows();
+                    }
+                    break;
+                }
+            });
+    }
     QIdentityProxyModel::setSourceModel( source );
     if( !source )
         return;
@@ -77,7 +95,8 @@ void ExternalFilesProxy::setWorkspace( const QString& path, const QModelIndex& r
 
 bool ExternalFilesProxy::addFile( const QString& path )
 {
-    if( !sourceModel() || path.isEmpty() || isPathInWorkspace( path, workspace_ ) )
+    if( !sourceModel() || (!workspace_.isEmpty() && !root_.isValid())
+        || path.isEmpty() || isPathInWorkspace( path, workspace_ ) )
         return false;
     const QString normalized = normalizedPath( path );
     for( const auto& existing : files_ )
@@ -132,18 +151,21 @@ bool ExternalFilesProxy::isExternalFile( const QModelIndex& index ) const
 
 bool ExternalFilesProxy::atRoot( const QModelIndex& parent ) const
 {
-    return !isExternalRoot( parent ) && !isExternalFile( parent ) && mapToSource( parent ) == root_;
+    return (workspace_.isEmpty() || root_.isValid())
+        && !isExternalRoot( parent ) && !isExternalFile( parent )
+        && mapToSource( parent ) == root_;
 }
 
 QModelIndex ExternalFilesProxy::externalRoot() const
 {
-    return files_.isEmpty() || !sourceModel() ? QModelIndex{}
+    return files_.isEmpty() || !sourceModel()
+        || (!workspace_.isEmpty() && !root_.isValid()) ? QModelIndex{}
         : createIndex( sourceModel()->rowCount( root_ ), 0, &rootTag_ );
 }
 
 QModelIndex ExternalFilesProxy::indexForFile( const QString& path ) const
 {
-    if( path.isEmpty() )
+    if( path.isEmpty() || !externalRoot().isValid() )
         return {};
     const QString normalized = normalizedPath( path );
     for( int row = 0; row < files_.size(); ++row )

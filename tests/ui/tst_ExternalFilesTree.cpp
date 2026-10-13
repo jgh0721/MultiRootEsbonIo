@@ -17,6 +17,8 @@ class TestExternalFilesTree : public QObject
 private slots:
     void classifiesAndDeduplicates();
     void survivesSourceChanges();
+    void workspaceRootRemovalDoesNotMoveExternalBranch_data();
+    void workspaceRootRemovalDoesNotMoveExternalBranch();
     void filesystemTree();
 };
 
@@ -98,6 +100,42 @@ void TestExternalFilesTree::survivesSourceChanges()
     model.removeFile( second );
     QVERIFY( !branch.isValid() );
     QVERIFY( !file.isValid() );
+}
+
+void TestExternalFilesTree::workspaceRootRemovalDoesNotMoveExternalBranch_data()
+{
+    QTest::addColumn<bool>("reset");
+    QTest::newRow("remove-root") << false;
+    QTest::newRow("reset-source") << true;
+}
+
+void TestExternalFilesTree::workspaceRootRemovalDoesNotMoveExternalBranch()
+{
+    QFETCH(bool, reset);
+    QStandardItemModel source;
+    auto* workspace = new QStandardItem("workspace");
+    workspace->setColumnCount(1);
+    source.appendRow(workspace);
+    source.appendRow(new QStandardItem("unrelated"));
+    mrst::ExternalFilesProxy model;
+    model.setSourceModel(&source);
+    model.setWorkspace(QDir::tempPath() + "/workspace", source.index(0, 0));
+    QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+    const QString outside = QDir::tempPath() + "/outside.md";
+    QVERIFY(model.addFile(outside));
+    QPersistentModelIndex branch(model.externalRoot());
+    QPersistentModelIndex file(model.indexForFile(outside));
+    if (reset) source.clear();
+    else source.removeRow(0);
+    QCOMPARE(model.rowCount(), source.rowCount());
+    QVERIFY(!model.externalRoot().isValid());
+    QVERIFY(!model.indexForFile(outside).isValid());
+    QVERIFY(!branch.isValid());
+    QVERIFY(!file.isValid());
+    QVERIFY(!model.addFile(outside));
+    model.setWorkspace({}, {});
+    QVERIFY(model.addFile(outside));
+    QVERIFY(model.externalRoot().isValid());
 }
 
 void TestExternalFilesTree::filesystemTree()

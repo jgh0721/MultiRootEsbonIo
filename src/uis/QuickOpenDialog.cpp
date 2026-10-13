@@ -418,7 +418,7 @@ public:
         if( relativePath.isEmpty() )
             return -1;
         const QString wanted = pathKey( relativePath );
-        const int searchLimit = (std::min)( visibleCount_, static_cast<int>( matches_->size() ) );
+        const int searchLimit = static_cast<int>( matches_->size() );
         for( int i = 0; i < searchLimit; ++i )
         {
             if( pathKey( matches_->at( i ).match.relativePath ) == wanted )

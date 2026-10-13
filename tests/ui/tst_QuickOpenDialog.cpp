@@ -75,6 +75,7 @@ class TestQuickOpenDialog : public QObject
 
 private slots:
     void exposesResultsInPagesOf150();
+    void preservesSelectionBeyondFirstPage();
     void filtersAPathWithEitherSeparatorAndOpensIt();
     void enterDoesNotOpenWhileImeIsComposing();
     void searchesWithImePreeditBeforeCommit();
@@ -119,6 +120,29 @@ void TestQuickOpenDialog::exposesResultsInPagesOf150()
     results->model()->fetchMore( {} );
     QCOMPARE( results->model()->rowCount(), 380 );
     QVERIFY( !results->model()->canFetchMore( {} ) );
+}
+
+void TestQuickOpenDialog::preservesSelectionBeyondFirstPage()
+{
+    QTemporaryDir workspace;
+    QVERIFY(workspace.isValid());
+    QStringList paths;
+    for (int row = 0; row < 400; ++row)
+        paths << QStringLiteral("bulk/file-%1.rst").arg(row, 3, 10, QLatin1Char('0'));
+    mrst::QuickOpenDialog dialog;
+    dialog.showForWorkspace(workspace.path(), paths, true);
+    auto* results = dialog.findChild<QListView*>(QStringLiteral("quickOpenResults"));
+    QVERIFY(results);
+    QTRY_COMPARE_WITH_TIMEOUT(results->model()->rowCount(), 150, 5000);
+    results->model()->fetchMore({});
+    results->model()->fetchMore({});
+    results->setCurrentIndex(results->model()->index(325, 0));
+    const QString chosen = results->currentIndex().data(Qt::ToolTipRole).toString();
+    QSignalSpy reset(results->model(), &QAbstractItemModel::modelReset);
+    dialog.appendIndexedPaths({QStringLiteral("bulk/file-999.rst")});
+    QTRY_VERIFY_WITH_TIMEOUT(!reset.isEmpty(), 5000);
+    QCOMPARE(results->currentIndex().data(Qt::ToolTipRole).toString(), chosen);
+    QVERIFY(results->model()->rowCount() > 325);
 }
 
 void TestQuickOpenDialog::filtersAPathWithEitherSeparatorAndOpensIt()
