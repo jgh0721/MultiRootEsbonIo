@@ -142,6 +142,9 @@ void PopupInteractionTest::explorerShortcutsRespectFocus()
     window.activateWindow();
     tree->setFocus();
     QTRY_VERIFY( tree->hasFocus() );
+    // Widget focus can be assigned before Windows delivers activation. The
+    // shortcut context matcher also requires QApplication::activeWindow().
+    QTRY_COMPARE(QApplication::activeWindow(), &window);
     QTest::keyClick( tree, Qt::Key_F2 );
     QTest::keyClick( tree, Qt::Key_Delete );
     QCOMPARE( renames, 1 );
@@ -211,11 +214,22 @@ void PopupInteractionTest::menuClickAfterRepolish()
         menu.style()->unpolish( &menu );
         menu.style()->polish( &menu );
     }
+    // QMenu records Qt's last delivered cursor position, not QCursor::pos().
+    // Seed it outside the popup before each row, including repeated positions.
+    QTest::mouseMove(tree.windowHandle(), QPoint(249, 250));
+    QTest::mouseMove(tree.windowHandle(), QPoint(250, 250));
     menu.popup( tree.mapToGlobal( QPoint( 30, 30 ) ) );
     QTest::qWait( 300 );
-    QTest::mouseMove( &menu, menu.actionGeometry( action ).center() );
-    QTest::mouseClick( &menu, Qt::LeftButton, Qt::NoModifier,
-                      menu.actionGeometry( action ).center() );
+    // QWidget mouseMove only warps the OS cursor; its native move can arrive
+    // after the synthetic click. Deliver both via QWindow and await hover.
+    auto* popup = menu.windowHandle();
+    QVERIFY(popup != nullptr);
+    const QPoint target = menu.actionGeometry(action).center();
+    QTest::mouseMove(popup, QPoint(1, 1));
+    QTest::mouseMove(popup, target);
+    QApplication::processEvents();
+    QTRY_COMPARE_WITH_TIMEOUT(menu.activeAction(), action, 1000);
+    QTest::mouseClick(popup, Qt::LeftButton, Qt::NoModifier, target);
     QTRY_COMPARE_WITH_TIMEOUT( triggered.count(), 1, 1000 );
     QVERIFY( !menu.isVisible() );
 }
