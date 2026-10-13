@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QTest>
+#include <QTimer>
 
 #include <cstdio>
 
@@ -18,6 +19,11 @@ QList< QObject* >& registry()
 int main( int argc, char** argv )
 {
     QCoreApplication app( argc, argv );
+    if (app.arguments().contains(QStringLiteral("--process-reaper-child")))
+    {
+        QTimer::singleShot(30'000, &app, &QCoreApplication::quit);
+        return app.exec();
+    }
 
     const QByteArray selectedClass = qgetenv("MRST_TEST_CLASS");
     int executed = 0;

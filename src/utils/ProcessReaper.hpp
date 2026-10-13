@@ -34,9 +34,9 @@ void assignToKillOnExitJob( qint64 processId );
 /// (qtbase 의 qprocess.cpp / qprocess.h). 그래서 종료 경로에서 대기만 지우고
 /// `unique_ptr` 을 그냥 `reset()` 하면 1.5초 대기를 30초 대기로 바꿔 놓는 셈이다.
 ///
-/// 그래서 QProcess 객체를 파괴하지 않고 프로세스 전역 목록에 넘겨 둔다.
-/// 커널이 프로세스 정리를 마치므로 누수가 아니다 — 목록의 소멸자는 정적 소멸까지
-/// 돌지 않고, 그때는 이미 프로세스가 없어 `~QProcess` 도 기다리지 않는다.
+/// 이미 끝난 객체는 즉시 파괴하고, 실행 중인 객체는 kill() 뒤 NotRunning
+/// 신호에서 지운다. 정상 실행 중 반복 호출해도 객체가 누적되지 않는다.
+/// 종료 후 이벤트 루프가 더 돌지 않는 경우에만 OS 종료 시까지 남는다.
 ///
 /// 시그널은 먼저 끊는다. 호출한 쪽(LspClient / UvTask)이 곧 delete 되기 때문이다.
 void abandonProcess( std::unique_ptr< QProcess > process );

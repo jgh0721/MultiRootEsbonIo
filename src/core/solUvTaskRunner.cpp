@@ -48,7 +48,7 @@ UvTask::~UvTask()
 {
     // 예전에는 kill() + waitForFinished(200) 이었다. 200ms 안에 안 죽으면
     // 이어서 ~QProcess 가 waitForFinished() 를 **30초 기본값**으로 부른다.
-    // abandonProcess() 는 죽이기만 하고 객체를 파괴하지 않아 그 경로가 없다.
+    // abandonProcess() 는 실행 중인 객체를 종료 신호 뒤에 지워 대기를 피한다.
     abandonProcess( std::move( process_ ) );
 }
 

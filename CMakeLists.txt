@@ -401,6 +401,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_PreviewProgress.cpp
             tests/tst_PreviewRequestState.cpp
             tests/tst_PreviewInputs.cpp
+            tests/tst_ProcessReaper.cpp
             tests/tst_PythonEnvironment.cpp
             tests/tst_DiagnosticsStore.cpp
             tests/tst_SphinxBuilders.cpp

@@ -4,7 +4,6 @@
 #include <QProcess>
 #include <QTimer>
 
-#include <vector>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -93,18 +92,22 @@ void abandonProcess( std::unique_ptr< QProcess > process )
     if( process == nullptr )
         return;
 
-    // 소유자가 곧 delete 되므로 시그널을 먼저 끊는다. 그러지 않으면 죽은
-    // 수신자에게 finished/readyRead 가 전달될 수 있다.
-    process->disconnect();
+    // Completed (including failed-to-start) processes have no destructor wait.
+    if( process->state() == QProcess::NotRunning )
+        return;
 
-    if( process->state() != QProcess::NotRunning )
-        process->kill();
+    QProcess* raw = process.release();
+    raw->disconnect();
+    raw->setParent( nullptr );
+    // Keep the object alive only until the child stops. State changes also cover
+    // FailedToStart, which does not emit finished(). No synchronous wait is used.
+    QObject::connect( raw, &QProcess::stateChanged, raw,
+                      [raw]( QProcess::ProcessState state ) {
+        if( state == QProcess::NotRunning )
+            raw->deleteLater();
+    } );
+    raw->kill();
 
-    // 함수 지역 static 이라 이 목록의 소멸자는 정적 소멸까지 돌지 않는다.
-    // 그때는 이미 커널이 프로세스를 정리했으므로 ~QProcess 도 기다리지 않는다.
-    // (기다린다면 30초다 — 헤더 주석 참고.)
-    static std::vector< QProcess* > abandoned;
-    abandoned.push_back( process.release() );
 }
 
 void reapProcessLater( std::unique_ptr< QProcess > process, const int graceMs )
