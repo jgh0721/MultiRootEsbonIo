@@ -402,6 +402,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_PreviewRequestState.cpp
             tests/tst_PreviewInputs.cpp
             tests/tst_ProcessReaper.cpp
+            tests/tst_UpdateCleanup.cpp
             tests/tst_PythonEnvironment.cpp
             tests/tst_DiagnosticsStore.cpp
             tests/tst_SphinxBuilders.cpp
@@ -433,6 +434,8 @@ if(MRST_BUILD_TESTS)
             src/core/solPythonEnvHealth.hpp
             src/uis/FileTreeFilterProxy.cpp
             src/core/solUpdateManifest.cpp
+            src/core/solUpdateInstaller.cpp
+            src/core/solUpdateInstaller.hpp
             src/core/solFileKinds.cpp
             src/core/solGlossaryIndex.cpp
             src/core/solRestOutlineService.cpp
@@ -462,10 +465,10 @@ if(MRST_BUILD_TESTS)
             MRST_TEST_BACKUP_DIRECTORY="${CMAKE_CURRENT_BINARY_DIR}/test-hot-exit"
             # 매니페스트 product 는 이미 배포된 클라이언트와의 와이어 계약이다.
             # 테스트가 자기만의 리터럴을 들고 있으면 그 계약이 바뀌어도 초록불이
-            # 남으므로, CMake 가 실제 값을 넣어 준다. (이 타깃은 생성 헤더를
-            # include 하지 않는다 — include 경로에 빌드 디렉터리가 없다.)
+            # 남으므로, CMake 가 실제 값을 넣어 준다.
             MRST_UPDATE_PRODUCT_ID="${MRST_UPDATE_PRODUCT_ID}")
     target_include_directories(mrst_tests PRIVATE
+            "${CMAKE_BINARY_DIR}"
             "${CMAKE_SOURCE_DIR}"
             "${CMAKE_SOURCE_DIR}/src"
             "${CMAKE_SOURCE_DIR}/tests"

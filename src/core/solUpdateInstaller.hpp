@@ -93,7 +93,8 @@ public:
     /// 모르는 값은 그대로 돌려준다 — 구버전 업데이터는 완성된 문장을 남긴다.
     [[nodiscard]] static QString        describeFailure( const QString& id, const QString& detail );
 
-    /// 큰 디렉터리나 파일을 작업 스레드에서 지운다.
+    /// 재사용 경로를 고유한 이름으로 분리한 뒤 작업 스레드에서 지운다.
+    /// 분리 실패 시 원래 경로는 작업 스레드에 넘기지 않는다.
     /// (400MB 를 GUI 스레드에서 지우면 첫 페인트가 눈에 보이게 밀린다 —
     ///  PythonEnvManager 가 67MB 복사에서 겪은 것과 같은 문제다.)
     void                                removePathsAsync( const QStringList& paths );

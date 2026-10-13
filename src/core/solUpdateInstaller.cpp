@@ -18,6 +18,7 @@
 #include <QStandardPaths>
 #include <QTemporaryFile>
 #include <QThreadPool>
+#include <QUuid>
 
 namespace mrst {
 
@@ -51,6 +52,27 @@ bool ensureDirectory( const QString& path, QString* errorMessage )
 UpdateInstaller::UpdateInstaller( QObject* parent )
     : QObject( parent )
 {
+    // Retry only retired directories owned by processes which have exited.
+    QStringList retired;
+    const QStringList parents{workRoot(), downloadDirectory(),
+        QStandardPaths::writableLocation(QStandardPaths::TempLocation)};
+    for (const QString& parentPath : parents) {
+        const QDir parentDir(parentPath);
+        const auto entries = parentDir.entryInfoList(
+            {QStringLiteral(".mrst-update-cleanup-*")},
+            QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot);
+        for (const QFileInfo& entry : entries) {
+            const QString suffix = entry.fileName().mid(21);
+            const int dash = suffix.indexOf(QLatin1Char('-'));
+            bool validPid = false;
+            const qint64 pid = suffix.left(dash).toLongLong(&validPid);
+            const QUuid id(suffix.mid(dash + 1));
+            if (dash > 0 && validPid && pid > 0 && !id.isNull()
+                && !isProcessRunning(pid))
+                retired.append(entry.absoluteFilePath());
+        }
+    }
+    removePathsAsync(retired);
 }
 
 UpdateInstaller::~UpdateInstaller()
@@ -380,23 +402,54 @@ void UpdateInstaller::removePathsAsync( const QStringList& paths )
     if( paths.isEmpty() )
         return;
 
+    // Detach synchronously while the caller still owns the update lock. Workers
+    // never touch reusable names (staging/download/ZIP), even if a retry starts.
+    QStringList retired;
+    QStringList detachFailed;
+    for (const QString& path : paths) {
+        if (path.isEmpty())
+            continue;
+        const QFileInfo info(path);
+        if (!info.exists() && !info.isSymLink())
+            continue;
+        if (QDir(info.absoluteFilePath()).isRoot() || info.fileName().isEmpty()) {
+            detachFailed.append(path);
+            continue;
+        }
+        const QDir parent(info.absolutePath());
+        const QString name = QStringLiteral(".mrst-update-cleanup-%1-%2")
+            .arg(QCoreApplication::applicationPid())
+            .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+        const QString target = parent.absoluteFilePath(name);
+        // Both names are direct children of the same resolved parent.
+        if (QFileInfo(target).absolutePath() != parent.absolutePath()
+            || !QDir().rename(info.absoluteFilePath(), target)) {
+            detachFailed.append(path);
+            continue;
+        }
+        retired.append(target);
+    }
+    if (!detachFailed.isEmpty())
+        emit logMessage(tr("[업데이트] 정리하지 못한 항목: %1")
+            .arg(detachFailed.join(QStringLiteral(", "))));
+    if (retired.isEmpty())
+        return;
+
     QPointer< UpdateInstaller > guard( this );
-    QThreadPool::globalInstance()->start( [ guard, paths ] {
+    QThreadPool::globalInstance()->start( [ guard, retired ] {
         QStringList failed;
-        for( const QString& path : paths )
+        for( const QString& path : retired )
         {
-            // staging/backup 은 150~400MB 다. 종료 중이면 그만둔다 — 중간에
-            // 끊겨도 다음 기동의 restoreStagedIfUsable() 이 마저 지운다.
+            // An interrupted deletion is retried at the next application start.
             if( isShuttingDown() )
                 return;
-
-            if( path.isEmpty() || !QFileInfo::exists( path ) )
+            const QFileInfo info(path);
+            if (!info.exists() && !info.isSymLink())
                 continue;
-
-            QFileInfo info( path );
-            const bool ok = info.isDir() ? QDir( path ).removeRecursively() : QFile::remove( path );
-            if( !ok )
-                failed.append( path );
+            const bool ok = info.isDir() && !info.isSymLink()
+                ? QDir(path).removeRecursively() : QFile::remove(path);
+            if (!ok)
+                failed.append(path);
         }
 
         if( failed.isEmpty() )
