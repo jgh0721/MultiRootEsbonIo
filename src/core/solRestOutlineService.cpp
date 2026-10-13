@@ -215,29 +215,26 @@ QStringList collectProjectDocuments( const QString& sourceRoot, const QString& r
     const QStringList& suffixes = filekinds::documentExtensions();
 
     QStringList documents;
-    QDirIterator iterator( root.absolutePath(), QDir::Files | QDir::NoDotAndDotDot,
-                          QDirIterator::Subdirectories );
-    while( iterator.hasNext() )
-    {
-        // 앱이 내려가는 중이면 그만둔다. 여기까지 모은 것은 어차피 버려진다.
-        // 끝까지 도는 동안 프로세스가 살아 있는 것이 실제 문제였다.
-        if( isShuttingDown() )
+    QStringList pendingDirectories{root.absolutePath()};
+    while (!pendingDirectories.isEmpty()) {
+        if (isShuttingDown())
             return {};
-
-        const QString absolute = iterator.next();
-        const QFileInfo info( absolute );
-        if( !suffixes.contains( info.suffix().toCaseFolded() ) )
-            continue;
-
-        const QString relative = root.relativeFilePath( absolute );
-        const QStringList parts = relative.split( QLatin1Char( '/' ), Qt::SkipEmptyParts );
-        bool excluded = false;
-        for( qsizetype index = 0; index + 1 < parts.size(); ++index )
-            excluded = excluded || filekinds::isExcludedDirectoryName( parts.at( index ) );
-        if( excluded )
-            continue;
-
-        documents << QDir::cleanPath( absolute );
+        const QString directory = pendingDirectories.takeLast();
+        // Single-level iteration lets us prune excluded trees before any descent.
+        QDirIterator entries(directory, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+        while (entries.hasNext()) {
+            if (isShuttingDown())
+                return {};
+            entries.next();
+            const QFileInfo info = entries.fileInfo();
+            if (info.isDir()) {
+                if (!info.isSymLink() && !info.isJunction()
+                    && !filekinds::isExcludedDirectoryName(info.fileName()))
+                    pendingDirectories.append(info.absoluteFilePath());
+            } else if (suffixes.contains(info.suffix().toCaseFolded())) {
+                documents.append(QDir::cleanPath(info.absoluteFilePath()));
+            }
+        }
     }
 
     // root_doc 이 맨 앞. 나머지는 상대경로순.

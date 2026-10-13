@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QString>
 #include <QUrl>
+#include <functional>
+#include <optional>
 
 class QTimer;
 
@@ -37,6 +39,10 @@ public:
     /// 편집 중이면 immediate=false 로 부른다. 저장·탭 전환·F5 는 true.
     ///
     /// force 는 마지막으로 보낸 원문과 같아도 다시 보내게 한다(F5 전용).
+    using TextProvider = std::function<std::optional<QString>()>;
+    /// Read the latest buffer only after debounce and bridge readiness.
+    void                                requestRender( const QString& path, TextProvider text,
+                                                        bool immediate, bool force );
     void                                requestRender( const QString& path, const QString& text,
                                                        bool immediate, bool force );
     void                                cancel();
@@ -71,7 +77,9 @@ private:
     bool                                bridgeReady_ = false;
     bool                                hasPending_ = false;
     QString                             pendingPath_;
-    QString                             pendingText_;
+    TextProvider                        pendingText_;
+    bool                                pendingImmediate_ = false;
+    bool                                pendingForce_ = false;
     /// 마지막으로 실제로 밀어 넣은 원문의 해시.
     ///
     /// 세션 복원은 같은 문서에 대해 setActiveDocument 와 sigFileOpened 로 두 번

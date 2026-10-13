@@ -7,6 +7,7 @@
 #include "solEsbonioLspPool.hpp"
 #include "solPreviewBridge.hpp"
 #include "solPreviewProgress.hpp"
+#include "solPreviewShadowSnapshot.hpp"
 #include "solThemeManager.hpp"
 #include "solGlossaryIndex.hpp"
 #include "solReferenceNavigation.hpp"
@@ -758,28 +759,11 @@ bool WorkspaceController::repairPythonEnvironment( const QString& projectKey )
                                                        it->environmentPath );
 }
 
-QString WorkspaceController::writeShadowCopy( QTextView* view, const QString& path ) const
+std::shared_ptr<const PreviewShadowSnapshot> WorkspaceController::createShadowSnapshot( QTextView* view ) const
 {
     if( view == nullptr || pythonEnv_ == nullptr || !view->isModified() )
         return {};
-
-    const QString directory = pythonEnv_->shadowDir();
-    if( directory.isEmpty() || !QDir().mkpath( directory ) )
-        return {};
-
-    // 원본 경로 해시로 이름을 만들어 문서마다 파일 하나를 재사용한다.
-    const QByteArray digest = QCryptographicHash::hash( path.toUtf8(), QCryptographicHash::Sha1 );
-    const QString shadowPath = QDir( directory ).filePath(
-        QStringLiteral( "%1.%2" ).arg( QString::fromLatin1( digest.toHex().left( 16 ) ),
-                                      QFileInfo( path ).suffix() ) );
-
-    QFile file( shadowPath );
-    if( !file.open( QIODevice::WriteOnly | QIODevice::Truncate ) )
-        return {};
-
-    file.write( view->text().toUtf8() );
-    file.close();
-    return shadowPath;
+    return PreviewShadowSnapshot::create(pythonEnv_->shadowDir(), view->text().toUtf8());
 }
 
 void WorkspaceController::requestPreviewBuild( const bool immediate, const bool forceRebuild )
@@ -788,6 +772,7 @@ void WorkspaceController::requestPreviewBuild( const bool immediate, const bool 
         return;
 
     // 조기 반환과 직접 렌더링 경로도 이전 요청을 대체한다.
+    previewBuildWork_.cancel();
     previewRequests_.invalidate();
     QTextView* view = activeView_;
     DocumentContext* context = contextFor( view );
@@ -802,6 +787,17 @@ void WorkspaceController::requestPreviewBuild( const bool immediate, const bool 
     if( route == PreviewRoute::MarkdownJs )
     {
         renderMarkdownJs( *context, immediate, forceRebuild );
+        return;
+    }
+
+    if (markdownPreview_)
+        markdownPreview_->cancel();
+    if (!immediate) {
+        const auto ticket = previewRequests_.ticket();
+        previewBuildWork_.schedule(350, [this, ticket, forceRebuild] {
+            if (previewRequests_.accepts(ticket))
+                requestPreviewBuild(true, forceRebuild);
+        });
         return;
     }
 
@@ -829,8 +825,11 @@ void WorkspaceController::requestPreviewBuild( const bool immediate, const bool 
     request.fallbackPythonExe = pythonEnv_->pythonExe();
     request.builderScript = pythonEnv_->previewBuilderScript();
     request.sourceFile = context->path;
-    request.shadowFile = previewApplyUnsavedEdits_ ? writeShadowCopy( view, context->path )
-                                                   : QString();
+    if (previewApplyUnsavedEdits_) {
+        request.shadowSnapshot = createShadowSnapshot(view);
+        if (request.shadowSnapshot)
+            request.shadowFile = request.shadowSnapshot->filePath();
+    }
     request.shadowMaxReadMs = previewUnsavedMaxReadMs_;
     request.stubDoxygenForShadow = previewStubDoxygenWhileTyping_;
     // 가상 프로젝트(워크스페이스 밖의 단독 파일)는 지문을 남기지 않는다.
@@ -1193,7 +1192,14 @@ void WorkspaceController::renderMarkdownJs( DocumentContext& context, const bool
     diagnosticsStore_->replaceSourceForPath( QStringLiteral( "sphinx-build" ), context.path, {} );
 
     showPreviewShell( context.path );
-    markdownPreview_->requestRender( context.path, textForPreview( context ), immediate, force );
+    const QPointer<QTextView> view = context.view;
+    const QString path = context.path;
+    markdownPreview_->requestRender(path, [this, view, path]() -> std::optional<QString> {
+        const DocumentContext* current = contextFor(view);
+        if (!current || current->path != path || view != activeView_ || shuttingDown_)
+            return std::nullopt;
+        return textForPreview(*current);
+    }, immediate, force);
 }
 
 void WorkspaceController::applyPreviewWebSettings()
@@ -1681,6 +1687,7 @@ void WorkspaceController::setWorkspaceRoot( const QString& root )
     previewLoadInFlight_ = false;
     pendingFullLoadPath_.clear();
     pendingFullLoadUrl_.clear();
+    previewBuildWork_.cancel();
     previewRequests_.invalidate();
     ++hotSwapToken_;
     if( previewSyncRetry_ != nullptr )
@@ -1815,6 +1822,7 @@ void WorkspaceController::reloadSettings()
 void WorkspaceController::beginShutdown()
 {
     shuttingDown_ = true;
+    previewBuildWork_.cancel();
 }
 
 void WorkspaceController::endShutdown()
@@ -1837,6 +1845,7 @@ void WorkspaceController::endShutdown()
 void WorkspaceController::shutdown()
 {
     shuttingDown_ = true;
+    previewBuildWork_.cancel();
     previewRequests_.invalidate();
     if( previewController_ != nullptr )
         previewController_->cancelImmediately();
@@ -2009,6 +2018,8 @@ void WorkspaceController::detachDocument( QTextView* view )
     documents_.remove( view );
     if( activeView_ == view )
     {
+        previewBuildWork_.cancel();
+        markdownPreview_->cancel();
         previewRequests_.invalidate();
         activeView_ = nullptr;
         activeProjectId_.clear();
@@ -2048,7 +2059,11 @@ void WorkspaceController::setActiveDocument( QTextView* view )
 
     QTextView* previousView = activeView_;
     if( previousView != view )
+    {
+        previewBuildWork_.cancel();
+        markdownPreview_->cancel();
         previewRequests_.invalidate();
+    }
     activeView_ = view;
     completions_->setActiveEditor( view );
     if( view == nullptr )

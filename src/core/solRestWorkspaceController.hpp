@@ -2,6 +2,7 @@
 
 #include "solRestOutlineService.hpp"
 #include "solPreviewRequestState.hpp"
+#include "solDeferredPreviewWork.hpp"
 #include "solSphinxDiagnostics.hpp"
 #include "solSphinxScanner.hpp"
 
@@ -13,6 +14,7 @@
 #include <QStringList>
 #include <QUrl>
 #include <QVector>
+#include <memory>
 
 class QTextView;
 class QTimer;
@@ -28,6 +30,7 @@ class LspServerPool;
 class MarkdownPreviewController;
 class PathIndex;
 class PreviewBridge;
+class PreviewShadowSnapshot;
 class ProjectRegistry;
 class PythonEnvManager;
 class PythonEnvResolver;
@@ -242,7 +245,7 @@ private:
     void                                applyVirtualProjectTheme();
     void                                logProjectList();
     void                                onPreviewFinished( const PreviewBuildResult& result );
-    [[nodiscard]] QString               writeShadowCopy( QTextView* view, const QString& path ) const;
+    [[nodiscard]] std::shared_ptr<const PreviewShadowSnapshot> createShadowSnapshot( QTextView* view ) const;
     /// 내장 Markdown 렌더러용 셸 페이지를 (다시) 로드한다.
     ///
     /// 항해는 이 함수와 showPreviewHtml() 두 곳으로만 한다. 그러지 않으면
@@ -361,6 +364,7 @@ private:
     QHash< QString, DamagedPythonEnvironment > damagedPythonEnvironments_;
     QWebEngineView*                     previewView_ = nullptr;
     SphinxPreviewController*            previewController_ = nullptr;
+    DeferredPreviewWork                 previewBuildWork_;
     /// 내장 Markdown 렌더러. Sphinx 쪽과 나란한 형제다.
     MarkdownPreviewController*          markdownPreview_ = nullptr;
     VirtualProjectManager*              virtualProjects_ = nullptr;

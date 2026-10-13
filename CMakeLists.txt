@@ -159,6 +159,8 @@ add_executable(${PROJECT_NAME}
         src/core/solPreviewProgress.hpp
         src/core/solPreviewInputs.cpp
         src/core/solPreviewInputs.hpp
+        src/core/solDeferredPreviewWork.hpp
+        src/core/solPreviewShadowSnapshot.hpp
         src/core/solPreviewRequestState.hpp
         src/core/solPreviewBridge.cpp
         src/core/solPreviewBridge.hpp
@@ -403,6 +405,7 @@ if(MRST_BUILD_TESTS)
             tests/tst_PreviewInputs.cpp
             tests/tst_ProcessReaper.cpp
             tests/tst_UpdateCleanup.cpp
+            tests/tst_DeferredPreviewWork.cpp
             tests/tst_PythonEnvironment.cpp
             tests/tst_DiagnosticsStore.cpp
             tests/tst_SphinxBuilders.cpp
@@ -515,6 +518,9 @@ if(MRST_BUILD_TESTS)
             tests/ui/tst_ExternalFilesTree.cpp
             tests/ui/tst_SearchPrefill.cpp
             tests/ui/tst_TextPositions.cpp
+            tests/ui/tst_MarkdownPreviewController.cpp
+            src/core/solMarkdownPreviewController.cpp
+            src/core/solMarkdownPreviewController.hpp
             tests/ui/tst_PreviewFonts.cpp
             src/core/solPreviewFonts.cpp
 

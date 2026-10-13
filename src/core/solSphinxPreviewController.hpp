@@ -17,6 +17,7 @@ class QTimer;
 namespace mrst {
 
 class UvTask;
+class PreviewShadowSnapshot;
 
 /// 한 번의 프리뷰 빌드 요청.
 struct PreviewBuildRequest
@@ -28,6 +29,7 @@ struct PreviewBuildRequest
     QString                             builderScript;      ///< mrr_sphinx_preview_build.py 절대 경로
     QString                             sourceFile;         ///< 편집 중인 원본 (htmlPath 계산용)
     QString                             shadowFile;         ///< 미저장 버퍼 사본. 없으면 빈 문자열
+    std::shared_ptr<const PreviewShadowSnapshot> shadowSnapshot; ///< 큐·실행 동안 사본을 보유
     /// 직전 빌드의 재파싱 시간이 이 값(ms)을 넘는 문서에는 사본을 적용하지 않는다.
     /// 음수면 제한 없음. 사본을 반영하려면 그 문서를 매번 다시 읽어야 하는데,
     /// Breathe 문서는 그 비용이 수십 초라 편집이 멈춰 버린다.
@@ -51,11 +53,8 @@ struct PreviewBuildRequest
     /// operator== 로 두지 않는 이유: 구조체 동일성이 아니라 도메인 판정이고,
     /// 아래처럼 비대칭 예외가 있어서 이름이 그 사실을 말해야 한다.
     ///
-    /// **미저장 사본이 걸린 요청은 절대 같다고 보지 않는다.** 사본 파일은 원본
-    /// 경로 해시로 이름을 만들어 문서당 하나를 재사용하므로
-    /// (WorkspaceController::writeShadowCopy) **내용이 바뀌어도 경로가 같다.**
-    /// 경로만 비교하면 편집 후 재빌드를 삼켜 버린다. 편집 경로는 디바운스가
-    /// 이미 막아 주므로 이 보수적 판정으로 잃는 것이 없다.
+    /// 미저장 사본이 걸린 요청은 절대 같다고 보지 않는다. 빌드별 사본을
+    /// 사용하며, 편집 요청은 원문을 복사하기 전에 디바운스한다.
     [[nodiscard]] bool                  sameOutcomeAs( const PreviewBuildRequest& other ) const
     {
         if( !shadowFile.isEmpty() || !other.shadowFile.isEmpty() )
@@ -102,17 +101,6 @@ struct PreviewBuildResult
 /// (가상 프로젝트 등) 빈 문자열을 낸다 — 그러면 지문을 쓰지도 읽지도 않는다.
 [[nodiscard]] QString previewInputsFilePath( const QString& workspaceRoot,
                                              const QString& projectId );
-
-/// 지난 빌드가 남긴 입력 지문과 지금 디스크 상태를 비교한다.
-/// **하나라도 다르거나 판정할 수 없으면 true**(=빌드해야 한다)를 낸다.
-///
-/// 왜 필요한가: 바뀐 것이 하나도 없어도 빌드 한 번이 통째로 든다(프로세스 기동 +
-/// sphinx 임포트 + 32MB environment.pickle 언피클, 실측 1.7~2.6초). 그동안
-/// 프리뷰는 비어 있다. Sphinx 도 같은 판정을 하지만 그 판정을 하려면 먼저 그
-/// 시간을 다 써야 한다.
-///
-/// **GUI 스레드에서 부르지 말 것.** 문서 수십 개에 breathe 프로젝트라면 doxygen
-/// XML 수백 개까지 stat 한다.
 
 /// Sphinx HTML 프리뷰 빌드를 관리한다.
 ///

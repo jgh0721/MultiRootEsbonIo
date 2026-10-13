@@ -51,7 +51,7 @@ void MarkdownPreviewController::reloadSettings()
 void MarkdownPreviewController::notifyBridgeReady()
 {
     bridgeReady_ = true;
-    if( hasPending_ )
+    if( hasPending_ && !debounce_->isActive() )
         push();
 }
 
@@ -67,26 +67,20 @@ void MarkdownPreviewController::notifyShellReloaded()
 void MarkdownPreviewController::requestRender( const QString& path, const QString& text,
                                                const bool immediate, const bool force )
 {
-    if( path.isEmpty() )
+    requestRender(path, [text] { return std::optional<QString>(text); }, immediate, force);
+}
+
+void MarkdownPreviewController::requestRender( const QString& path, TextProvider text,
+                                               const bool immediate, const bool force )
+{
+    if (path.isEmpty())
         return;
-
-    const QByteArray utf8 = text.toUtf8();
-    if( utf8.size() > kMaxPushBytes && !immediate )
-    {
-        // 타이핑 중에는 보내지 않는다. 저장하면 immediate 로 들어와 갱신된다.
-        return;
-    }
-
-    const QByteArray hash = QCryptographicHash::hash( utf8, QCryptographicHash::Sha1 );
-    if( !force && path == lastPushedPath_ && hash == lastPushedHash_ )
-        return;   // 내용이 그대로다
-
     pendingPath_ = path;
-    pendingText_ = text;
+    pendingText_ = std::move(text);
+    pendingImmediate_ = immediate;
+    pendingForce_ = force;
     hasPending_ = true;
-
-    if( immediate )
-    {
+    if (immediate) {
         debounce_->stop();
         push();
         return;
@@ -98,7 +92,8 @@ void MarkdownPreviewController::cancel()
 {
     debounce_->stop();
     hasPending_ = false;
-    pendingText_.clear();
+    pendingText_ = {};
+    ++token_;
     pendingPath_.clear();
 }
 
@@ -137,16 +132,29 @@ void MarkdownPreviewController::push()
     if( !bridgeReady_ )
         return;   // 핸드셰이크가 끝나면 notifyBridgeReady() 가 흘려보낸다
 
-    const QByteArray utf8 = pendingText_.toUtf8();
-    lastPushedHash_ = QCryptographicHash::hash( utf8, QCryptographicHash::Sha1 );
-    lastPushedPath_ = pendingPath_;
+    auto provider = std::move(pendingText_);
+    const QString path = pendingPath_;
+    const bool immediate = pendingImmediate_;
+    const bool force = pendingForce_;
     hasPending_ = false;
+    if (!provider)
+        return;
+    const auto text = provider();
+    if (!text)
+        return; // document was detached or replaced
+    const QByteArray utf8 = text->toUtf8();
+    if (utf8.size() > kMaxPushBytes && !immediate)
+        return;
+    const QByteArray hash = QCryptographicHash::hash(utf8, QCryptographicHash::Sha1);
+    if (!force && path == lastPushedPath_ && hash == lastPushedHash_)
+        return;
+    lastPushedHash_ = hash;
+    lastPushedPath_ = path;
 
-    // 상대 경로 이미지가 살아나는 근거. 문서가 있는 폴더를 <base> 로 세운다.
+    // Relative images resolve against the document directory.
     const QString baseUrl =
-        QUrl::fromLocalFile( QFileInfo( pendingPath_ ).absolutePath() + QLatin1Char( '/' ) ).toString();
-
-    emit pushRequested( pendingText_, baseUrl, buildOptionsJson(), ++token_ );
+        QUrl::fromLocalFile(QFileInfo(path).absolutePath() + QLatin1Char('/')).toString();
+    emit pushRequested(*text, baseUrl, buildOptionsJson(), ++token_);
 }
 
 QString MarkdownPreviewController::buildOptionsJson() const
@@ -170,8 +178,7 @@ QString MarkdownPreviewController::buildOptionsJson() const
         { QStringLiteral( "mathRenderer" ),
           settings.value( QStringLiteral( "preview/mathRenderer" ),
                          QString::fromLatin1( mdassets::kDefaultMathRenderer ) ).toString() },
-        // mermaid 는 초기화할 때 테마 이름을 받는다. 나중에 바꿀 수 없어서
-        // 로드 시점에 알려 줘야 한다.
+        // Mermaid 는 테마가 바뀌면 초기화 옵션을 갱신하고 도형을 다시 그린다.
         { QStringLiteral( "dark" ), ThemeManager::instance().currentTheme() == ThemeManager::Dark },
         // 색은 CSS 변수로 꽂는다. 그래서 테마를 바꿀 때 페이지를 다시 읽지 않아도
         // 되고, 세션에서 받아 둔 mermaid/KaTeX 를 버리지 않는다.
